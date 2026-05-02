@@ -1,0 +1,38 @@
+[
+  {
+    "content": "Phase 1: Set up MongoDB models (Department, Station, Location, AssetType, Asset, User, Inspection, OrangeList, Notification)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Create core backend endpoints (inspection CRUD, orange list workflow, file upload, notifications)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Create POC test script to validate full flow",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Run POC test and fix until passing",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Get design guidelines from design agent",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 2: Full backend implementation (all CRUD + SIG + scheduling)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Full frontend implementation (all pages + components)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: End to End Testing using Testing Agent",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: All user stories covered in Development and testing",
+    "status": "pending"
+  }
+]
