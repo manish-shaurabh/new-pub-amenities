@@ -1,34 +1,77 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Railway Asset Inspection Management System - App Styles */
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
 }
 
-.App-link {
-    color: #61dafb;
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+/* Status badge colors */
+.status-working {
+  background: hsl(173 80% 28% / 0.1);
+  color: hsl(173 80% 28%);
+  border: 1px solid hsl(173 80% 28% / 0.2);
+}
+
+.status-defective {
+  background: hsl(20 90% 52% / 0.1);
+  color: hsl(20 90% 52%);
+  border: 1px solid hsl(20 90% 52% / 0.2);
+}
+
+.status-pending {
+  background: hsl(43 74% 56% / 0.15);
+  color: hsl(43 74% 40%);
+  border: 1px solid hsl(43 74% 56% / 0.25);
+}
+
+/* Animation classes */
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-badge {
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+/* Orange list stripe */
+.orange-stripe {
+  border-left: 4px solid hsl(20 90% 52%);
+}
+
+/* Active nav item */
+.nav-active {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  border-left: 4px solid hsl(var(--primary));
+}
+
+/* Table row hover */
+.table-row-hover:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+
+/* KPI card hover */
+.kpi-hover:hover {
+  box-shadow: 0 12px 30px -24px hsl(var(--shadow-color) / 0.45);
+}
+
+/* Login gradient band */
+.login-gradient {
+  background: radial-gradient(1200px circle at 20% 0%, hsl(173 80% 28% / 0.14), transparent 55%),
+              radial-gradient(900px circle at 90% 10%, hsl(199 70% 38% / 0.10), transparent 50%);
 }

@@ -1,53 +1,107 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './lib/auth-context';
+import { Toaster } from './components/ui/sonner';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import AssetsPage from './pages/AssetsPage';
+import InspectionPage from './pages/InspectionPage';
+import OrangeListPage from './pages/OrangeListPage';
+import UsersPage from './pages/UsersPage';
+import AdminPage from './pages/AdminPage';
+import InspectionHistoryPage from './pages/InspectionHistoryPage';
+import SchedulesPage from './pages/SchedulesPage';
+import AppLayout from './components/AppLayout';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+function ProtectedRoute({ children, adminOnly = false }) {
+  const { user, loading } = useAuth();
+  
+  if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  if (!user) return <Navigate to="/login" />;
+  if (adminOnly && !['superadmin', 'admin'].includes(user.role)) return <Navigate to="/" />;
+  
+  return children;
+}
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+function AppRoutes() {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
+  
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <Routes>
+      <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage />} />
+      <Route path="/" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <DashboardPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/assets" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <AssetsPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/inspection" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <InspectionPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/inspection-history" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <InspectionHistoryPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/orange-list" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <OrangeListPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/schedules" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <SchedulesPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/users" element={
+        <ProtectedRoute adminOnly>
+          <AppLayout>
+            <UsersPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin" element={
+        <ProtectedRoute adminOnly>
+          <AppLayout>
+            <AdminPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="*" element={<Navigate to="/" />} />
+    </Routes>
   );
-};
+}
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <Router>
+      <AuthProvider>
+        <AppRoutes />
+        <Toaster position="top-right" />
+      </AuthProvider>
+    </Router>
   );
 }
 

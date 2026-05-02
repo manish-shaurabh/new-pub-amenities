@@ -17,19 +17,19 @@
   },
   {
     "content": "Phase 2: Get design guidelines from design agent",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Phase 2: Full backend implementation (all CRUD + SIG + scheduling)",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Phase 2: Full frontend implementation (all pages + components)",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Phase 2: End to End Testing using Testing Agent",
-    "status": "pending"
+    "status": "in_progress"
   },
   {
     "content": "Phase 2: All user stories covered in Development and testing",
