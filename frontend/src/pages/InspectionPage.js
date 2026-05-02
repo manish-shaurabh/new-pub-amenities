@@ -63,9 +63,7 @@ export default function InspectionPage() {
     setSelectedAssets([]);
     setInspectionItems([]);
     loadLocations(stationId);
-    if (inspectionType === 'sig') {
-      loadAssets(stationId, null);
-    }
+    loadAssets(stationId, null);
   };
 
   const handleLocationChange = (locationId) => {
@@ -73,7 +71,7 @@ export default function InspectionPage() {
     setSelectedAssets([]);
     setInspectionItems([]);
     if (selectedStation) {
-      loadAssets(selectedStation, locationId);
+      loadAssets(selectedStation, locationId || null);
     }
   };
 

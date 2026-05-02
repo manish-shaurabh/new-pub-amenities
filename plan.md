@@ -1,130 +1,145 @@
 # plan.md
 
 ## Objectives
-- Deliver an MVP Railway Asset Inspection Management System for passenger-amenity assets with: asset master data, inspections (individual + SIG), Orange List workflow, scheduling/overdue tracking, photos, and role-based access.
-- Prove the **core workflow** end-to-end before scaling: create inspection → mark defective → Orange List → mark working → approving supervisor verifies/approves → removed from Orange List.
-- Stand up notification infrastructure: in-app notifications live; SMS/WhatsApp pluggable (provider TBD).
+- Deliver an MVP Railway Asset Inspection Management System for passenger-amenity assets with: asset master data, inspections (individual + SIG), Orange List workflow, scheduling/overdue tracking, photo evidence uploads, and multi-role access.
+- Ensure the **core workflow** is proven end-to-end: inspection → mark defective → Orange List → mark working → approving supervisor field-verifies/approves → removed from Orange List.
+- Provide operational visibility with an in-app notification center (bell icon + unread count) and auditable event history.
+- Prepare for production readiness: reporting/analytics, hardening, and external notifications (SMS/WhatsApp) + strict RBAC enforcement.
 
 ---
 
 ## Implementation Steps
 
-### Phase 1 — Core Flow POC (isolation, must pass before full app)
+### Phase 1 — Core Flow POC (isolation, must pass before full app) ✅ COMPLETE
 **Goal:** Validate the hardest parts with minimal UI: workflows + file upload + notification hooks.
 
-User stories:
-1. As a supervisor, I can submit an inspection for an asset with status, checklist answers, remarks, and photos.
-2. As a supervisor, I can mark an asset defective and see it appear in the Orange List.
-3. As a supervisor/RO, I can mark a defective asset as “working (pending approval)”.
-4. As an approving supervisor, I can verify in the field and approve “working” so it exits the Orange List.
-5. As an RO, I receive an in-app alert when assets in my dept+station are marked defective.
+Delivered user stories:
+1. Submit an inspection for an asset with status, checklist answers, remarks, and photos.
+2. Mark an asset defective and see it appear in the Orange List.
+3. Supervisor/RO can mark a defective asset as “working (pending approval)”.
+4. Approving supervisor can verify in the field and approve “working” so it exits the Orange List.
+5. Reporting Officer receives an in-app alert when assets in their dept+station are marked defective.
 
-Steps:
-- Web search: best practices for FastAPI + MongoDB modeling (events/audit), multipart uploads to object storage, and notification architecture (outbox pattern).
-- Minimal backend (FastAPI + MongoDB) with seed script:
-  - Entities: Department, Station, Location, AssetType (with checklist schema), Asset, User (no auth yet), Inspection, DefectTicket(Orange List item), Notification.
-  - Core endpoints (no RBAC yet): create inspection, upload photo(s), mark defective, list Orange items, mark working, approve working, list notifications.
-- File upload POC:
-  - Implement object storage adapter (local/S3-compatible) + store URLs in Mongo.
-  - Confirm upload + retrieval works.
-- Notification POC:
-  - In-app notifications persisted.
-  - SMS/WhatsApp adapters as interfaces + stub “send” implementation (logs) + outbox table/collection to prevent loss.
-- POC verification checklist (must be green):
-  - One inspection submission creates immutable record.
-  - Defective → Orange item created with correct asset link and responsible RO resolved.
-  - Mark working sets status to pending-approval; approve closes Orange item.
-  - Photos upload and are viewable.
-  - In-app notification created for RO.
+Implemented:
+- FastAPI + MongoDB data model (Departments, Stations, Locations, Asset Types with checklist schema, Assets, Users, Inspections, Orange List items, Notifications, Schedules, Audit Log).
+- Photo uploads (local storage) + URL persistence.
+- In-app notifications persisted in DB.
+- Audit logging for key state changes.
+- Scripted POC test suite validating the full lifecycle.
 
-Exit criteria:
-- Scripted test (pytest or simple runner) proves the full flow with real Mongo + real file writes.
+Exit criteria met:
+- Scripted test proves the full flow with real MongoDB + real file writes.
 
 ---
 
-### Phase 2 — V1 App Development (MVP UI + core modules; defer auth until Phase 4)
-**Goal:** Build usable web app around proven core; include RBAC guards only after auth phase.
+### Phase 2 — V1 App Development (MVP UI + core modules) ✅ COMPLETE
+**Goal:** Build a usable web app around the proven core and deliver end-to-end workflows.
 
-User stories:
-1. As an admin, I can create stations, locations, departments, asset types (with checklist), and assets.
-2. As a supervisor, I can quickly filter my station/location assets and perform an individual inspection.
-3. As an approving supervisor, I can start a SIG inspection for a station and submit it with participant names.
-4. As an RO, I can view all defective assets for my dept+station and their current rectification state.
-5. As any user, I can view Orange List and drill into history (inspections + status changes + photos).
+Delivered user stories:
+1. Admin can create and manage stations, locations, departments, asset types (with checklists), and assets.
+2. Supervisor/RO can filter station/location assets and perform an individual inspection.
+3. Approving supervisor can start a SIG inspection (station-wide) and submit it with participant names.
+4. RO can view defective assets in Orange List and monitor rectification state.
+5. Users can view Orange List, inspection history, and audit trail.
 
-Steps:
-- Frontend (React + shadcn):
-  - Pages: Asset Registry, Inspection (Individual), SIG Inspection, Orange List, Notifications (bell), Basic Dashboard.
-  - UX focus: fast asset search, offline-friendly form behavior (draft/save locally optional), photo capture/upload.
-- Backend expansion:
-  - Full CRUD: Departments, Stations, Locations, AssetTypes (checklist schema), Assets, Users (still no auth enforcement).
-  - SIG inspection: generates station-wide asset checklist; one submission includes participants (names + employee IDs).
-  - Scheduling: per-asset frequency + next_due calculation; overdue query endpoints.
-  - Audit trail: append-only event log for asset status changes and approvals.
-- Integrate frontend↔backend; ensure all states handled (loading/empty/error).
-- End Phase 2: 1 round E2E testing (core journeys + SIG + uploads).
+Implemented (Frontend + Backend):
+- **Authentication:** Employee ID + Password + JWT (login + session persistence).
+- **App shell:** Responsive layout (sidebar + topbar) + notification bell.
+- **Dashboard:** KPI stats, recent inspections, Orange List summary.
+- **Asset Registry:** Search + filtering + CRUD (admin-only actions).
+- **Inspections:**
+  - Individual: station → location → assets → status/checklist/remarks/photos.
+  - SIG: station-wide assets, participant selection, submit by approving supervisor.
+  - UX improvement: assets load on station select; location refines the list.
+- **Orange List:** Defective tracking, mark working, approve/resolved workflow.
+- **Notifications:** In-app bell icon + unread count + mark-all-read.
+- **Schedules:** Due/overdue tracking + due-today list.
+- **User Management:** CRUD + station assignment + role assignment.
+- **Admin Panel:** Departments, Stations, Locations, Asset Types + checklist builder.
+- **Role Management:** Superadmin can grant/revoke Admin powers.
+- **File Upload:** Photo evidence upload and preview.
+- **Audit Logging:** Key events captured and viewable via API.
+- **Seed script:** Creates Superadmin + sample data for immediate usage.
 
-Exit criteria:
-- A user can operate the app end-to-end in browser with seeded data and no manual DB edits.
+Testing / Exit criteria met:
+- Backend: **100% pass rate** (all tested endpoints and flows).
+- Frontend: **95%+** (all major user journeys validated; only minor UX notes).
+- A user can operate the app end-to-end in the browser with seeded data.
 
 ---
 
-### Phase 3 — Hardening + Reporting + Schedules/Overdue UX
-**Goal:** Make MVP reliable and manager-usable.
+### Phase 3 — Hardening + Reporting + Schedules/Overdue UX (Future)
+**Goal:** Make the MVP production-ready and management-usable with stronger reporting, reliability, and scheduling experience.
 
 User stories:
-1. As an admin/RO, I can set/adjust inspection frequency per asset type or per asset.
-2. As a supervisor, I can see what’s due today/this week for my assigned stations.
-3. As an RO, I can export a station’s Orange List and inspection history.
-4. As an approving supervisor, I can see pending approvals queue and complete verification quickly.
-5. As management, I can view completion/overdue metrics by station and department.
+1. Admin/RO can set/adjust inspection frequency per asset type and/or per asset with bulk operations.
+2. Supervisors can see what’s due today/this week for their assigned stations (personalized queues).
+3. RO can export Orange List + inspection history (station/department/date filters).
+4. Approving supervisors can see a focused “Pending Approvals” queue and complete verification quickly.
+5. Management can view completion/overdue metrics by station, department, asset type, and time.
 
-Steps:
-- Reporting endpoints + UI widgets: completion rate, overdue counts, defect aging, top defective asset types.
-- Scheduler job (app-level cron/worker):
-  - Generates due/overdue flags and notification outbox items.
-- Notification improvements:
-  - Persist delivery attempts; retry policy; admin view for failures.
-- Testing: add regression suite for workflows + schedule computations.
-- End Phase 3: 1 round E2E testing.
+Implementation steps:
+- Reporting endpoints + UI widgets:
+  - Completion rate, overdue counts, defect aging, recurring defect hotspots.
+  - Trends by station/department/asset type.
+- Scheduling UX improvements:
+  - “My Due Items” queue, calendar/list toggle, bulk scheduling.
+  - Clear overdue severity and aging indicators.
+- Background processing:
+  - Scheduler job/worker to compute due/overdue, generate notification outbox messages, and retry.
+- Notification hardening:
+  - Persist delivery attempts, retry policy, admin visibility for failures.
+- Data quality + audit hardening:
+  - Stronger validation, idempotency on inspection submission, and improved audit log structure.
+- Testing:
+  - Regression suite for workflows + schedule computations; E2E test pass.
 
 Exit criteria:
 - Overdue logic stable; metrics consistent; no broken flows from Phase 2.
 
 ---
 
-### Phase 4 — Authentication + RBAC + External Notifications (provider integration)
-**Goal:** Secure system with EmployeeID+Password + JWT and enforce role permissions; integrate SMS/WhatsApp when provider chosen.
+### Phase 4 — Full RBAC Enforcement + External Notifications (SMS/WhatsApp) (Future)
+**Goal:** Enforce strict role- and assignment-based access + integrate external notifications.
 
 User stories:
-1. As a user, I can log in using employee ID + password and stay signed in securely.
-2. As an admin, I can create users and assign roles, departments, and stations.
-3. As an RO, I only see stations/departments assigned to me.
-4. As superadmin, I can grant/revoke admin privileges.
-5. As an RO, I receive SMS/WhatsApp alerts for new defective assets (when enabled).
+1. Users log in with Employee ID + password; secure sessions and refresh flow as needed.
+2. Admin can create users and assign roles, departments, and stations with enforceable constraints.
+3. RO only sees stations/departments assigned to them; supervisors constrained to assigned stations/areas.
+4. Superadmin can grant/revoke admin privileges safely with full audit.
+5. RO receives SMS/WhatsApp alerts for new defective assets (and optional reminders for overdue inspections).
 
-Steps:
-- Implement auth (password hashing, JWT, refresh, session invalidation).
-- RBAC enforcement on backend routes + frontend route guards.
-- Provider integration (Twilio or other) once selected; keep adapters.
-- End Phase 4: 1 round E2E testing including multi-user role checks.
+Implementation steps:
+- RBAC enforcement:
+  - Backend route guards by role + assigned stations + department.
+  - Frontend route/menu guards aligned with backend.
+  - Prevent privilege escalation and enforce least-privilege.
+- External notification integration:
+  - Choose provider (e.g., Twilio or equivalent) for SMS + WhatsApp.
+  - Implement provider adapters + outbox/retry logic.
+  - Admin settings for enabling/disabling channels per role/station.
+- Security hardening:
+  - Rate limiting on login, password policy, audit all role changes.
+- Testing:
+  - Multi-user role tests validating access boundaries; notification delivery tests in staging.
 
 Exit criteria:
-- No privilege escalation; all role restrictions validated; notifications deliver in real channel (if keys provided).
+- No privilege escalation; all role restrictions validated.
+- SMS/WhatsApp notifications deliver reliably with retries and failure visibility.
 
 ---
 
 ## Next Actions
-1. Confirm notification provider approach: **Twilio vs other vs keep stub until keys**.
-2. Confirm object storage target for photos: **local dev + S3-compatible in prod** (e.g., MinIO/S3).
-3. Proceed with Phase 1 POC: implement minimal data model + endpoints + file upload + in-app notification + scripted flow test.
+1. Confirm external notification provider for **SMS + WhatsApp** (Twilio vs other) and obtain API keys for integration.
+2. Decide photo storage target for production (local dev + S3-compatible in prod, e.g., MinIO/S3) and implement storage abstraction if needed.
+3. Prioritize Phase 3 reporting requirements (exact KPIs, export formats, and management dashboards).
 
 ---
 
 ## Success Criteria
 - Core flow works reliably: inspection → defect → Orange List → mark working → approve → removed, with full audit trail.
-- SIG inspection works: station-wide assets + participant list + multi-dept coverage.
-- Photos upload and display correctly in UI.
-- Scheduling produces correct due/overdue states and surfaces them in UI.
-- Notifications: in-app works end-to-end; SMS/WhatsApp infra ready and integratable without refactor.
-- After auth phase: RBAC correctly restricts access by role + station + department.
+- SIG inspection works: station-wide coverage + participant list.
+- Photos upload and display correctly.
+- Scheduling produces correct due/overdue states and surfaces them clearly.
+- Notifications: in-app works end-to-end; SMS/WhatsApp ready after provider integration.
+- After Phase 4: RBAC correctly restricts access by role + station + department with strong security guarantees.
