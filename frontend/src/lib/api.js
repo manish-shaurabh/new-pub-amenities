@@ -92,6 +92,10 @@ export const usersAPI = {
   revokeAdmin: (userId, revokedBy, newRole) => api.post(`/users/${userId}/revoke-admin?revoked_by=${revokedBy}&new_role=${newRole}`),
   supervisors: (params) => api.get('/users/supervisors', { params }),
   inspections: (id, limit) => api.get(`/users/${id}/inspections`, { params: { limit } }),
+  linkSupervisors: (reportingOfficerId, supervisorIds) => api.post('/users/link-supervisors', null, {
+    params: { reporting_officer_id: reportingOfficerId, supervisor_ids: supervisorIds }
+  }),
+  stationStaff: () => api.get('/users/station-staff'),
 };
 
 // Inspections

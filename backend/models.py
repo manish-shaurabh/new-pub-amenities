@@ -64,6 +64,7 @@ class StationCreate(BaseModel):
     code: str
     zone: Optional[str] = None
     division: Optional[str] = None
+    approving_supervisor_id: Optional[str] = None  # NEW: Each station has one Approving Supervisor
 
 
 class StationResponse(BaseModel):
@@ -72,6 +73,8 @@ class StationResponse(BaseModel):
     code: str
     zone: Optional[str] = None
     division: Optional[str] = None
+    approving_supervisor_id: Optional[str] = None  # NEW
+    approving_supervisor_name: Optional[str] = None  # NEW
     created_at: str
 
 
@@ -155,6 +158,7 @@ class UserCreate(BaseModel):
     password: str
     email: Optional[str] = None
     phone: Optional[str] = None
+    reports_to_id: Optional[str] = None  # NEW: Supervisor links to Reporting Officer
 
 
 class UserResponse(BaseModel):
@@ -168,6 +172,8 @@ class UserResponse(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     is_active: bool = True
+    reports_to_id: Optional[str] = None  # NEW
+    reports_to_name: Optional[str] = None  # NEW
     created_at: str
 
 

@@ -1,22 +1,26 @@
 [
   {
-    "content": "Complete Asset Registry restructure (group by type + supervisor assignment)",
+    "content": "Update backend models: Add reports_to_id to users, approving_supervisor_id to stations",
     "status": "completed"
   },
   {
-    "content": "Update New Inspection page (group by type + fix date/time picker)",
+    "content": "Add API endpoints for linking Supervisors to Reporting Officers",
     "status": "completed"
   },
   {
-    "content": "Restructure Inspection History page (asset-wise grouping)",
-    "status": "completed"
+    "content": "Update User Management page with linking feature",
+    "status": "in_progress"
   },
   {
-    "content": "Test all pages with screenshot tool",
-    "status": "completed"
+    "content": "Create station-wise staff table view",
+    "status": "pending"
   },
   {
-    "content": "Verify all clickable elements (asset/supervisor history)",
-    "status": "completed"
+    "content": "Update Admin Panel - Station form with Approving Supervisor field",
+    "status": "pending"
+  },
+  {
+    "content": "Test all linking features",
+    "status": "pending"
   }
 ]

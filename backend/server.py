@@ -109,6 +109,7 @@ async def create_station(station: StationCreate):
         "code": station.code,
         "zone": station.zone,
         "division": station.division,
+        "approving_supervisor_id": station.approving_supervisor_id,
         "created_at": datetime.utcnow()
     }
     result = await stations_collection.insert_one(doc)
@@ -119,6 +120,15 @@ async def create_station(station: StationCreate):
 @app.get("/api/stations")
 async def list_stations():
     docs = await stations_collection.find().to_list(1000)
+    # Batch fetch approving supervisors
+    asup_ids = list(set(d.get("approving_supervisor_id") for d in docs if d.get("approving_supervisor_id")))
+    asup_map = {}
+    if asup_ids:
+        asup_docs = await users_collection.find({"_id": {"$in": [ObjectId(aid) for aid in asup_ids]}}).to_list(1000)
+        asup_map = {str(u["_id"]): u["name"] for u in asup_docs}
+    
+    for doc in docs:
+        doc["approving_supervisor_name"] = asup_map.get(doc.get("approving_supervisor_id", ""), None)
     return [serialize_doc(d) for d in docs]
 
 
@@ -134,7 +144,13 @@ async def get_station(station_id: str):
 async def update_station(station_id: str, station: StationCreate):
     result = await stations_collection.update_one(
         {"_id": ObjectId(station_id)},
-        {"$set": {"name": station.name, "code": station.code, "zone": station.zone, "division": station.division}}
+        {"$set": {
+            "name": station.name,
+            "code": station.code,
+            "zone": station.zone,
+            "division": station.division,
+            "approving_supervisor_id": station.approving_supervisor_id
+        }}
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Station not found")
@@ -417,6 +433,7 @@ async def create_user(user: UserCreate):
         "password": hashed_password,
         "email": user.email,
         "phone": user.phone,
+        "reports_to_id": user.reports_to_id,
         "is_active": True,
         "created_at": datetime.utcnow()
     }
@@ -434,15 +451,24 @@ async def list_users(role: Optional[str] = None, department_id: Optional[str] = 
     if department_id:
         query["department_id"] = department_id
     docs = await users_collection.find(query).to_list(1000)
-    # Batch fetch departments
+    # Batch fetch departments and reports_to users
     dept_ids = list(set(d.get("department_id") for d in docs if d.get("department_id")))
+    reports_to_ids = list(set(d.get("reports_to_id") for d in docs if d.get("reports_to_id")))
+    
     depts_map = {}
     if dept_ids:
         depts_docs = await departments_collection.find({"_id": {"$in": [ObjectId(did) for did in dept_ids]}}).to_list(1000)
         depts_map = {str(d["_id"]): d["name"] for d in depts_docs}
+    
+    reports_to_map = {}
+    if reports_to_ids:
+        reports_to_docs = await users_collection.find({"_id": {"$in": [ObjectId(rid) for rid in reports_to_ids]}}).to_list(1000)
+        reports_to_map = {str(u["_id"]): u["name"] for u in reports_to_docs}
+    
     for doc in docs:
         doc.pop("password", None)
         doc["department_name"] = depts_map.get(doc.get("department_id", ""), "")
+        doc["reports_to_name"] = reports_to_map.get(doc.get("reports_to_id", ""), None)
     return [serialize_doc(d) for d in docs]
 
 
@@ -484,7 +510,8 @@ async def update_user(user_id: str, user: UserCreate):
         "department_id": user.department_id,
         "assigned_stations": user.assigned_stations,
         "email": user.email,
-        "phone": user.phone
+        "phone": user.phone,
+        "reports_to_id": user.reports_to_id
     }
     if user.password:
         import bcrypt
@@ -507,6 +534,57 @@ async def delete_user(user_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "User deleted"}
+
+
+@app.post("/api/users/link-supervisors")
+async def link_supervisors_to_reporting_officer(reporting_officer_id: str, supervisor_ids: List[str]):
+    """Link multiple supervisors to a reporting officer"""
+    # Verify reporting officer exists
+    ro = await users_collection.find_one({"_id": ObjectId(reporting_officer_id)})
+    if not ro or ro["role"] != "reporting_officer":
+        raise HTTPException(status_code=400, detail="Invalid reporting officer")
+    
+    # Update all supervisors
+    result = await users_collection.update_many(
+        {"_id": {"$in": [ObjectId(sid) for sid in supervisor_ids]}},
+        {"$set": {"reports_to_id": reporting_officer_id}}
+    )
+    
+    return {"message": f"{result.modified_count} supervisors linked", "modified_count": result.modified_count}
+
+
+@app.get("/api/users/station-staff")
+async def get_station_wise_staff():
+    """Get station-wise view of all staff (Supervisors, Reporting Officers, Approving Supervisors)"""
+    stations = await stations_collection.find({}).to_list(1000)
+    users = await users_collection.find({"role": {"$in": ["supervisor", "reporting_officer", "approving_supervisor"]}}).to_list(1000)
+    
+    # Build station-wise staff map
+    station_staff = []
+    for station in stations:
+        station_id = str(station["_id"])
+        
+        # Find approving supervisor for this station
+        approving_supervisor = None
+        if station.get("approving_supervisor_id"):
+            approving_supervisor = next((u for u in users if str(u["_id"]) == station["approving_supervisor_id"]), None)
+        
+        # Find supervisors assigned to this station
+        supervisors = [u for u in users if u["role"] == "supervisor" and station_id in u.get("assigned_stations", [])]
+        
+        # Find reporting officers for this station's department (through supervisors)
+        ro_ids = set(s.get("reports_to_id") for s in supervisors if s.get("reports_to_id"))
+        reporting_officers = [u for u in users if str(u["_id"]) in ro_ids]
+        
+        station_staff.append({
+            "station_id": station_id,
+            "station_name": station["name"],
+            "approving_supervisor": serialize_doc(approving_supervisor) if approving_supervisor else None,
+            "supervisors": [serialize_doc(s) for s in supervisors],
+            "reporting_officers": [serialize_doc(ro) for ro in reporting_officers]
+        })
+    
+    return station_staff
 
 
 # ============ AUTH ============
