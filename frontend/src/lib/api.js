@@ -59,6 +59,7 @@ export const stationsAPI = {
 export const locationsAPI = {
   list: (stationId) => api.get('/locations', { params: { station_id: stationId } }),
   create: (data) => api.post('/locations', data),
+  update: (id, data) => api.put(`/locations/${id}`, data),
   delete: (id) => api.delete(`/locations/${id}`),
 };
 
@@ -66,6 +67,7 @@ export const locationsAPI = {
 export const assetTypesAPI = {
   list: (departmentId) => api.get('/asset-types', { params: { department_id: departmentId } }),
   create: (data) => api.post('/asset-types', data),
+  update: (id, data) => api.put(`/asset-types/${id}`, data),
   delete: (id) => api.delete(`/asset-types/${id}`),
 };
 

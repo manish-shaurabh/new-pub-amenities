@@ -184,6 +184,18 @@ async def list_locations(station_id: Optional[str] = None):
     return [serialize_doc(d) for d in docs]
 
 
+@app.put("/api/locations/{location_id}")
+async def update_location(location_id: str, location: LocationCreate):
+    result = await locations_collection.update_one(
+        {"_id": ObjectId(location_id)},
+        {"$set": {"name": location.name, "station_id": location.station_id, "description": location.description}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Location not found")
+    doc = await locations_collection.find_one({"_id": ObjectId(location_id)})
+    return serialize_doc(doc)
+
+
 @app.delete("/api/locations/{location_id}")
 async def delete_location(location_id: str):
     result = await locations_collection.delete_one({"_id": ObjectId(location_id)})
@@ -222,6 +234,23 @@ async def list_asset_types(department_id: Optional[str] = None):
     for doc in docs:
         doc["department_name"] = depts_map.get(doc["department_id"], "Unknown")
     return [serialize_doc(d) for d in docs]
+
+
+@app.put("/api/asset-types/{asset_type_id}")
+async def update_asset_type(asset_type_id: str, asset_type: AssetTypeCreate):
+    result = await asset_types_collection.update_one(
+        {"_id": ObjectId(asset_type_id)},
+        {"$set": {
+            "name": asset_type.name,
+            "department_id": asset_type.department_id,
+            "checklist": [item.model_dump() for item in asset_type.checklist],
+            "description": asset_type.description
+        }}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Asset type not found")
+    doc = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
+    return serialize_doc(doc)
 
 
 @app.delete("/api/asset-types/{asset_type_id}")
@@ -293,9 +322,11 @@ async def list_assets(
     location_ids = list(set(d["location_id"] for d in docs if d.get("location_id")))
     
     types_map = {}
+    types_checklist_map = {}
     if type_ids:
         types_docs = await asset_types_collection.find({"_id": {"$in": [ObjectId(tid) for tid in type_ids]}}).to_list(1000)
         types_map = {str(t["_id"]): t["name"] for t in types_docs}
+        types_checklist_map = {str(t["_id"]): t.get("checklist", []) for t in types_docs}
     stations_map = {}
     if station_ids:
         stations_docs = await stations_collection.find({"_id": {"$in": [ObjectId(sid) for sid in station_ids]}}).to_list(1000)
@@ -309,6 +340,7 @@ async def list_assets(
         doc["asset_type_name"] = types_map.get(doc["asset_type_id"], "Unknown")
         doc["station_name"] = stations_map.get(doc["station_id"], "Unknown")
         doc["location_name"] = locations_map.get(doc["location_id"], "Unknown")
+        doc["checklist"] = types_checklist_map.get(doc["asset_type_id"], [])
     
     return [serialize_doc(d) for d in docs]
 

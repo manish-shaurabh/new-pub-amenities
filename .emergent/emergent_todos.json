@@ -1,30 +1,18 @@
 [
   {
-    "content": "Change 1: Fix notification targeting - alert only assigned supervisor/RO/approving supervisor for that asset's station, Admin/Superadmin get all",
-    "status": "completed"
+    "content": "Admin Panel: Add edit functionality for Stations",
+    "status": "in_progress"
   },
   {
-    "content": "Change 2: Add defective_since date/time picker in inspection form when marking defective",
-    "status": "completed"
+    "content": "Admin Panel: Redesign Locations tab as station-grouped accordion with edit",
+    "status": "pending"
   },
   {
-    "content": "Change 3: Show 'Defective since [date/time]' for already-defective assets during inspection",
-    "status": "completed"
+    "content": "Admin Panel: Add edit functionality for Asset Types + verify checklist in inspection",
+    "status": "pending"
   },
   {
-    "content": "Change 4: Split Orange List (< 24hrs) and Red List (> 24hrs) with Excel/PDF export",
-    "status": "completed"
-  },
-  {
-    "content": "Change 5: Make assets editable by Admin, prevent Admin from promoting RO/Supervisor to Admin (only Superadmin can)",
-    "status": "completed"
-  },
-  {
-    "content": "Change 6: Role-specific graphical dashboards with station-wise/asset-wise health, defects, orange/red list charts",
-    "status": "completed"
-  },
-  {
-    "content": "End-to-End Testing of all changes",
-    "status": "completed"
+    "content": "Backend: Add PUT endpoints for locations and asset-types + include checklist in asset list",
+    "status": "pending"
   }
 ]
