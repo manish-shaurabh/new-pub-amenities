@@ -180,6 +180,7 @@ class InspectionItemRecord(BaseModel):
     checklist_responses: List[Dict[str, Any]] = []
     remarks: Optional[str] = None
     photo_urls: List[str] = []
+    defective_since: Optional[str] = None  # ISO date-time string when defect started
 
 
 class InspectionCreate(BaseModel):

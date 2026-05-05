@@ -1,38 +1,30 @@
 [
   {
-    "content": "Phase 1: Set up MongoDB models (Department, Station, Location, AssetType, Asset, User, Inspection, OrangeList, Notification)",
+    "content": "Change 1: Fix notification targeting - alert only assigned supervisor/RO/approving supervisor for that asset's station, Admin/Superadmin get all",
     "status": "completed"
   },
   {
-    "content": "Phase 1: Create core backend endpoints (inspection CRUD, orange list workflow, file upload, notifications)",
+    "content": "Change 2: Add defective_since date/time picker in inspection form when marking defective",
     "status": "completed"
   },
   {
-    "content": "Phase 1: Create POC test script to validate full flow",
+    "content": "Change 3: Show 'Defective since [date/time]' for already-defective assets during inspection",
     "status": "completed"
   },
   {
-    "content": "Phase 1: Run POC test and fix until passing",
+    "content": "Change 4: Split Orange List (< 24hrs) and Red List (> 24hrs) with Excel/PDF export",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Get design guidelines from design agent",
+    "content": "Change 5: Make assets editable by Admin, prevent Admin from promoting RO/Supervisor to Admin (only Superadmin can)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Full backend implementation (all CRUD + SIG + scheduling)",
+    "content": "Change 6: Role-specific graphical dashboards with station-wise/asset-wise health, defects, orange/red list charts",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Full frontend implementation (all pages + components)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: End to End Testing using Testing Agent",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: All user stories covered in Development and testing",
-    "status": "completed"
+    "content": "End-to-End Testing of all changes",
+    "status": "in_progress"
   }
 ]

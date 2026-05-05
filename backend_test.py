@@ -84,7 +84,7 @@ class RailwayAPITester:
         return False
 
     def test_dashboard_stats(self):
-        """Test dashboard stats - should show 3 assets, 1 station, 1 user"""
+        """Test dashboard stats - should show orange_list_count and red_list_count separately (Change 4)"""
         success, response = self.run_test(
             "Dashboard Stats",
             "GET",
@@ -97,6 +97,11 @@ class RailwayAPITester:
             print(f"   Total Users: {response.get('total_users')}")
             print(f"   Working Assets: {response.get('working_assets')}")
             print(f"   Defective Assets: {response.get('defective_assets')}")
+            print(f"   Orange List Count: {response.get('orange_list_count')}")
+            print(f"   Red List Count: {response.get('red_list_count')}")
+            # Verify orange and red counts are present
+            if 'orange_list_count' not in response or 'red_list_count' not in response:
+                print("   ⚠️  WARNING: orange_list_count or red_list_count missing!")
         return success
 
     def test_departments(self):
@@ -324,6 +329,163 @@ class RailwayAPITester:
             print(f"   Found {len(response)} schedule(s)")
         return success
 
+    def test_station_health(self):
+        """Test station-wise health endpoint (Change 6)"""
+        success, response = self.run_test(
+            "Station-wise Health Data",
+            "GET",
+            "dashboard/station-health",
+            200
+        )
+        if success:
+            print(f"   Found {len(response)} station(s) with health data")
+            if len(response) > 0:
+                station = response[0]
+                print(f"   - {station.get('station_name')}: {station.get('working')}/{station.get('total')} working ({station.get('health_pct')}%)")
+        return success
+
+    def test_asset_type_health(self):
+        """Test asset type health endpoint (Change 6)"""
+        success, response = self.run_test(
+            "Asset Type Health Data",
+            "GET",
+            "dashboard/asset-type-health",
+            200
+        )
+        if success:
+            print(f"   Found {len(response)} asset type(s) with health data")
+            if len(response) > 0:
+                asset_type = response[0]
+                print(f"   - {asset_type.get('asset_type_name')}: {asset_type.get('working')}/{asset_type.get('total')} working")
+        return success
+
+    def test_orange_list_filter(self):
+        """Test orange list with list_type filter (Change 4)"""
+        # Test orange filter
+        success_orange, response_orange = self.run_test(
+            "Orange List (< 24hrs filter)",
+            "GET",
+            "orange-list",
+            200,
+            params={"list_type": "orange"}
+        )
+        if success_orange:
+            print(f"   Found {len(response_orange)} orange list item(s)")
+        
+        # Test red filter
+        success_red, response_red = self.run_test(
+            "Red List (> 24hrs filter)",
+            "GET",
+            "orange-list",
+            200,
+            params={"list_type": "red"}
+        )
+        if success_red:
+            print(f"   Found {len(response_red)} red list item(s)")
+        
+        return success_orange and success_red
+
+    def test_export_excel(self):
+        """Test Excel export endpoint (Change 4)"""
+        success, _ = self.run_test(
+            "Export Orange List to Excel",
+            "GET",
+            "orange-list/export/excel",
+            200
+        )
+        return success
+
+    def test_export_pdf(self):
+        """Test PDF export endpoint (Change 4)"""
+        success, _ = self.run_test(
+            "Export Orange List to PDF",
+            "GET",
+            "orange-list/export/pdf",
+            200
+        )
+        return success
+
+    def test_grant_admin_authorization(self):
+        """Test grant admin endpoint authorization (Change 5)"""
+        # First, get a non-superadmin user ID (create one if needed)
+        success_users, users = self.run_test(
+            "List Users for Grant Admin Test",
+            "GET",
+            "users",
+            200
+        )
+        
+        if not success_users or len(users) == 0:
+            print("   ⚠️  No users found to test grant admin")
+            return False
+        
+        # Find a non-superadmin user to use as granted_by
+        non_superadmin = None
+        target_user = None
+        for user in users:
+            if user.get('role') != 'superadmin':
+                if not non_superadmin:
+                    non_superadmin = user
+                else:
+                    target_user = user
+                    break
+        
+        if not non_superadmin or not target_user:
+            print("   ⚠️  Need at least 2 non-superadmin users for this test")
+            return False
+        
+        # Try to grant admin with non-superadmin user (should fail with 403)
+        success, response = self.run_test(
+            "Grant Admin (Non-Superadmin - Should Fail)",
+            "POST",
+            f"users/{target_user.get('_id')}/grant-admin",
+            403,  # Expecting 403 Forbidden
+            params={"granted_by": non_superadmin.get('_id')}
+        )
+        
+        if success:
+            print("   ✅ Correctly returned 403 for non-superadmin")
+        
+        return success
+
+    def test_asset_update(self):
+        """Test asset update endpoint (Change 5)"""
+        if not self.asset_id:
+            print("   ⚠️  No asset ID available for update test")
+            return False
+        
+        # Get current asset details
+        success_get, asset = self.run_test(
+            "Get Asset for Update Test",
+            "GET",
+            f"assets/{self.asset_id}",
+            200
+        )
+        
+        if not success_get:
+            return False
+        
+        # Update the asset description
+        success, response = self.run_test(
+            "Update Asset (PUT /api/assets/{id})",
+            "PUT",
+            f"assets/{self.asset_id}",
+            200,
+            data={
+                "asset_type_id": asset.get('asset_type_id'),
+                "station_id": asset.get('station_id'),
+                "location_id": asset.get('location_id'),
+                "asset_number": asset.get('asset_number'),
+                "description": "Updated description - test",
+                "schedule_frequency": asset.get('schedule_frequency')
+            }
+        )
+        
+        if success:
+            print(f"   Updated asset: {response.get('asset_number')}")
+        
+        return success
+
     def run_all_tests(self):
         """Run all tests in sequence"""
         print("=" * 60)
@@ -341,6 +503,8 @@ class RailwayAPITester:
         
         # Dashboard and data tests
         self.test_dashboard_stats()
+        self.test_station_health()  # NEW: Change 6
+        self.test_asset_type_health()  # NEW: Change 6
         self.test_departments()
         self.test_stations()
         self.test_locations()
@@ -352,11 +516,20 @@ class RailwayAPITester:
         self.test_create_inspection()
         self.test_inspection_history()
         self.test_orange_list()
+        self.test_orange_list_filter()  # NEW: Change 4
         self.test_mark_working()
         self.test_approve_working()
         self.test_notifications()
         self.test_unread_count()
         self.test_schedules()
+        
+        # Export tests (Change 4)
+        self.test_export_excel()
+        self.test_export_pdf()
+        
+        # Authorization and update tests (Change 5)
+        self.test_grant_admin_authorization()
+        self.test_asset_update()
         
         # Print summary
         print("\n" + "=" * 60)

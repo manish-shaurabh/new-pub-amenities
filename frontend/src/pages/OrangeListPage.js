@@ -9,14 +9,14 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Download, FileText, FileSpreadsheet } from 'lucide-react';
 
 export default function OrangeListPage() {
   const { user, canApprove } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('defective');
-  const [actionDialog, setActionDialog] = useState(null); // { type: 'mark_working' | 'approve', item }
+  const [activeTab, setActiveTab] = useState('orange');
+  const [actionDialog, setActionDialog] = useState(null);
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -60,7 +60,7 @@ export default function OrangeListPage() {
         approved_by: user._id,
         remarks: remarks
       });
-      toast.success('Asset approved as working - removed from Orange List');
+      toast.success('Asset approved as working - removed from list');
       setActionDialog(null);
       setRemarks('');
       loadItems();
@@ -71,7 +71,20 @@ export default function OrangeListPage() {
     }
   };
 
-  const defectiveItems = items.filter(i => i.status === 'defective');
+  // Change 4: Export functions
+  const handleExportExcel = (listType) => {
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
+    window.open(`${backendUrl}/api/orange-list/export/excel?list_type=${listType || ''}`, '_blank');
+  };
+
+  const handleExportPDF = (listType) => {
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
+    window.open(`${backendUrl}/api/orange-list/export/pdf?list_type=${listType || ''}`, '_blank');
+  };
+
+  // Change 4: Split into orange (< 24hrs) and red (> 24hrs)
+  const orangeItems = items.filter(i => i.list_type === 'orange' && i.status !== 'pending_approval');
+  const redItems = items.filter(i => i.list_type === 'red' && i.status !== 'pending_approval');
   const pendingItems = items.filter(i => i.status === 'pending_approval');
 
   if (loading) {
@@ -79,22 +92,46 @@ export default function OrangeListPage() {
   }
 
   const ItemCard = ({ item }) => (
-    <Card className={`orange-stripe ${item.status === 'pending_approval' ? 'border-l-[hsl(var(--pending))]' : ''}`}>
+    <Card className={`border-l-4 ${
+      item.list_type === 'red' ? 'border-l-red-600' :
+      item.status === 'pending_approval' ? 'border-l-[hsl(var(--pending))]' : 'border-l-[hsl(var(--orange-list))]'
+    }`}>
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
               <p className="font-medium text-sm">{item.asset_info?.asset_number || 'Unknown Asset'}</p>
-              <Badge className={item.status === 'pending_approval' ? 'status-pending' : 'status-defective'}>
-                {item.status === 'pending_approval' ? 'Pending Approval' : 'Defective'}
-              </Badge>
+              {item.list_type === 'red' && (
+                <Badge className="bg-red-600 text-white border-0 text-[10px]">RED LIST</Badge>
+              )}
+              {item.list_type === 'orange' && item.status !== 'pending_approval' && (
+                <Badge className="status-defective text-[10px]">ORANGE LIST</Badge>
+              )}
+              {item.status === 'pending_approval' && (
+                <Badge className="status-pending text-[10px]">Pending Approval</Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {item.asset_info?.asset_type_name} &middot; {item.asset_info?.station_name} &middot; {item.asset_info?.location_name}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Reported by: {item.reporter_name} &middot; {new Date(item.created_at).toLocaleDateString()}
-            </p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-xs text-muted-foreground">
+                Reported by: {item.reporter_name}
+              </p>
+              {item.defective_since && (
+                <p className="text-xs text-destructive font-medium">
+                  Defective since: {new Date(item.defective_since).toLocaleString()}
+                </p>
+              )}
+              {item.hours_defective !== undefined && (
+                <Badge variant="outline" className="text-[10px]">
+                  {item.hours_defective > 24 
+                    ? `${Math.floor(item.hours_defective / 24)}d ${Math.round(item.hours_defective % 24)}h`
+                    : `${Math.round(item.hours_defective)}h`
+                  }
+                </Badge>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             {item.status === 'defective' && (
@@ -124,37 +161,64 @@ export default function OrangeListPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <AlertTriangle className="h-6 w-6 text-[hsl(var(--orange-list))]" />
-          Orange List
-        </h1>
-        <p className="text-sm text-muted-foreground">Track and resolve defective assets</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <AlertTriangle className="h-6 w-6 text-[hsl(var(--orange-list))]" />
+            Defective Assets
+          </h1>
+          <p className="text-sm text-muted-foreground">Orange List (&lt;24hrs) &middot; Red List (&gt;24hrs)</p>
+        </div>
+        {/* Export buttons */}
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => handleExportExcel(activeTab !== 'pending' ? activeTab : null)}>
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Excel
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleExportPDF(activeTab !== 'pending' ? activeTab : null)}>
+            <FileText className="h-4 w-4 mr-1" /> PDF
+          </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="defective">
-            <AlertTriangle className="h-4 w-4 mr-1" />
-            Defective ({defectiveItems.length})
+          <TabsTrigger value="orange">
+            <AlertTriangle className="h-4 w-4 mr-1 text-orange-500" />
+            Orange ({orangeItems.length})
+          </TabsTrigger>
+          <TabsTrigger value="red">
+            <AlertTriangle className="h-4 w-4 mr-1 text-red-600" />
+            Red ({redItems.length})
           </TabsTrigger>
           <TabsTrigger value="pending">
             <Clock className="h-4 w-4 mr-1" />
-            Pending Approval ({pendingItems.length})
+            Pending ({pendingItems.length})
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="defective" className="space-y-3 mt-4">
-          {defectiveItems.length === 0 ? (
-            <Card data-testid="orange-list-empty-state">
+        <TabsContent value="orange" className="space-y-3 mt-4">
+          {orangeItems.length === 0 ? (
+            <Card>
               <CardContent className="py-12 text-center">
                 <CheckCircle className="h-10 w-10 text-[hsl(var(--ok))]/50 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">No defective assets right now.</p>
-                <p className="text-xs text-muted-foreground">Keep inspections consistent!</p>
+                <p className="text-sm text-muted-foreground">No items in Orange List (defective &lt; 24 hours)</p>
               </CardContent>
             </Card>
           ) : (
-            defectiveItems.map(item => <ItemCard key={item._id} item={item} />)
+            orangeItems.map(item => <ItemCard key={item._id} item={item} />)
+          )}
+        </TabsContent>
+
+        <TabsContent value="red" className="space-y-3 mt-4">
+          {redItems.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <CheckCircle className="h-10 w-10 text-[hsl(var(--ok))]/50 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">No items in Red List (defective &gt; 24 hours)</p>
+              </CardContent>
+            </Card>
+          ) : (
+            redItems.map(item => <ItemCard key={item._id} item={item} />)
           )}
         </TabsContent>
 
@@ -186,6 +250,11 @@ export default function OrangeListPage() {
               <p className="text-xs text-muted-foreground">
                 {actionDialog?.item?.asset_info?.station_name} &middot; {actionDialog?.item?.asset_info?.location_name}
               </p>
+              {actionDialog?.item?.defective_since && (
+                <p className="text-xs text-destructive mt-1">
+                  Defective since: {new Date(actionDialog.item.defective_since).toLocaleString()}
+                </p>
+              )}
             </div>
             <div>
               <Label>Remarks</Label>

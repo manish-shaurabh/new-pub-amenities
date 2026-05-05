@@ -11,8 +11,11 @@ import { Textarea } from '../components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Checkbox } from '../components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { Calendar } from '../components/ui/calendar';
 import { toast } from 'sonner';
-import { ClipboardCheck, Camera, X, Users, Upload } from 'lucide-react';
+import { ClipboardCheck, Camera, Users, CalendarIcon, Clock, AlertTriangle } from 'lucide-react';
+import { format } from 'date-fns';
 
 export default function InspectionPage() {
   const { user } = useAuth();
@@ -28,7 +31,6 @@ export default function InspectionPage() {
   const [participants, setParticipants] = useState([]);
   const [overallRemarks, setOverallRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [photos, setPhotos] = useState({});
 
   useEffect(() => {
     loadStations();
@@ -85,10 +87,14 @@ export default function InspectionPage() {
       setInspectionItems(prev => [...prev, {
         asset_id: asset._id,
         asset_number: asset.asset_number,
+        asset_status: asset.status,
+        defective_since_existing: asset.defective_since,
         status: 'ok',
         checklist_responses: (asset.checklist || []).map(c => ({ name: c.name, value: '', status: 'pass' })),
         remarks: '',
-        photo_urls: []
+        photo_urls: [],
+        defective_since_date: null,
+        defective_since_time: ''
       }]);
     }
   };
@@ -98,10 +104,14 @@ export default function InspectionPage() {
     setInspectionItems(assets.map(asset => ({
       asset_id: asset._id,
       asset_number: asset.asset_number,
+      asset_status: asset.status,
+      defective_since_existing: asset.defective_since,
       status: 'ok',
       checklist_responses: (asset.checklist || []).map(c => ({ name: c.name, value: '', status: 'pass' })),
       remarks: '',
-      photo_urls: []
+      photo_urls: [],
+      defective_since_date: null,
+      defective_since_time: ''
     })));
   };
 
@@ -140,26 +150,47 @@ export default function InspectionPage() {
     if (inspectionItems.length === 0) { toast.error('Please select at least one asset'); return; }
     if (inspectionType === 'sig' && participants.length === 0) { toast.error('Please select SIG participants'); return; }
 
+    // Validate defective_since for defective items
+    for (const item of inspectionItems) {
+      if ((item.status === 'not_ok' || item.status === 'needs_repair') && !item.defective_since_date) {
+        toast.error(`Please set defective since date/time for ${item.asset_number}`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const payload = {
         inspection_type: inspectionType,
         station_id: selectedStation,
         inspector_id: user._id,
-        items: inspectionItems.map(item => ({
-          asset_id: item.asset_id,
-          status: item.status,
-          checklist_responses: item.checklist_responses,
-          remarks: item.remarks,
-          photo_urls: item.photo_urls
-        })),
+        items: inspectionItems.map(item => {
+          let defective_since = null;
+          if (item.status === 'not_ok' || item.status === 'needs_repair') {
+            if (item.defective_since_date) {
+              const date = new Date(item.defective_since_date);
+              if (item.defective_since_time) {
+                const [hours, minutes] = item.defective_since_time.split(':');
+                date.setHours(parseInt(hours), parseInt(minutes));
+              }
+              defective_since = date.toISOString();
+            }
+          }
+          return {
+            asset_id: item.asset_id,
+            status: item.status,
+            checklist_responses: item.checklist_responses,
+            remarks: item.remarks,
+            photo_urls: item.photo_urls,
+            defective_since: defective_since
+          };
+        }),
         participants: inspectionType === 'sig' ? participants : [],
         overall_remarks: overallRemarks
       };
 
       await inspectionsAPI.create(payload);
       toast.success('Inspection submitted successfully!');
-      // Reset
       setSelectedAssets([]);
       setInspectionItems([]);
       setParticipants([]);
@@ -190,7 +221,6 @@ export default function InspectionPage() {
         </TabsList>
 
         <TabsContent value="individual" className="space-y-4 mt-4">
-          {/* Station & Location Selection */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Station *</Label>
@@ -202,10 +232,11 @@ export default function InspectionPage() {
               </Select>
             </div>
             <div>
-              <Label>Location</Label>
+              <Label>Location (filter)</Label>
               <Select value={selectedLocation} onValueChange={handleLocationChange}>
-                <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
                   {locations.map(l => <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -214,9 +245,8 @@ export default function InspectionPage() {
         </TabsContent>
 
         <TabsContent value="sig" className="space-y-4 mt-4" data-testid="sig-inspection-form">
-          {/* Station Selection for SIG */}
           <div>
-            <Label>Station * (All locations will be included)</Label>
+            <Label>Station * (All locations included)</Label>
             <Select value={selectedStation} onValueChange={handleStationChange}>
               <SelectTrigger><SelectValue placeholder="Select station" /></SelectTrigger>
               <SelectContent>
@@ -225,7 +255,6 @@ export default function InspectionPage() {
             </Select>
           </div>
 
-          {/* Participants */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">SIG Participants</CardTitle>
@@ -253,7 +282,7 @@ export default function InspectionPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium">Select Assets to Inspect ({assets.length} available)</CardTitle>
+              <CardTitle className="text-sm font-medium">Select Assets ({assets.length} available)</CardTitle>
               {inspectionType === 'sig' && (
                 <Button variant="outline" size="sm" onClick={selectAllAssets}>Select All</Button>
               )}
@@ -270,8 +299,20 @@ export default function InspectionPage() {
                     onCheckedChange={() => toggleAssetSelection(asset)}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{asset.asset_number}</p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-sm font-medium truncate">{asset.asset_number}</p>
+                      {/* Change 3: Show defective since for already-defective assets */}
+                      {asset.status === 'defective' && (
+                        <Badge className="status-defective text-[9px] px-1 py-0">Defective</Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">{asset.asset_type_name} &middot; {asset.location_name}</p>
+                    {asset.status === 'defective' && asset.defective_since && (
+                      <p className="text-[10px] text-destructive mt-0.5 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Defective since: {new Date(asset.defective_since).toLocaleString()}
+                      </p>
+                    )}
                   </div>
                 </label>
               ))}
@@ -284,10 +325,20 @@ export default function InspectionPage() {
       {inspectionItems.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Inspection Details</h3>
-          {inspectionItems.map((item, idx) => (
-            <Card key={item.asset_id} className="border-l-4 border-l-primary">
+          {inspectionItems.map((item) => (
+            <Card key={item.asset_id} className={`border-l-4 ${
+              item.asset_status === 'defective' ? 'border-l-destructive' : 'border-l-primary'
+            }`}>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{item.asset_number}</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">{item.asset_number}</CardTitle>
+                  {/* Change 3: Show defective since for already-defective */}
+                  {item.asset_status === 'defective' && item.defective_since_existing && (
+                    <Badge className="status-defective text-[10px]">
+                      Defective since {new Date(item.defective_since_existing).toLocaleString()}
+                    </Badge>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Status */}
@@ -299,7 +350,7 @@ export default function InspectionPage() {
                     className="flex gap-4 mt-1"
                   >
                     <div className="flex items-center gap-1.5">
-                      <RadioGroupItem value="ok" id={`ok-${item.asset_id}`} data-testid="inspection-status-radio-working" />
+                      <RadioGroupItem value="ok" id={`ok-${item.asset_id}`} />
                       <Label htmlFor={`ok-${item.asset_id}`} className="text-sm cursor-pointer">OK</Label>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -312,6 +363,42 @@ export default function InspectionPage() {
                     </div>
                   </RadioGroup>
                 </div>
+
+                {/* Change 2: Defective Since Date/Time picker */}
+                {(item.status === 'not_ok' || item.status === 'needs_repair') && (
+                  <div className="p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
+                    <Label className="text-xs font-medium text-destructive">Defective Since (Date & Time) *</Label>
+                    <div className="flex gap-2 mt-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="flex-1 justify-start text-left font-normal">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {item.defective_since_date
+                              ? format(new Date(item.defective_since_date), 'dd MMM yyyy')
+                              : 'Pick date'
+                            }
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={item.defective_since_date ? new Date(item.defective_since_date) : undefined}
+                            onSelect={(date) => updateInspectionItem(item.asset_id, 'defective_since_date', date?.toISOString())}
+                            disabled={(date) => date > new Date()}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <Input
+                        type="time"
+                        value={item.defective_since_time}
+                        onChange={(e) => updateInspectionItem(item.asset_id, 'defective_since_time', e.target.value)}
+                        className="w-[130px]"
+                        data-testid="defective-time-input"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Checklist */}
                 {item.checklist_responses.length > 0 && (
@@ -343,7 +430,6 @@ export default function InspectionPage() {
                     onChange={(e) => updateInspectionItem(item.asset_id, 'remarks', e.target.value)}
                     placeholder="Add remarks..."
                     className="mt-1"
-                    data-testid="inspection-remarks-textarea"
                   />
                 </div>
 
@@ -356,7 +442,7 @@ export default function InspectionPage() {
                         <img src={`${process.env.REACT_APP_BACKEND_URL}${url}`} alt="" className="h-full w-full object-cover" />
                       </div>
                     ))}
-                    <label className="h-16 w-16 rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-muted/40" data-testid="inspection-photo-upload">
+                    <label className="h-16 w-16 rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-muted/40">
                       <Camera className="h-5 w-5 text-muted-foreground" />
                       <input
                         type="file"
@@ -372,7 +458,6 @@ export default function InspectionPage() {
             </Card>
           ))}
 
-          {/* Overall Remarks */}
           <div>
             <Label>Overall Remarks</Label>
             <Textarea
@@ -383,7 +468,6 @@ export default function InspectionPage() {
             />
           </div>
 
-          {/* Submit */}
           <div className="sticky bottom-4 bg-background/80 backdrop-blur p-4 rounded-xl border shadow-lg">
             <Button
               onClick={handleSubmit}
