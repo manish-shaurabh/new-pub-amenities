@@ -170,6 +170,7 @@ export const adminAPI = {
 // Dashboard
 export const dashboardAPI = {
   superadmin: () => api.get('/dashboard'),
+  superadminFull: () => api.get('/dashboard/superadmin'),
   stats: () => api.get('/dashboard/stats'),
   recentInspections: (limit) => api.get('/dashboard/recent-inspections', { params: { limit } }),
   supervisor: (userId, stationId) => api.get(`/dashboard/supervisor/${userId}`, {
@@ -177,6 +178,12 @@ export const dashboardAPI = {
   }),
   supervisorMyTasks: (userId, stationId) => api.get(`/dashboard/supervisor/${userId}/my-tasks`, {
     params: stationId ? { station_id: stationId } : {}
+  }),
+  approvingSupervisor: (userId, params) => api.get(`/dashboard/approving-supervisor/${userId}`, {
+    params: params || {}
+  }),
+  reportingOfficer: (userId, params) => api.get(`/dashboard/reporting-officer/${userId}`, {
+    params: params || {}
   }),
 };
 

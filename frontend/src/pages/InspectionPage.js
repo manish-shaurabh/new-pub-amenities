@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { assetsAPI, stationsAPI, locationsAPI, inspectionsAPI, usersAPI, uploadAPI } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -21,6 +22,10 @@ import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 
 export default function InspectionPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkAssetId = searchParams.get('asset_id');
+  const [singleAssetMode, setSingleAssetMode] = useState(false);
+  const [deepLinkAsset, setDeepLinkAsset] = useState(null);
   const [inspectionType, setInspectionType] = useState('individual');
   const [stations, setStations] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -41,6 +46,60 @@ export default function InspectionPage() {
     loadStations();
     loadUsers();
   }, []);
+
+  // Deep-link: when ?asset_id= is present, auto-preselect that asset and lock to single-asset mode.
+  useEffect(() => {
+    if (!deepLinkAssetId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await assetsAPI.get(deepLinkAssetId);
+        const a = res.data;
+        if (cancelled) return;
+        setDeepLinkAsset(a);
+        setSingleAssetMode(true);
+        // Chain selections: station -> locations + assets, then preselect the asset
+        setSelectedStation(a.station_id);
+        await loadLocations(a.station_id);
+        const params = { station_id: a.station_id };
+        const ar = await assetsAPI.list(params);
+        const allAssets = ar.data || [];
+        setAssets(allAssets);
+        const target = allAssets.find((x) => x._id === a._id) || a;
+        setSelectedLocation(a.location_id || '');
+        // Pre-add the asset as selected
+        setSelectedAssets([target]);
+        setInspectionItems([{
+          asset_id: target._id,
+          asset_number: target.asset_number,
+          asset_status: target.status,
+          defective_since_existing: target.defective_since,
+          status: 'ok',
+          checklist_responses: (target.checklist || []).map(c => ({ name: c.name, value: '', status: 'pass' })),
+          remarks: '',
+          remarks_by: user.name,
+          photo_urls: [],
+          defective_since_date: null,
+          defective_since_time: '',
+          rectified_on_date: null,
+          rectified_on_time: '',
+        }]);
+      } catch (e) {
+        console.error('Deep link load failed', e);
+        toast.error('Could not load the requested asset');
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkAssetId]);
+
+  const exitSingleAssetMode = () => {
+    setSingleAssetMode(false);
+    setDeepLinkAsset(null);
+    setSearchParams({});
+    setSelectedAssets([]);
+    setInspectionItems([]);
+  };
 
   const loadStations = async () => {
     const res = await stationsAPI.list();
@@ -275,6 +334,30 @@ export default function InspectionPage() {
         <h1 className="text-2xl font-semibold tracking-tight">New Inspection</h1>
         <p className="text-sm text-muted-foreground">Record asset inspection findings</p>
       </div>
+
+      {singleAssetMode && deepLinkAsset && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <ClipboardCheck className="h-4 w-4 text-primary flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">
+                Single-asset inspection: <span className="text-primary">{deepLinkAsset.asset_number}</span>
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {deepLinkAsset.asset_type_name} &middot; {deepLinkAsset.station_name} &middot; {deepLinkAsset.location_name}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={exitSingleAssetMode}
+            data-testid="exit-single-asset-mode"
+          >
+            Switch to multi-asset
+          </Button>
+        </div>
+      )}
 
       {/* Type Selection */}
       <Tabs value={inspectionType} onValueChange={(v) => { setInspectionType(v); setSelectedAssets([]); setInspectionItems([]); }}>

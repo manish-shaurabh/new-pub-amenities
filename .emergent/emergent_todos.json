@@ -1,34 +1,22 @@
 [
   {
-    "content": "Phase A1+A2 (Schedules multi-filter)",
+    "content": "Phase 4.2 - Single-asset deep link on /inspection",
     "status": "completed"
   },
   {
-    "content": "Phase B1+B2 (Approval workflow with Pass/Fail)",
+    "content": "Phase 4.3 - Approving Supervisor Dashboard",
     "status": "completed"
   },
   {
-    "content": "Phase C1 - Backend: Performance analytics endpoints",
+    "content": "Phase 4.4 - Reporting Officer Dashboard",
     "status": "completed"
   },
   {
-    "content": "Phase D1+D2+D3 - Supervisor Dashboard (Overview / My Tasks / My Performance) with station filter, dept badge, health pie",
+    "content": "Phase 4.5 - Superadmin Dashboard redesign",
     "status": "completed"
   },
   {
-    "content": "Phase D4 - Single-asset inspect deep link (?asset_id= on /inspection page) — currently only navigates, not pre-selecting",
-    "status": "pending"
-  },
-  {
-    "content": "Phase E - Approving Supervisor Dashboard (asset buttons, station/dept filters, station-health pie + drill-down, My Supervisors, My Tasks approval queue)",
-    "status": "pending"
-  },
-  {
-    "content": "Phase F - Reporting Officer Dashboard (ASUP-style scoped to dept + assigned stations)",
-    "status": "pending"
-  },
-  {
-    "content": "Phase G - Superadmin Dashboard redesign (asset categories, ROs/ASUPs/Stations/Divisions buttons with drill-downs)",
-    "status": "pending"
+    "content": "Inspection History role-scoping (Supervisor / ASUP / RO scoped server-side)",
+    "status": "completed"
   }
 ]

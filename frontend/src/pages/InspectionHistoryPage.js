@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { inspectionsAPI, assetsAPI, assetTypesAPI } from '../lib/api';
+import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -9,6 +10,7 @@ import { ClipboardCheck, Users, Calendar, ChevronDown, User, FileText, Image as 
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 
 export default function InspectionHistoryPage() {
+  const { user } = useAuth();
   const [inspections, setInspections] = useState([]);
   const [assets, setAssets] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
@@ -18,12 +20,19 @@ export default function InspectionHistoryPage() {
   const [selectedInspection, setSelectedInspection] = useState(null);
   const [assetHistory, setAssetHistory] = useState(null);
 
-  useEffect(() => { loadAll(); }, []);
+  // Scope determination: only Superadmin/Admin see everything; other roles
+  // are scoped server-side via for_user_id.
+  const isScoped = user && !['superadmin', 'admin'].includes(user.role);
+
+  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [user?._id]);
 
   const loadAll = async () => {
+    if (!user) return;
     try {
+      const params = { limit: 200 };
+      if (isScoped) params.for_user_id = user._id;
       const [inspRes, assetsRes, typesRes] = await Promise.all([
-        inspectionsAPI.list({ limit: 200 }),
+        inspectionsAPI.list(params),
         assetsAPI.list({}),
         assetTypesAPI.list()
       ]);
