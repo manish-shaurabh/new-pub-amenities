@@ -5,13 +5,17 @@
   - Asset master data (stations/locations/asset types/assets)
   - Inspections (individual + SIG)
   - Defect tracking + Orange/Red list aging
-  - Approval workflow (mark working → approve)
-  - Scheduling/due tracking (including **asset-level custom inspection frequency in days**)
+  - Approval workflow:
+    - Current: defective → working (pending approval) → approve
+    - Upcoming: **every inspection requires Pass/Fail approval by Approving Supervisor (or Superadmin)**
+  - Scheduling/due tracking:
+    - **Asset-level custom inspection frequency in days**
+    - **Role-based schedules view** (Supervisor / Approving Supervisor / Admin)
   - Photo evidence uploads
   - Multi-role access with clear UX
-- Ensure the **core workflow** is proven end-to-end: inspection → mark defective → Orange List → mark working → approving supervisor field-verifies/approves → removed from Orange List.
+- Ensure the core workflow is proven end-to-end: inspection → mark defective → Orange List → mark working → approve → removed from Orange List.
 - Provide operational visibility with analytics dashboards, exports, in-app notifications, and auditable event history.
-- Improve day-to-day usability with **neat, categorized, collapsible UIs**, and quick access to **asset history** and **user inspection history** via modals/slide-outs.
+- Improve usability with neat, categorized, collapsible UIs and quick access to asset/supervisor histories.
 - Prepare for production readiness: reporting/analytics, UX hardening, and external notifications (SMS/WhatsApp) + strict RBAC enforcement.
 - Reduce recurring UI regressions by standardizing Shadcn `<Select>` placeholder handling (**never use empty string values**).
 
@@ -52,28 +56,24 @@ Delivered user stories:
 5. Users can view Orange List, inspection history, and audit trail.
 
 Implemented (Frontend + Backend):
-- **Authentication:** Employee ID + Password + JWT (login + session persistence).
-- **App shell:** Responsive layout (sidebar + topbar) + notification bell.
-- **Dashboard:** KPI stats, recent inspections, Orange List summary.
-- **Asset Registry:** Search + filtering + CRUD (admin-only actions).
-- **Inspections:**
-  - Individual: station → location → assets → status/checklist/remarks/photos.
-  - SIG: station-wide assets, participant selection, submit by approving supervisor.
-  - UX: assets load on station select; location refines the list.
-- **Orange List:** Defective tracking, mark working, approve/resolved workflow.
-- **Notifications:** In-app bell icon + unread count + mark-all-read.
-- **Schedules:** Due/overdue tracking + due-today list.
-- **User Management:** CRUD + station assignment + role assignment.
-- **Admin Panel:** Departments, Stations, Locations, Asset Types + checklist builder.
-- **Role Management:** Superadmin can grant/revoke Admin powers.
-- **File Upload:** Photo evidence upload and preview.
-- **Audit Logging:** Key events captured and viewable via API.
-- **Seed script:** Creates Superadmin + sample data for immediate usage.
+- Authentication: Employee ID + Password + JWT.
+- App shell: Responsive layout (sidebar + topbar) + notification bell.
+- Dashboard: KPI stats + charts + recent inspections + Orange List summary (will be redesigned per role).
+- Asset Registry: Search + filtering + CRUD (admin-only actions).
+- Inspections: Individual + SIG.
+- Orange List: Defective tracking and approval workflow.
+- Notifications: In-app bell dropdown + unread count + mark-all-read.
+- Schedules: Due/overdue tracking + due-today list (later replaced with frequency-based schedules).
+- User Management: CRUD + assignments.
+- Admin Panel: Departments, Stations, Locations, Asset Types + checklist builder.
+- Role Management: Superadmin can grant/revoke Admin.
+- File Upload: Photo evidence upload and preview.
+- Audit Logging.
+- Seed script.
 
 Testing / Exit criteria met:
-- Backend: **100% pass rate** (all tested endpoints and flows).
-- Frontend: **95%+** (all major user journeys validated; only minor UX notes).
-- A user can operate the app end-to-end in the browser with seeded data.
+- Backend: 100% pass rate for tested flows.
+- Frontend: 95%+ for major user journeys.
 
 ---
 
@@ -82,231 +82,162 @@ Testing / Exit criteria met:
 
 Delivered:
 - Admin Panel:
-  - ✅ Edit/update for Stations
-  - ✅ Edit/update for Locations
-  - ✅ Locations view reorganized into a station-grouped accordion
-  - ✅ Edit/update for Asset Types (including checklist)
+  - Edit/update for Stations
+  - Edit/update for Locations
+  - Locations reorganized into a station-grouped accordion
+  - Edit/update for Asset Types (including checklist)
 - Inspection Flow:
-  - ✅ Checklist from Asset Type appears during inspection for selected assets
-  - ✅ Checklist items are interactive and submitted with inspection payload
-
-Exit criteria met:
-- Checklist verified in UI during inspection (screenshots + live verification).
+  - Checklist from Asset Type appears during inspection for selected assets
+  - Checklist items interactive and submitted with inspection payload
 
 ---
 
-### Phase 3 — UX Restructure + Assignment Improvements (Current / Next)
-**Goal:** Implement the next set of changes across Users, Assets, Inspections, and History for a categorized, faster workflow.
+### Phase 3 — UX Restructure + Assignment Improvements ✅ COMPLETE (as of current scope)
+**Goal:** Implement requested changes across Users, Assets, Inspections, History, and Scheduling.
 
 #### Phase 3.0 — Stability Fix: Asset Registry Edit Crash (Shadcn Select empty string) ✅ COMPLETE
-Context / root cause:
-- Asset Registry Edit modal crashed due to Shadcn UI `<SelectItem>` using an empty string: `<SelectItem value="">No Assignment</SelectItem>`.
-
-Fix implemented:
-- Frontend (`/app/frontend/src/pages/AssetsPage.js`):
-  - Replaced `value=""` with `value="none"` for “No Assignment”.
-  - Updated `handleCreate` and `handleUpdate` to map `"none" → null` when sending to backend.
-
-Verification:
-- Confirmed via screenshot tool:
-  - Edit modal opens cleanly.
-  - Assigned Supervisor dropdown opens and shows “No Assignment” + supervisor list without crashing.
-
-Hardening note (recurring regression):
-- Standardize: **never use empty string values in Shadcn SelectItem**; use sentinel values (e.g., `"none"`) and translate in handlers.
+- Root cause: Shadcn `<SelectItem>` with `value=""`.
+- Fix: `value="none"` sentinel + mapping `none ↔ null`.
+- Verified with screenshot tool.
 
 ---
 
 #### Phase 3.0.1 — Change: Inspection Frequency as Custom “Days” (Asset Registry) ✅ COMPLETE
-**Why:** User requirement: inspection frequency should be configurable as a custom number of days (not only daily/weekly/monthly/quarterly).
+**Why:** Frequency must be a user-entered number of days, not only daily/weekly/monthly/quarterly.
 
 Delivered:
 - Backend:
-  - `AssetCreate.schedule_frequency` changed from `Optional[ScheduleFrequency]` → `Optional[int]` (days).
-  - `AssetResponse.schedule_frequency` changed to `Optional[int]`.
-  - `POST /api/assets` and `PUT /api/assets/{asset_id}` store integer directly.
-  - Added `_normalize_freq_days()` in `server.py` to convert legacy strings on reads for backward compatibility:
-    - daily=1, weekly=7, monthly=30, quarterly=90.
-  - Inspection submission improvement: when an inspection is submitted, each inspected asset now updates:
-    - `last_inspected = now`
-    - `next_due = now + freq_days` **if** `schedule_frequency` is set.
-    - (This is an improvement over prior behavior where `next_due` could remain stale unless schedules were separately set.)
-- Frontend (`AssetsPage.js`):
-  - Replaced schedule frequency `<Select>` with `<Input type="number" min="1">` labeled **“Inspection Frequency (days)”**.
-  - Asset badge now renders as **“every Nd”**.
-
-Verification:
-- Backend: validated via requests script:
-  - Legacy values normalize correctly for existing assets.
-  - Create/update with integer days works.
-  - Null clears value.
-- Frontend: validated via screenshot tool:
-  - Edit modal shows “Inspection Frequency (days)” number input with prefilled value.
-  - Badge displays “every Nd”.
-
-Notes / follow-ups:
-- Seed data and backend tests (`test_core.py`) may still contain string frequencies (e.g., "weekly"); normalization on reads covers existing DB values, but tests/seed may be updated later for consistency.
+  - `schedule_frequency` changed to `Optional[int]` (days) in asset schema.
+  - `_normalize_freq_days()` converts legacy strings (daily=1, weekly=7, monthly=30, quarterly=90) on reads.
+  - On inspection submission, assets update `last_inspected` and compute `next_due = now + freq_days` when frequency exists.
+- Frontend:
+  - Frequency select replaced by `Input type=number` labeled “Inspection Frequency (days)”.
+  - Asset badge displays “every Nd”.
 
 ---
 
-#### 3.1 User Management (Departments-first + categorized roles) ✅ COMPLETE
+#### Phase 3.1 — User Management Enhancements ✅ COMPLETE
 Delivered:
 - User Management moved inside Admin Panel.
-- Station Personnel Mapping implemented in Admin Panel.
-- Linking Supervisors to Reporting Officers implemented (backend + frontend).
-
-Exit criteria met:
-- Admin Panel supports dynamic user management with station personnel mapping and supervisor → reporting officer linking.
+- Station Personnel Mapping implemented.
+- Linking Supervisors to Reporting Officers (backend + frontend).
 
 ---
 
-#### 3.2 Asset Registry (Grouped by Asset Type + asset detail + supervisor history) ✅ COMPLETE
+#### Phase 3.2 — Asset Registry Restructure + History Drawers ✅ COMPLETE
 Delivered:
-- Asset Registry grouped by type.
-- Shows supervisor names.
-- Clickable supervisor name opens Supervisor History drawer.
-- Clickable asset number opens Asset History drawer.
-
-Note:
-- Manual “assign supervisor” functionality exists via `assigned_supervisor_id` in asset form.
+- Group by asset type.
+- Shows supervisor name.
+- Clickable asset and supervisor history drawers.
 
 ---
 
-#### 3.3 New Inspection (Role-based filtering + rectification timestamp + photo deletion + remarks attribution) ✅ COMPLETE
+#### Phase 3.3 — New Inspection Improvements ✅ COMPLETE
 Delivered:
-- Role-based filtering:
-  - Superadmin: sees all.
-  - Approving supervisor: sees assigned stations.
-  - Supervisor: sees assigned station + department.
-- Inspection flow enhancements:
-  - Backdated defect logging supported.
-  - “Remarks By” tracking stored.
-  - “Rectified On” date/time picker when marking a defective asset as OK.
-  - Photo management: allow delete before submission.
+- Role-based filtering.
+- Backdated defect logging.
+- Remarks attribution (`remarks_by`).
+- Rectified On date/time when marking OK.
+- Photo deletion before submission.
 
 ---
 
-#### 3.4 Inspection History (Asset-wise grouping) ✅ COMPLETE
+#### Phase 3.4 — Inspection History Restructure ✅ COMPLETE
 Delivered:
-- Inspection History restructured to be asset-wise grouped.
+- Asset-wise grouping.
 
 ---
 
-### Phase 4 — Dashboards + Notifications UX/Logic (Next, P1) ⏳ NOT STARTED
-**Goal:** Implement role-specific dashboards and a clear, actionable notifications UX.
+#### Phase 3.0.2 — Role-based Sidebar + Frequency-based Schedules + Transfer Supervisor ✅ COMPLETE
+**Why:** User requested schedules to be the primary operational view (week default) and role-based navigation, plus supervisor transfer handling.
 
-Dependency:
-- User explicitly requested: **ideate on dashboards and notifications before implementation**.
+Delivered:
+1. **Sidebar RBAC changes** (Frontend: `AppLayout.js`):
+   - Asset Registry: visible **only** to Superadmin.
+   - Orange List: visible only to **Superadmin/Admin/Reporting Officer**.
+   - Schedules: visible to all.
 
-Status:
-- Ideation pending. User has not yet provided role-wise KPI logic and notification trigger events.
+2. **Backend endpoints** (FastAPI):
+   - `GET /api/schedules/supervisor/{user_id}?from_date=&to_date=`
+     - Computes frequency-based inspection tasks from assets assigned to the supervisor.
+     - Default range: today → today+7.
+     - Returns **asset-category grouped** tasks with `due_date`, `days_left`, `is_overdue`, `frequency_days`.
+   - `GET /api/schedules/approving-supervisor/{user_id}/supervisors`
+     - Lists supervisors under the approving supervisor’s stations.
+     - Includes department and asset counts.
+   - `POST /api/admin/transfer-supervisor`
+     - Bulk reassign (or unassign) assets from one supervisor to another.
+     - Handles invalid IDs gracefully.
+     - Audit logged.
 
-User stories (to be finalized with user):
-1. Each role sees a dashboard relevant to their responsibilities:
-   - Superadmin → global health overview.
-   - Admin → admin ops overview.
-   - Reporting Officer → assets/defects/approvals relevant to their reporting scope.
-   - Approving Supervisor → pending approvals queue and station health.
-   - Supervisor → my assets, due inspections, my defects.
-2. Notifications are visible in a dedicated view (in addition to bell dropdown), filterable, and markable as read.
-3. Notification triggers align with the Orange/Red escalation and approval workflow.
+3. **Frontend Schedules UI redesign** (`SchedulesPage.js` + `api.js`):
+   - Supervisor view: date range picker + 7d/14d/30d presets + grouped tasks.
+   - Approving Supervisor view: supervisor cards → click opens that supervisor schedule.
+   - Admin/Superadmin/RO view: pick supervisor dropdown → view schedule.
+
+4. **Admin Panel — Transfer tab** (`AdminPage.js`):
+   - New “Transfer” tab.
+   - From/To supervisor dropdowns + “Unassign” option.
+   - Calls transfer endpoint.
+
+Verification:
+- Tested backend with scripted requests.
+- Tested UI with screenshot tool across Superadmin and Supervisor roles.
+
+---
+
+### Phase 4 — Dashboards + Notifications UX/Logic (Next, P1) ⏳ PENDING (awaiting remaining user input)
+**Goal:** Implement role-specific dashboards and a clean, minimal UX per the new dashboard requirements.
+
+Known requirements from user (captured):
+- Dashboard should be minimalistic; remove “Orange/Red list (active)” block from dashboard.
+- Supervisor dashboard (planned): station dropdown, dept highlight, asset-type buttons with summary counts, My Tasks (My Assets / Pending Tasks), single-asset inspection via task click, health pie charts, My Performance metrics.
+- Approving Supervisor dashboard (planned): station dropdown + department dropdown, My Supervisors analytics, station health pie, collapsible station → asset category → assets list, My Tasks = approvals queue with Pass/Fail.
+- **Every inspection requires approval** (Approving Supervisor or Superadmin). Fail should revert effective state and preserve defect aging.
+
+Missing inputs (blocked by user):
+- Admin dashboard logic.
+- Reporting Officer dashboard logic.
 
 Implementation steps:
-- Ideation workshop (with user):
-  - Confirm KPI/widget list per role.
-  - Confirm notification trigger events and recipients.
-  - Confirm whether Red/Orange should generate reminders and on what cadence.
-- Backend:
-  - Add/adjust analytics endpoints as needed (aggregation by station/department/type/time).
-  - Ensure notification query endpoints support pagination/filters (unread, type, date range).
-- Frontend:
-  - Build role-specific dashboard layouts.
-  - Add Notifications page/button to view all notifications.
+1. Dashboard design pass: implement Supervisor + Approving Supervisor first, then Admin/RO when user provides logic.
+2. Add a dedicated Notifications page/button (user requested earlier) after dashboard scope is locked.
+3. Implement updated approval workflow (Pass/Fail for all inspections) and integrate into dashboards “My Tasks”.
 
 Exit criteria:
-- User-approved dashboard definitions and notification triggers documented.
-- Dashboard and notifications implemented and verified for at least Superadmin + one operational role.
+- Supervisor and Approving Supervisor dashboards match the agreed logic.
+- Approval queue works end-to-end (Pass/Fail + audit + history integrity).
 
 ---
 
-### Phase 5 — Hardening + Reporting + Schedules/Overdue UX (Future)
-**Goal:** Make the MVP production-ready and management-usable with stronger reporting, reliability, and scheduling experience.
-
-User stories:
-1. Admin/RO can set/adjust inspection frequency per asset type and/or per asset with bulk operations.
-2. Supervisors can see what’s due today/this week for their assigned stations (personalized queues).
-3. RO can export Orange List + inspection history (station/department/date filters).
-4. Approving supervisors can see a focused “Pending Approvals” queue and complete verification quickly.
-5. Management can view completion/overdue metrics by station, department, asset type, and time.
-
-Implementation steps:
-- Reporting endpoints + UI widgets:
-  - Completion rate, overdue counts, defect aging, recurring defect hotspots.
-  - Trends by station/department/asset type.
-- Scheduling UX improvements:
-  - “My Due Items” queue, calendar/list toggle, bulk scheduling.
-  - Clear overdue severity and aging indicators.
-- Background processing:
-  - Scheduler job/worker to compute due/overdue, generate notification outbox messages, and retry.
-- Notification hardening:
-  - Persist delivery attempts, retry policy, admin visibility for failures.
-- Data quality + audit hardening:
-  - Stronger validation, idempotency on inspection submission, and improved audit log structure.
-- Testing:
-  - Regression suite for workflows + schedule computations; E2E test pass.
-
-Exit criteria:
-- Overdue logic stable; metrics consistent; no broken flows from Phase 4.
+### Phase 5 — Hardening + Reporting + Scheduling Ops (Future)
+- Bulk operations for scheduling/assignment.
+- Export reports.
+- Improved audit and idempotency.
+- Notification reminders and escalation policy.
 
 ---
 
-### Phase 6 — Full RBAC Enforcement + External Notifications (SMS/WhatsApp) (Future)
-**Goal:** Enforce strict role- and assignment-based access + integrate external notifications.
-
-User stories:
-1. Users log in with Employee ID + password; secure sessions and refresh flow as needed.
-2. Admin can create users and assign roles, departments, and stations with enforceable constraints.
-3. RO only sees stations/departments assigned to them; supervisors constrained to assigned stations/areas.
-4. Superadmin can grant/revoke admin privileges safely with full audit.
-5. RO receives SMS/WhatsApp alerts for new defective assets (and optional reminders for overdue inspections).
-
-Implementation steps:
-- RBAC enforcement:
-  - Backend route guards by role + assigned stations + department.
-  - Frontend route/menu guards aligned with backend.
-  - Prevent privilege escalation and enforce least-privilege.
-- External notification integration:
-  - Choose provider (e.g., Twilio or equivalent) for SMS + WhatsApp.
-  - Implement provider adapters + outbox/retry logic.
-  - Admin settings for enabling/disabling channels per role/station.
-- Security hardening:
-  - Rate limiting on login, password policy, audit all role changes.
-- Testing:
-  - Multi-user role tests validating access boundaries; notification delivery tests in staging.
-
-Exit criteria:
-- No privilege escalation; all role restrictions validated.
-- SMS/WhatsApp notifications deliver reliably with retries and failure visibility.
+### Phase 6 — Strict RBAC + External Notifications (SMS/WhatsApp) (Future)
+- Strong backend enforcement by role + station + department.
+- Outbox + retry for SMS/WhatsApp integration.
 
 ---
 
 ## Next Actions
-1. **Phase 4 ideation session** (Dashboards + Notifications): user to provide role-wise KPI logic and notification trigger events.
-2. Based on ideation outcomes:
-   - Implement dashboard endpoints/widgets.
-   - Add Notifications full-page UI.
-3. Prevent recurrence:
-   - Add a quick repo check (grep/lint rule) to fail CI/build if `SelectItem value=""` exists.
-4. (Optional cleanup) Align seed/test data to use integer `schedule_frequency` days everywhere for consistency (normalization already provides backward compatibility).
+1. **Continue Phase 4 ideation**: user to provide Admin + Reporting Officer dashboard logic.
+2. Implement **Supervisor dashboard** and **Approving Supervisor dashboard** per the detailed requirements already provided.
+3. Implement **inspection approval for every inspection** (Pass/Fail), ensuring defect aging and inspection history rules.
+4. Add Notifications full-page view (after dashboard UX is finalized).
 
 ---
 
 ## Success Criteria
-- Core flow works reliably: inspection → defect → Orange List → mark working → approve → removed, with full audit trail.
-- Admin UX supports fast maintenance: categorized pages, modals/slide-outs, minimal scrolling.
-- Assets are discoverable by type; asset and supervisor histories are one click away.
-- Rectification tracking captures “Rectified On” accurately and is visible in history.
-- Scheduling produces correct due/overdue states and surfaces them clearly.
-- **Inspection frequency supports custom “days” entry per asset and correctly updates `next_due` after inspections.**
-- Notifications: in-app works end-to-end; Notifications page provides complete visibility.
-- After Phase 6: RBAC correctly restricts access by role + station + department with strong security guarantees; external SMS/WhatsApp ready/working.
+- Core workflow works reliably with full audit trail.
+- Scheduling:
+  - Frequency is configured in days.
+  - Supervisor/Approving Supervisor/Admin can view schedules as requested (week default + date range).
+  - Supervisor transfer/reassignment supported.
+- Dashboards are role-specific, minimal, and operationally useful.
+- Every inspection requires approval at the station level (Approving Supervisor/Superadmin).
+- Notifications and approvals are actionable from the UI.

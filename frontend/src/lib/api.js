@@ -126,6 +126,18 @@ export const schedulesAPI = {
   list: (overdueOnly) => api.get('/schedules', { params: { overdue_only: overdueOnly } }),
   dueToday: (userId) => api.get('/schedules/due-today', { params: { user_id: userId } }),
   create: (data) => api.post('/schedules', data),
+  forSupervisor: (userId, fromDate, toDate) => api.get(`/schedules/supervisor/${userId}`, {
+    params: { from_date: fromDate, to_date: toDate }
+  }),
+  supervisorsUnderApproving: (userId) => api.get(`/schedules/approving-supervisor/${userId}/supervisors`),
+};
+
+// Admin
+export const adminAPI = {
+  transferSupervisor: (fromSupervisorId, toSupervisorId) => api.post('/admin/transfer-supervisor', {
+    from_supervisor_id: fromSupervisorId,
+    to_supervisor_id: toSupervisorId,
+  }),
 };
 
 // Dashboard

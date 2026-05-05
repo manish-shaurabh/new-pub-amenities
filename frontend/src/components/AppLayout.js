@@ -21,10 +21,10 @@ import { ScrollArea } from './ui/scroll-area';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, roles: 'all' },
-  { path: '/assets', label: 'Asset Registry', icon: Box, roles: 'all' },
+  { path: '/assets', label: 'Asset Registry', icon: Box, roles: ['superadmin'] },
   { path: '/inspection', label: 'New Inspection', icon: ClipboardCheck, roles: 'all' },
   { path: '/inspection-history', label: 'Inspection History', icon: History, roles: 'all' },
-  { path: '/orange-list', label: 'Orange List', icon: AlertTriangle, roles: 'all' },
+  { path: '/orange-list', label: 'Orange List', icon: AlertTriangle, roles: ['superadmin', 'admin', 'reporting_officer'] },
   { path: '/schedules', label: 'Schedules', icon: Calendar, roles: 'all' },
   { path: '/admin', label: 'Admin Panel', icon: Settings, roles: ['superadmin', 'admin'] },
 ];

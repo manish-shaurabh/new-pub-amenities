@@ -1,18 +1,34 @@
 [
   {
-    "content": "Implement role-based filtering in New Inspection page",
+    "content": "Sidebar: hide Asset Registry from non-Superadmin; hide Orange List from Supervisor/Approving Supervisor",
     "status": "completed"
   },
   {
-    "content": "Add date/time input for inspection status recording",
+    "content": "Backend: GET /api/schedules/supervisor/{user_id}?from_date=&to_date= → returns due tasks asset-category-wise based on assigned assets + frequency",
     "status": "completed"
   },
   {
-    "content": "Verify inspection history records all status changes",
+    "content": "Backend: GET /api/schedules/approving-supervisor/{user_id}/supervisors → list of supervisors at this approving sup's stations",
     "status": "completed"
   },
   {
-    "content": "Test role-based access (Superadmin, Approving Supervisor, Supervisor)",
-    "status": "in_progress"
+    "content": "Backend: POST /api/admin/transfer-supervisor → bulk reassign all assets from old→new supervisor",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: Add API client methods for new schedules endpoints",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: Redesign SchedulesPage with role-based views (Supervisor: date range + category-wise; Approving Sup: supervisor list; Admin/Superadmin: pick supervisor)",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: Admin Panel — add 'Transfer Supervisor' section for bulk reassignment",
+    "status": "completed"
+  },
+  {
+    "content": "Test schedules end-to-end (frontend UI + backend)",
+    "status": "completed"
   }
 ]

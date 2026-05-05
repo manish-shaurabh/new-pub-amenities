@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI } from '../lib/api';
+import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User } from 'lucide-react';
+import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft } from 'lucide-react';
 
 // Import the user management components from the old UsersPage
 const roleLabels = {
@@ -65,6 +65,42 @@ export default function AdminPage() {
   // Personnel Map filter
   const [personnelStationFilter, setPersonnelStationFilter] = useState('all');
   const [personnelDepartmentFilter, setPersonnelDepartmentFilter] = useState('all');
+
+  // Transfer Supervisor tab
+  const [transferFrom, setTransferFrom] = useState('');
+  const [transferTo, setTransferTo] = useState('');
+  const [transferLoading, setTransferLoading] = useState(false);
+
+  const handleTransferSupervisor = async () => {
+    if (!transferFrom) {
+      toast.error('Select the supervisor to transfer assets from');
+      return;
+    }
+    if (transferFrom === transferTo) {
+      toast.error('From and To supervisor cannot be the same');
+      return;
+    }
+    const fromUser = users.find((u) => u._id === transferFrom);
+    const toUser = transferTo && transferTo !== 'unassign' ? users.find((u) => u._id === transferTo) : null;
+    const confirmMsg = toUser
+      ? `Reassign all assets from ${fromUser?.name} to ${toUser.name}?`
+      : `Unassign all assets from ${fromUser?.name}? They will have no supervisor afterwards.`;
+    if (!window.confirm(confirmMsg)) return;
+    setTransferLoading(true);
+    try {
+      const r = await adminAPI.transferSupervisor(
+        transferFrom,
+        transferTo === 'unassign' || !transferTo ? null : transferTo
+      );
+      toast.success(`${r.data.assets_updated} asset(s) reassigned`);
+      setTransferFrom('');
+      setTransferTo('');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Transfer failed');
+    } finally {
+      setTransferLoading(false);
+    }
+  };
   
   useEffect(() => { loadAll(); }, []);
 
@@ -398,13 +434,14 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="stations"><Building2 className="h-4 w-4 mr-2" /> Stations</TabsTrigger>
           <TabsTrigger value="locations"><MapPin className="h-4 w-4 mr-2" /> Locations</TabsTrigger>
           <TabsTrigger value="asset-types"><Layers className="h-4 w-4 mr-2" /> Asset Types</TabsTrigger>
           <TabsTrigger value="users"><Users className="h-4 w-4 mr-2" /> Users</TabsTrigger>
           <TabsTrigger value="link-supervisors"><Link className="h-4 w-4 mr-2" /> Link</TabsTrigger>
           <TabsTrigger value="personnel-map"><TableIcon className="h-4 w-4 mr-2" /> Personnel Map</TabsTrigger>
+          <TabsTrigger value="transfer"><ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer</TabsTrigger>
         </TabsList>
 
         {/* STATIONS TAB */}
@@ -827,6 +864,72 @@ export default function AdminPage() {
               </Card>
             );
           })}
+        </TabsContent>
+
+        {/* TRANSFER SUPERVISOR TAB */}
+        <TabsContent value="transfer" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <ArrowRightLeft className="h-4 w-4 text-primary" /> Transfer Assets to Another Supervisor
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Reassign every asset currently allocated to a supervisor over to another supervisor. Use this when a
+                supervisor is transferred or retired. Choose &quot;Unassign&quot; to leave the assets without a supervisor.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs">From Supervisor *</Label>
+                  <Select value={transferFrom} onValueChange={setTransferFrom}>
+                    <SelectTrigger data-testid="transfer-from-supervisor">
+                      <SelectValue placeholder="Select supervisor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users.filter((u) => u.role === 'supervisor').map((s) => (
+                        <SelectItem key={s._id} value={s._id}>
+                          {s.name} ({s.employee_id})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">To Supervisor</Label>
+                  <Select value={transferTo} onValueChange={setTransferTo}>
+                    <SelectTrigger data-testid="transfer-to-supervisor">
+                      <SelectValue placeholder="Select target (or unassign)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassign">— Unassign (no supervisor) —</SelectItem>
+                      {users.filter((u) => u.role === 'supervisor' && u._id !== transferFrom).map((s) => (
+                        <SelectItem key={s._id} value={s._id}>
+                          {s.name} ({s.employee_id})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {transferFrom && (
+                <p className="text-xs text-muted-foreground">
+                  This action affects every asset currently assigned to{' '}
+                  <span className="font-medium text-foreground">
+                    {users.find((u) => u._id === transferFrom)?.name}
+                  </span>
+                  .
+                </p>
+              )}
+              <Button
+                onClick={handleTransferSupervisor}
+                disabled={transferLoading || !transferFrom}
+                data-testid="transfer-execute-button"
+              >
+                {transferLoading ? 'Transferring…' : 'Transfer Assets'}
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
