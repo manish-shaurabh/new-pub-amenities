@@ -341,10 +341,12 @@ async def list_assets(
     
     types_map = {}
     types_checklist_map = {}
+    types_dept_map = {}
     if type_ids:
         types_docs = await asset_types_collection.find({"_id": {"$in": [ObjectId(tid) for tid in type_ids]}}).to_list(1000)
         types_map = {str(t["_id"]): t["name"] for t in types_docs}
         types_checklist_map = {str(t["_id"]): t.get("checklist", []) for t in types_docs}
+        types_dept_map = {str(t["_id"]): t.get("department_id") for t in types_docs}
     stations_map = {}
     if station_ids:
         stations_docs = await stations_collection.find({"_id": {"$in": [ObjectId(sid) for sid in station_ids]}}).to_list(1000)
@@ -364,6 +366,7 @@ async def list_assets(
         doc["location_name"] = locations_map.get(doc["location_id"], "Unknown")
         doc["checklist"] = types_checklist_map.get(doc["asset_type_id"], [])
         doc["assigned_supervisor_name"] = supervisors_map.get(doc.get("assigned_supervisor_id", ""), None)
+        doc["department_id"] = types_dept_map.get(doc["asset_type_id"])
     
     return [serialize_doc(d) for d in docs]
 

@@ -44,7 +44,19 @@ export default function InspectionPage() {
 
   const loadStations = async () => {
     const res = await stationsAPI.list();
-    setStations(res.data);
+    let filteredStations = res.data;
+    
+    // Role-based filtering
+    if (user.role === 'approving_supervisor') {
+      // Approving supervisors see only their assigned stations
+      filteredStations = res.data.filter(s => s.approving_supervisor_id === user._id);
+    } else if (user.role === 'supervisor' || user.role === 'reporting_officer') {
+      // Supervisors and ROs see only their assigned stations
+      filteredStations = res.data.filter(s => user.assigned_stations?.includes(s._id));
+    }
+    // Superadmin and admin see all stations
+    
+    setStations(filteredStations);
   };
 
   const loadUsers = async () => {
@@ -61,7 +73,22 @@ export default function InspectionPage() {
     const params = { station_id: stationId };
     if (locationId) params.location_id = locationId;
     const res = await assetsAPI.list(params);
-    setAssets(res.data);
+    
+    let filteredAssets = res.data;
+    
+    // Role-based filtering for assets
+    if (user.role === 'supervisor') {
+      // Supervisors see only assets from their department
+      filteredAssets = res.data.filter(a => {
+        // Get asset type department
+        const assetDeptId = a.department_id; // We need this in asset response
+        return assetDeptId === user.department_id;
+      });
+    }
+    // Approving supervisors see all departments for their stations
+    // Superadmin/admin see everything
+    
+    setAssets(filteredAssets);
   };
 
   const handleStationChange = (stationId) => {

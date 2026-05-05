@@ -1,26 +1,18 @@
 [
   {
-    "content": "Move User Management into Admin Panel as a tab",
+    "content": "Implement role-based filtering in New Inspection page",
     "status": "completed"
   },
   {
-    "content": "Create Link Supervisors tab in Admin Panel",
+    "content": "Add date/time input for inspection status recording",
     "status": "completed"
   },
   {
-    "content": "Create Station Personnel Map tab with department-wise table",
+    "content": "Verify inspection history records all status changes",
     "status": "completed"
   },
   {
-    "content": "Update Admin Panel Station form with Approving Supervisor field",
-    "status": "completed"
-  },
-  {
-    "content": "Update navigation to remove User Management page",
-    "status": "completed"
-  },
-  {
-    "content": "Test all admin panel features",
+    "content": "Test role-based access (Superadmin, Approving Supervisor, Supervisor)",
     "status": "in_progress"
   }
 ]
