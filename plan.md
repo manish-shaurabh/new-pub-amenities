@@ -13,6 +13,7 @@
 - Provide operational visibility with analytics dashboards, exports, in-app notifications, and auditable event history.
 - Improve day-to-day usability with **neat, categorized, collapsible UIs**, and quick access to **asset history** and **user inspection history** via modals/slide-outs.
 - Prepare for production readiness: reporting/analytics, UX hardening, and external notifications (SMS/WhatsApp) + strict RBAC enforcement.
+- Reduce recurring UI regressions by standardizing Shadcn `<Select>` placeholder handling (never use empty string values).
 
 ---
 
@@ -95,115 +96,105 @@ Exit criteria met:
 ---
 
 ### Phase 3 — UX Restructure + Assignment Improvements (Current / Next)
-**Goal:** Implement the next set of changes across Users, Assets, Inspections, and History for a categorized, faster workflow. Add supervisor assignment control in Asset Registry.
+**Goal:** Implement the next set of changes across Users, Assets, Inspections, and History for a categorized, faster workflow.
 
-#### 3.1 User Management (Departments-first + categorized roles) (P0)
-User stories:
-1. As Admin/Superadmin, I can see **Departments first** and expand to see users.
-2. Users inside a department are grouped by role (Supervisors, Approving Supervisors, Reporting Officers, Others).
-3. I can still search users and filter by role across the full dataset.
-4. I can **edit** and **delete** users.
+#### Phase 3.0 — Stability Fix: Asset Registry Edit Crash (Shadcn Select empty string) ✅ COMPLETE
+Context / root cause:
+- Asset Registry Edit modal crashed due to Shadcn UI `<SelectItem>` using an empty string: `<SelectItem value="">No Assignment</SelectItem>`.
 
-Implementation steps:
-- Frontend (`UsersPage.js`):
-  - Replace flat list with department-grouped accordion.
-  - Within each department, render role sections with counts.
-  - Preserve existing search + role filter; apply after grouping.
-  - Add Edit action that opens a modal/slide-out with the existing create form fields.
-- Backend:
-  - Reuse existing `PUT /api/users/{id}`.
-  - Confirm `DELETE /api/users/{id}` is stable and add safeguards (cannot delete self, optionally cannot delete superadmin).
+Fix implemented:
+- Frontend (`/app/frontend/src/pages/AssetsPage.js`):
+  - Replaced `value=""` with `value="none"` for “No Assignment”.
+  - Updated `handleCreate` and `handleUpdate` to map `"none" → null` when sending to backend.
 
-Exit criteria:
-- Users page supports Create, Edit, Delete.
-- Department accordion + role grouping works with search/filter.
+Verification:
+- Confirmed via screenshot tool:
+  - Edit modal opens cleanly.
+  - Assigned Supervisor dropdown opens and shows “No Assignment” + supervisor list without crashing.
 
-#### 3.2 Asset Registry (Grouped by Asset Type + asset detail + supervisor assignment) (P0)
-User stories:
-1. As Admin/RO, I see assets grouped under headings of each **Asset Type** (collapsible).
-2. Asset name is clickable → opens a slide-out showing that asset’s inspection history.
-3. For each asset, I can see assigned **Supervisor(s)** for that asset’s station+department.
-4. As Admin, I can manually **allot/assign** an asset to a selected supervisor (not auto-only).
-
-Implementation steps:
-- Data model change:
-  - Add `assigned_supervisor_ids: string[]` (or `assigned_supervisor_id: string`) to `assets`.
-  - Decide single vs multiple assignment:
-    - Default: single primary supervisor (simpler) but allow future extension.
-- Backend:
-  - Update Asset schemas and endpoints:
-    - `POST/PUT /api/assets` accept supervisor assignment.
-    - `GET /api/assets` returns assigned supervisors (ids + display names) and available supervisors for assignment (optional).
-  - Add helper endpoint if needed:
-    - `GET /api/users/supervisors?station_id=...&department_id=...` → active supervisors list.
-- Frontend (`AssetsPage.js`):
-  - Group by asset type with Collapsible/Accordion sections.
-  - Add supervisor “chip/button” (clickable) to open **Supervisor Inspection History** slide-out.
-  - Add “Assign Supervisor” action in asset card (Admin-only) to choose from supervisors filtered by station+department.
-  - Make asset number clickable to open Asset History slide-out.
-
-Exit criteria:
-- Assets are grouped by type, collapsible.
-- Asset detail slide-out works.
-- Supervisor assignment is manual and visible.
-
-#### 3.3 New Inspection (Assets grouped by Asset Type + quick history access) (P0)
-User stories:
-1. During inspection, assets appear grouped by **Asset Type** (collapsible headers).
-2. Asset name is clickable → opens asset history slide-out without leaving the inspection form.
-
-Implementation steps:
-- Frontend (`InspectionPage.js`):
-  - Transform assets list into groups keyed by `asset_type_name`.
-  - Add clickable asset number that opens asset history slide-out.
-  - Keep selection controls intact for both Individual and SIG modes.
-
-Exit criteria:
-- Inspection page shows grouped assets and history slide-out.
-
-#### 3.4 Inspection Date/Time Fixes (Manual entry + calendar UI distortion) (P0)
-User stories:
-1. Inspector can enter **inspection date/time manually** (for history correctness).
-2. Calendar popover renders correctly (no distortion).
-3. Time selection saves exactly what the user selected.
-
-Implementation steps:
-- Backend:
-  - Extend inspection create schema to accept `inspection_datetime` (ISO) and store it (instead of only server `created_at` for display).
-  - Keep `created_at` as system timestamp; add `inspection_at` as user-provided.
-- Frontend:
-  - Add date+time input to inspection submission (top-level for the inspection).
-  - Fix Popover/Calendar CSS constraints (z-index, overflow containers, width).
-  - Fix time parsing and ISO generation to prevent “random time”.
-
-Exit criteria:
-- Inspection list/detail uses `inspection_at` for display.
-- Manual date/time works reliably.
-
-#### 3.5 Inspection History (Asset-wise, latest-first, collapsible + clickable) (P0)
-User stories:
-1. Inspection history view is asset-wise (not station-wise list).
-2. Under each asset heading, inspections are ordered **latest → oldest**.
-3. Headings are collapsible for neat UI.
-4. Asset name clickable → opens asset history slide-out.
-
-Implementation steps:
-- Backend:
-  - Add endpoint(s) for asset-centric history:
-    - `GET /api/inspections/by-asset?asset_id=...`
-    - or `GET /api/assets/{id}/inspections`.
-  - Enrich inspection items with asset_number/type_name for display.
-- Frontend (`InspectionHistoryPage.js`):
-  - Replace flat inspection list with asset-grouped accordion.
-  - Keep existing filters (station/type) but apply to grouped results.
-  - Add slide-out details for inspection and asset.
-
-Exit criteria:
-- History page is asset-first, collapsible, clickable.
+Hardening note (recurring regression):
+- Standardize: **never use empty string values in Shadcn SelectItem**; use sentinel values (e.g., `"none"`) and translate in handlers.
 
 ---
 
-### Phase 4 — Hardening + Reporting + Schedules/Overdue UX (Future)
+#### 3.1 User Management (Departments-first + categorized roles) ✅ COMPLETE
+Delivered (recent session):
+- User Management moved inside Admin Panel.
+- Station Personnel Mapping implemented in Admin Panel.
+- Linking Supervisors to Reporting Officers implemented (backend + frontend).
+
+Exit criteria met:
+- Admin Panel supports dynamic user management with station personnel mapping and supervisor → reporting officer linking.
+
+---
+
+#### 3.2 Asset Registry (Grouped by Asset Type + asset detail + supervisor history) ✅ COMPLETE
+Delivered (recent session):
+- Asset Registry grouped by type.
+- Shows supervisor names.
+- Clickable supervisor name opens Supervisor History drawer.
+- Clickable asset number opens Asset History drawer.
+
+Note:
+- Manual “assign supervisor” functionality exists via `assigned_supervisor_id` in asset form.
+
+---
+
+#### 3.3 New Inspection (Role-based filtering + rectification timestamp + photo deletion + remarks attribution) ✅ COMPLETE
+Delivered (recent session):
+- Role-based filtering:
+  - Superadmin: sees all.
+  - Approving supervisor: sees assigned stations.
+  - Supervisor: sees assigned station + department.
+- Inspection flow enhancements:
+  - Backdated defect logging supported.
+  - “Remarks By” tracking stored.
+  - “Rectified On” date/time picker when marking a defective asset as OK.
+  - Photo management: allow delete before submission.
+
+---
+
+#### 3.4 Inspection History (Asset-wise grouping) ✅ COMPLETE
+Delivered (recent session):
+- Inspection History restructured to be asset-wise grouped.
+
+---
+
+### Phase 4 — Dashboards + Notifications UX/Logic (Next, P1) ⏳ NOT STARTED
+**Goal:** Implement role-specific dashboards and a clear, actionable notifications UX.
+
+Dependency:
+- User explicitly requested: **ideate on dashboards and notifications before implementation**.
+
+User stories (to be finalized with user):
+1. Each role sees a dashboard relevant to their responsibilities:
+   - Superadmin → global health overview.
+   - Admin → admin ops overview.
+   - Reporting Officer → assets/defects/approvals relevant to their reporting scope.
+   - Approving Supervisor → pending approvals queue and station health.
+   - Supervisor → my assets, due inspections, my defects.
+2. Notifications are visible in a dedicated view (in addition to bell dropdown), filterable, and markable as read.
+3. Notification triggers align with the Orange/Red escalation and approval workflow.
+
+Implementation steps:
+- Ideation workshop (with user):
+  - Confirm KPI/widget list per role.
+  - Confirm notification trigger events and recipients.
+  - Confirm whether Red/Orange should generate reminders and on what cadence.
+- Backend:
+  - Add/adjust analytics endpoints as needed (aggregation by station/department/type/time).
+  - Ensure notification query endpoints support pagination/filters (unread, type, date range).
+- Frontend:
+  - Build role-specific dashboard layouts.
+  - Add Notifications page/button to view all notifications.
+
+Exit criteria:
+- User-approved dashboard definitions and notification triggers documented.
+- Dashboard and notifications implemented and verified for at least Superadmin + one operational role.
+
+---
+
+### Phase 5 — Hardening + Reporting + Schedules/Overdue UX (Future)
 **Goal:** Make the MVP production-ready and management-usable with stronger reporting, reliability, and scheduling experience.
 
 User stories:
@@ -230,11 +221,11 @@ Implementation steps:
   - Regression suite for workflows + schedule computations; E2E test pass.
 
 Exit criteria:
-- Overdue logic stable; metrics consistent; no broken flows from Phase 3.
+- Overdue logic stable; metrics consistent; no broken flows from Phase 4.
 
 ---
 
-### Phase 5 — Full RBAC Enforcement + External Notifications (SMS/WhatsApp) (Future)
+### Phase 6 — Full RBAC Enforcement + External Notifications (SMS/WhatsApp) (Future)
 **Goal:** Enforce strict role- and assignment-based access + integrate external notifications.
 
 User stories:
@@ -265,16 +256,12 @@ Exit criteria:
 ---
 
 ## Next Actions
-1. **Phase 3 execution order (recommended):**
-   - 3.4 Inspection date/time fixes (unblocks accurate history)
-   - 3.1 User management restructure + edit
-   - 3.2 Asset registry grouping + supervisor assignment
-   - 3.3 New inspection grouping + quick asset history
-   - 3.5 Inspection history asset-wise restructure
-2. Confirm **single vs multiple supervisor** assignment per asset (defaulting to single primary).
-3. Confirm naming/UX for slide-outs:
-   - “Asset History” drawer
-   - “Supervisor History” drawer
+1. **Phase 4 ideation session** (Dashboards + Notifications): user to provide role-wise KPI logic and notification trigger events.
+2. Based on ideation outcomes:
+   - Implement dashboard endpoints/widgets.
+   - Add Notifications full-page UI.
+3. Prevent recurrence:
+   - Add a quick repo check (grep/lint rule) to fail CI/build if `SelectItem value=""` exists.
 
 ---
 
@@ -282,7 +269,7 @@ Exit criteria:
 - Core flow works reliably: inspection → defect → Orange List → mark working → approve → removed, with full audit trail.
 - Admin UX supports fast maintenance: categorized pages, modals/slide-outs, minimal scrolling.
 - Assets are discoverable by type; asset and supervisor histories are one click away.
-- Manual inspection date/time is accurate and consistently displayed.
+- Rectification tracking captures “Rectified On” accurately and is visible in history.
 - Scheduling produces correct due/overdue states and surfaces them clearly.
-- Notifications: in-app works end-to-end; SMS/WhatsApp ready after provider integration.
-- After Phase 5: RBAC correctly restricts access by role + station + department with strong security guarantees.
+- Notifications: in-app works end-to-end; Notifications page provides complete visibility.
+- After Phase 6: RBAC correctly restricts access by role + station + department with strong security guarantees; external SMS/WhatsApp ready/working.

@@ -85,7 +85,7 @@ export default function AssetsPage() {
       await assetsAPI.create({
         ...formData,
         schedule_frequency: formData.schedule_frequency || null,
-        assigned_supervisor_id: formData.assigned_supervisor_id || null
+        assigned_supervisor_id: (formData.assigned_supervisor_id && formData.assigned_supervisor_id !== 'none') ? formData.assigned_supervisor_id : null
       });
       toast.success('Asset created successfully');
       setShowCreate(false);
@@ -121,7 +121,7 @@ export default function AssetsPage() {
       await assetsAPI.update(editingAsset._id, {
         ...formData,
         schedule_frequency: formData.schedule_frequency || null,
-        assigned_supervisor_id: formData.assigned_supervisor_id || null
+        assigned_supervisor_id: (formData.assigned_supervisor_id && formData.assigned_supervisor_id !== 'none') ? formData.assigned_supervisor_id : null
       });
       toast.success('Asset updated successfully');
       setShowEdit(false);
@@ -223,7 +223,7 @@ export default function AssetsPage() {
         <Select value={formData.assigned_supervisor_id} onValueChange={(v) => setFormData({...formData, assigned_supervisor_id: v})}>
           <SelectTrigger><SelectValue placeholder="Select supervisor (optional)" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="">No Assignment</SelectItem>
+            <SelectItem value="none">No Assignment</SelectItem>
             {supervisors.map(s => <SelectItem key={s._id} value={s._id}>{s.name} ({s.employee_id})</SelectItem>)}
           </SelectContent>
         </Select>
