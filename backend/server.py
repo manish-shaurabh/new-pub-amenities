@@ -759,21 +759,58 @@ async def list_orange_items(
     docs = await orange_list_collection.find(query).sort("created_at", -1).to_list(1000)
     
     now = datetime.utcnow()
+    
+    # Batch fetch all related data to avoid N+1 queries
+    asset_ids = list(set(doc["asset_id"] for doc in docs if doc.get("asset_id")))
+    reporter_ids = list(set(doc["reported_by"] for doc in docs if doc.get("reported_by")))
+    
+    # Fetch all assets in one query
+    assets_map = {}
+    if asset_ids:
+        assets_docs = await assets_collection.find({"_id": {"$in": [ObjectId(aid) for aid in asset_ids]}}).to_list(5000)
+        assets_map = {str(a["_id"]): a for a in assets_docs}
+    
+    # Collect type/station/location IDs from assets
+    type_ids = list(set(a["asset_type_id"] for a in assets_map.values() if a.get("asset_type_id")))
+    s_ids = list(set(a["station_id"] for a in assets_map.values() if a.get("station_id")))
+    loc_ids = list(set(a["location_id"] for a in assets_map.values() if a.get("location_id")))
+    
+    # Batch fetch asset types, stations, locations, reporters
+    types_map = {}
+    if type_ids:
+        types_docs = await asset_types_collection.find({"_id": {"$in": [ObjectId(tid) for tid in type_ids]}}).to_list(1000)
+        types_map = {str(t["_id"]): t for t in types_docs}
+    
+    stations_map = {}
+    if s_ids:
+        stations_docs = await stations_collection.find({"_id": {"$in": [ObjectId(sid) for sid in s_ids]}}).to_list(1000)
+        stations_map = {str(s["_id"]): s for s in stations_docs}
+    
+    locations_map = {}
+    if loc_ids:
+        locs_docs = await locations_collection.find({"_id": {"$in": [ObjectId(lid) for lid in loc_ids]}}).to_list(1000)
+        locations_map = {str(l["_id"]): l for l in locs_docs}
+    
+    reporters_map = {}
+    if reporter_ids:
+        reporters_docs = await users_collection.find({"_id": {"$in": [ObjectId(rid) for rid in reporter_ids]}}).to_list(1000)
+        reporters_map = {str(r["_id"]): r for r in reporters_docs}
+    
     enriched = []
     
     for doc in docs:
-        asset = await assets_collection.find_one({"_id": ObjectId(doc["asset_id"])})
+        asset = assets_map.get(doc["asset_id"])
         if not asset:
             continue
         if station_id and asset["station_id"] != station_id:
             continue
         
-        asset_type = await asset_types_collection.find_one({"_id": ObjectId(asset["asset_type_id"])})
+        asset_type = types_map.get(asset.get("asset_type_id", ""))
         if department_id and asset_type and asset_type["department_id"] != department_id:
             continue
         
-        station = await stations_collection.find_one({"_id": ObjectId(asset["station_id"])})
-        location = await locations_collection.find_one({"_id": ObjectId(asset["location_id"])})
+        station = stations_map.get(asset.get("station_id", ""))
+        location = locations_map.get(asset.get("location_id", ""))
         
         # Calculate duration and classify as orange/red
         defective_since = doc.get("defective_since") or doc.get("created_at")
@@ -804,8 +841,8 @@ async def list_orange_items(
         doc["hours_defective"] = round(hours_defective, 1)
         doc["defective_since"] = defective_since.isoformat() if defective_since else None
         
-        # Get reporter name
-        reporter = await users_collection.find_one({"_id": ObjectId(doc["reported_by"])})
+        # Get reporter name from batch-fetched map
+        reporter = reporters_map.get(doc.get("reported_by", ""))
         doc["reporter_name"] = reporter["name"] if reporter else "Unknown"
         
         enriched.append(serialize_doc(doc))
