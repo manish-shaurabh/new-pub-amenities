@@ -191,6 +191,7 @@ class InspectionItemRecord(BaseModel):
     remarks_by: Optional[str] = None  # NEW: Track who made the remarks
     photo_urls: List[str] = []
     defective_since: Optional[str] = None  # ISO date-time string when defect started
+    rectified_on: Optional[str] = None     # NEW: ISO date-time when fixed/marked OK
 
 
 class InspectionCreate(BaseModel):

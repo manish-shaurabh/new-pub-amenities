@@ -127,7 +127,9 @@ export default function InspectionPage() {
         remarks_by: user.name, // Track who is making remarks
         photo_urls: [],
         defective_since_date: null,
-        defective_since_time: ''
+        defective_since_time: '',
+        rectified_on_date: null, // NEW: Track when asset was marked OK
+        rectified_on_time: ''     // NEW: Track time when marked OK
       }]);
     }
   };
@@ -226,6 +228,17 @@ export default function InspectionPage() {
               defective_since = date.toISOString();
             }
           }
+          
+          let rectified_on = null;
+          if (item.status === 'ok' && item.rectified_on_date) {
+            const date = new Date(item.rectified_on_date);
+            if (item.rectified_on_time) {
+              const [hours, minutes] = item.rectified_on_time.split(':');
+              date.setHours(parseInt(hours), parseInt(minutes));
+            }
+            rectified_on = date.toISOString();
+          }
+          
           return {
             asset_id: item.asset_id,
             status: item.status,
@@ -233,7 +246,8 @@ export default function InspectionPage() {
             remarks: item.remarks,
             remarks_by: item.remarks_by, // Include who made the remarks
             photo_urls: item.photo_urls,
-            defective_since: defective_since
+            defective_since: defective_since,
+            rectified_on: rectified_on
           };
         }),
         participants: inspectionType === 'sig' ? participants : [],
@@ -519,6 +533,42 @@ export default function InspectionPage() {
                         onChange={(e) => updateInspectionItem(item.asset_id, 'defective_since_time', e.target.value)}
                         className="w-[130px]"
                         data-testid="defective-time-input"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* NEW: Rectified On Date/Time picker */}
+                {item.status === 'ok' && item.asset_status === 'defective' && (
+                  <div className="p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
+                    <Label className="text-xs font-medium text-green-700 dark:text-green-400">Rectified On (Date & Time)</Label>
+                    <p className="text-[10px] text-muted-foreground mb-2">When was this asset fixed/working again?</p>
+                    <div className="flex gap-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="flex-1 justify-start text-left font-normal">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {item.rectified_on_date
+                              ? format(new Date(item.rectified_on_date), 'dd MMM yyyy')
+                              : 'Pick date'
+                            }
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={item.rectified_on_date ? new Date(item.rectified_on_date) : undefined}
+                            onSelect={(date) => updateInspectionItem(item.asset_id, 'rectified_on_date', date?.toISOString())}
+                            disabled={(date) => date > new Date()}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <Input
+                        type="time"
+                        value={item.rectified_on_time}
+                        onChange={(e) => updateInspectionItem(item.asset_id, 'rectified_on_time', e.target.value)}
+                        className="w-[130px]"
                       />
                     </div>
                   </div>
