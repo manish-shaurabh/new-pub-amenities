@@ -758,10 +758,13 @@ export default function AdminPage() {
                                 <td className="p-2">
                                   {deptSupervisors.length > 0 ? (
                                     <div className="flex flex-wrap gap-1">
-                                      {deptSupervisors.map(sup => (
-                                        <button key={sup._id} className="text-xs text-primary hover:underline">
-                                          {sup.name}
-                                        </button>
+                                      {deptSupervisors.map((sup, idx) => (
+                                        <span key={sup._id}>
+                                          <button className="text-xs text-primary hover:underline">
+                                            {sup.name}
+                                          </button>
+                                          {idx < deptSupervisors.length - 1 && <span className="text-xs text-muted-foreground">, </span>}
+                                        </span>
                                       ))}
                                     </div>
                                   ) : (
@@ -800,10 +803,13 @@ export default function AdminPage() {
                                 <td className="p-2">
                                   {linkedSupervisors.length > 0 ? (
                                     <div className="flex flex-wrap gap-1">
-                                      {linkedSupervisors.map(sup => (
-                                        <button key={sup._id} className="text-xs text-primary hover:underline">
-                                          {sup.name}
-                                        </button>
+                                      {linkedSupervisors.map((sup, idx) => (
+                                        <span key={sup._id}>
+                                          <button className="text-xs text-primary hover:underline">
+                                            {sup.name}
+                                          </button>
+                                          {idx < linkedSupervisors.length - 1 && <span className="text-xs text-muted-foreground">, </span>}
+                                        </span>
                                       ))}
                                     </div>
                                   ) : (
