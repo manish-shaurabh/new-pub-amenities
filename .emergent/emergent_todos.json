@@ -1,26 +1,26 @@
 [
   {
-    "content": "Update backend models: Add reports_to_id to users, approving_supervisor_id to stations",
+    "content": "Move User Management into Admin Panel as a tab",
     "status": "completed"
   },
   {
-    "content": "Add API endpoints for linking Supervisors to Reporting Officers",
+    "content": "Create Link Supervisors tab in Admin Panel",
     "status": "completed"
   },
   {
-    "content": "Update User Management page with linking feature",
+    "content": "Create Station Personnel Map tab with department-wise table",
+    "status": "completed"
+  },
+  {
+    "content": "Update Admin Panel Station form with Approving Supervisor field",
+    "status": "completed"
+  },
+  {
+    "content": "Update navigation to remove User Management page",
+    "status": "completed"
+  },
+  {
+    "content": "Test all admin panel features",
     "status": "in_progress"
-  },
-  {
-    "content": "Create station-wise staff table view",
-    "status": "pending"
-  },
-  {
-    "content": "Update Admin Panel - Station form with Approving Supervisor field",
-    "status": "pending"
-  },
-  {
-    "content": "Test all linking features",
-    "status": "pending"
   }
 ]

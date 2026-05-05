@@ -26,7 +26,6 @@ const navItems = [
   { path: '/inspection-history', label: 'Inspection History', icon: History, roles: 'all' },
   { path: '/orange-list', label: 'Orange List', icon: AlertTriangle, roles: 'all' },
   { path: '/schedules', label: 'Schedules', icon: Calendar, roles: 'all' },
-  { path: '/users', label: 'User Management', icon: Users, roles: ['superadmin', 'admin'] },
   { path: '/admin', label: 'Admin Panel', icon: Settings, roles: ['superadmin', 'admin'] },
 ];
 

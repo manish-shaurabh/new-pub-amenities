@@ -1,55 +1,90 @@
 import { useState, useEffect } from 'react';
-import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI } from '../lib/api';
+import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
+import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronRight, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User } from 'lucide-react';
+
+// Import the user management components from the old UsersPage
+const roleLabels = {
+  superadmin: 'Super Admin',
+  admin: 'Admin',
+  reporting_officer: 'Reporting Officer',
+  approving_supervisor: 'Approving Supervisor',
+  supervisor: 'Supervisor',
+};
+
+const roleColors = {
+  superadmin: 'bg-primary/10 text-primary border-primary/20',
+  admin: 'bg-[hsl(var(--info))]/10 text-[hsl(var(--info))] border-[hsl(var(--info))]/20',
+  reporting_officer: 'bg-[hsl(var(--pending))]/10 text-[hsl(var(--pending))] border-[hsl(var(--pending))]/20',
+  approving_supervisor: 'bg-accent text-accent-foreground border-accent',
+  supervisor: 'bg-muted text-muted-foreground border-border',
+};
 
 export default function AdminPage() {
+  const [activeTab, setActiveTab] = useState('stations');
+  const [loading, setLoading] = useState(true);
+  
+  // Data
   const [departments, setDepartments] = useState([]);
   const [stations, setStations] = useState([]);
   const [locations, setLocations] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
-  const [activeTab, setActiveTab] = useState('departments');
-  const [loading, setLoading] = useState(true);
-
-  // Expanded stations in locations tab
-  const [expandedStations, setExpandedStations] = useState({});
-
+  const [users, setUsers] = useState([]);
+  const [stationStaff, setStationStaff] = useState([]);
+  const [approvingSupervisors, setApprovingSupervisors] = useState([]);
+  
   // Dialog states
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState('create'); // 'create' or 'edit'
-  const [dialogType, setDialogType] = useState(''); // 'department', 'station', 'location', 'asset-type'
+  const [dialogMode, setDialogMode] = useState('create');
+  const [dialogType, setDialogType] = useState('');
   const [editingItem, setEditingItem] = useState(null);
-
-  // Form data
-  const [deptForm, setDeptForm] = useState({ name: '', code: '', description: '' });
-  const [stationForm, setStationForm] = useState({ name: '', code: '', zone: '', division: '' });
+  
+  // Forms
+  const [stationForm, setStationForm] = useState({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
   const [locationForm, setLocationForm] = useState({ name: '', station_id: '', description: '' });
   const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [] });
-  const [newChecklistItem, setNewChecklistItem] = useState('');
-
+  const [userForm, setUserForm] = useState({
+    employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], 
+    password: '', email: '', phone: '', reports_to_id: ''
+  });
+  
+  // Link Supervisors tab
+  const [selectedRO, setSelectedRO] = useState('');
+  const [selectedSupervisors, setSelectedSupervisors] = useState([]);
+  
+  // Personnel Map filter
+  const [personnelStationFilter, setPersonnelStationFilter] = useState('all');
+  
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
     try {
-      const [deptsRes, stationsRes, locsRes, typesRes] = await Promise.all([
+      const [deptsRes, stationsRes, locsRes, typesRes, usersRes] = await Promise.all([
         departmentsAPI.list(),
         stationsAPI.list(),
         locationsAPI.list(),
-        assetTypesAPI.list()
+        assetTypesAPI.list(),
+        usersAPI.list({})
       ]);
       setDepartments(deptsRes.data);
       setStations(stationsRes.data);
       setLocations(locsRes.data);
       setAssetTypes(typesRes.data);
+      setUsers(usersRes.data);
+      
+      // Get approving supervisors
+      const asups = usersRes.data.filter(u => u.role === 'approving_supervisor');
+      setApprovingSupervisors(asups);
     } catch (e) {
       console.error('Failed to load', e);
     } finally {
@@ -57,12 +92,208 @@ export default function AdminPage() {
     }
   };
 
-  // ============ OPEN DIALOGS ============
+  const loadStationStaff = async () => {
+    try {
+      const res = await usersAPI.stationStaff();
+      setStationStaff(res.data);
+    } catch (e) {
+      console.error('Failed to load station staff', e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'personnel-map') {
+      loadStationStaff();
+    }
+  }, [activeTab]);
+
+  // ========== Station CRUD ==========
+  const handleCreateStation = async () => {
+    if (!stationForm.name || !stationForm.code) {
+      toast.error('Please fill required fields');
+      return;
+    }
+    try {
+      await stationsAPI.create(stationForm);
+      toast.success('Station created');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to create');
+    }
+  };
+
+  const handleUpdateStation = async () => {
+    try {
+      await stationsAPI.update(editingItem._id, stationForm);
+      toast.success('Station updated');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to update');
+    }
+  };
+
+  const handleDeleteStation = async (id) => {
+    if (!window.confirm('Are you sure?')) return;
+    try {
+      await stationsAPI.delete(id);
+      toast.success('Deleted');
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to delete');
+    }
+  };
+
+  // ========== Location CRUD ==========
+  const handleCreateLocation = async () => {
+    if (!locationForm.name || !locationForm.station_id) {
+      toast.error('Please fill required fields');
+      return;
+    }
+    try {
+      await locationsAPI.create(locationForm.station_id, locationForm);
+      toast.success('Location created');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to create');
+    }
+  };
+
+  const handleUpdateLocation = async () => {
+    try {
+      await locationsAPI.update(editingItem._id, locationForm);
+      toast.success('Location updated');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to update');
+    }
+  };
+
+  const handleDeleteLocation = async (id) => {
+    if (!window.confirm('Are you sure?')) return;
+    try {
+      await locationsAPI.delete(id);
+      toast.success('Deleted');
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to delete');
+    }
+  };
+
+  // ========== Asset Type CRUD ==========
+  const handleCreateAssetType = async () => {
+    if (!assetTypeForm.name || !assetTypeForm.department_id) {
+      toast.error('Please fill required fields');
+      return;
+    }
+    try {
+      await assetTypesAPI.create(assetTypeForm);
+      toast.success('Asset Type created');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to create');
+    }
+  };
+
+  const handleUpdateAssetType = async () => {
+    try {
+      await assetTypesAPI.update(editingItem._id, assetTypeForm);
+      toast.success('Asset Type updated');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to update');
+    }
+  };
+
+  const handleDeleteAssetType = async (id) => {
+    if (!window.confirm('Are you sure?')) return;
+    try {
+      await assetTypesAPI.delete(id);
+      toast.success('Deleted');
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to delete');
+    }
+  };
+
+  // ========== User CRUD ==========
+  const handleCreateUser = async () => {
+    if (!userForm.employee_id || !userForm.name || !userForm.password) {
+      toast.error('Please fill required fields');
+      return;
+    }
+    try {
+      await usersAPI.create(userForm);
+      toast.success('User created');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to create');
+    }
+  };
+
+  const handleUpdateUser = async () => {
+    try {
+      await usersAPI.update(editingItem._id, userForm);
+      toast.success('User updated');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to update');
+    }
+  };
+
+  const handleDeleteUser = async (id) => {
+    if (!window.confirm('Are you sure?')) return;
+    try {
+      await usersAPI.delete(id);
+      toast.success('Deleted');
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to delete');
+    }
+  };
+
+  // ========== Link Supervisors ==========
+  const handleLinkSupervisors = async () => {
+    if (!selectedRO || selectedSupervisors.length === 0) {
+      toast.error('Please select reporting officer and supervisors');
+      return;
+    }
+    try {
+      await usersAPI.linkSupervisors(selectedRO, selectedSupervisors);
+      toast.success('Supervisors linked successfully');
+      setSelectedRO('');
+      setSelectedSupervisors([]);
+      loadAll();
+    } catch (e) {
+      toast.error('Failed to link supervisors');
+    }
+  };
+
+  const toggleSupervisorSelection = (supervisorId) => {
+    setSelectedSupervisors(prev =>
+      prev.includes(supervisorId)
+        ? prev.filter(id => id !== supervisorId)
+        : [...prev, supervisorId]
+    );
+  };
+
+  // Open dialogs
   const openCreateDialog = (type) => {
     setDialogType(type);
     setDialogMode('create');
     setEditingItem(null);
-    resetForms();
+    // Reset forms based on type
+    if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
+    else if (type === 'location') setLocationForm({ name: '', station_id: '', description: '' });
+    else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [] });
+    else if (type === 'user') setUserForm({ employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], password: '', email: '', phone: '', reports_to_id: '' });
     setDialogOpen(true);
   };
 
@@ -70,425 +301,610 @@ export default function AdminPage() {
     setDialogType(type);
     setDialogMode('edit');
     setEditingItem(item);
-    
-    if (type === 'department') {
-      setDeptForm({ name: item.name || '', code: item.code || '', description: item.description || '' });
-    } else if (type === 'station') {
-      setStationForm({ name: item.name || '', code: item.code || '', zone: item.zone || '', division: item.division || '' });
+    if (type === 'station') {
+      setStationForm({ name: item.name, code: item.code, zone: item.zone || '', division: item.division || '', approving_supervisor_id: item.approving_supervisor_id || '' });
     } else if (type === 'location') {
-      setLocationForm({ name: item.name || '', station_id: item.station_id || '', description: item.description || '' });
+      setLocationForm({ name: item.name, station_id: item.station_id, description: item.description || '' });
     } else if (type === 'asset-type') {
-      setAssetTypeForm({
-        name: item.name || '',
-        department_id: item.department_id || '',
-        description: item.description || '',
-        checklist: (item.checklist || []).map(c => ({ name: c.name, description: c.description || '' }))
-      });
+      setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [] });
+    } else if (type === 'user') {
+      setUserForm({ employee_id: item.employee_id, name: item.name, role: item.role, department_id: item.department_id || '', assigned_stations: item.assigned_stations || [], password: '', email: item.email || '', phone: item.phone || '', reports_to_id: item.reports_to_id || '' });
     }
     setDialogOpen(true);
   };
 
-  const resetForms = () => {
-    setDeptForm({ name: '', code: '', description: '' });
-    setStationForm({ name: '', code: '', zone: '', division: '' });
-    setLocationForm({ name: '', station_id: '', description: '' });
-    setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [] });
-    setNewChecklistItem('');
-  };
-
-  // ============ SUBMIT HANDLERS ============
-  const handleSubmit = async () => {
-    try {
-      if (dialogType === 'department') {
-        if (!deptForm.name || !deptForm.code) { toast.error('Name and code required'); return; }
-        if (dialogMode === 'create') {
-          await departmentsAPI.create(deptForm);
-          toast.success('Department created');
-        } else {
-          await departmentsAPI.update(editingItem._id, deptForm);
-          toast.success('Department updated');
-        }
-      } else if (dialogType === 'station') {
-        if (!stationForm.name || !stationForm.code) { toast.error('Name and code required'); return; }
-        if (dialogMode === 'create') {
-          await stationsAPI.create(stationForm);
-          toast.success('Station created');
-        } else {
-          await stationsAPI.update(editingItem._id, stationForm);
-          toast.success('Station updated');
-        }
-      } else if (dialogType === 'location') {
-        if (!locationForm.name || !locationForm.station_id) { toast.error('Name and station required'); return; }
-        if (dialogMode === 'create') {
-          await locationsAPI.create(locationForm);
-          toast.success('Location created');
-        } else {
-          await locationsAPI.update(editingItem._id, locationForm);
-          toast.success('Location updated');
-        }
-      } else if (dialogType === 'asset-type') {
-        if (!assetTypeForm.name || !assetTypeForm.department_id) { toast.error('Name and department required'); return; }
-        if (dialogMode === 'create') {
-          await assetTypesAPI.create(assetTypeForm);
-          toast.success('Asset type created');
-        } else {
-          await assetTypesAPI.update(editingItem._id, assetTypeForm);
-          toast.success('Asset type updated');
-        }
-      }
-      setDialogOpen(false);
-      resetForms();
-      loadAll();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Operation failed');
+  const handleDialogSubmit = () => {
+    if (dialogMode === 'create') {
+      if (dialogType === 'station') handleCreateStation();
+      else if (dialogType === 'location') handleCreateLocation();
+      else if (dialogType === 'asset-type') handleCreateAssetType();
+      else if (dialogType === 'user') handleCreateUser();
+    } else {
+      if (dialogType === 'station') handleUpdateStation();
+      else if (dialogType === 'location') handleUpdateLocation();
+      else if (dialogType === 'asset-type') handleUpdateAssetType();
+      else if (dialogType === 'user') handleUpdateUser();
     }
   };
 
-  // ============ DELETE HANDLERS ============
-  const handleDelete = async (type, id) => {
-    if (!window.confirm('Are you sure you want to delete this?')) return;
-    try {
-      if (type === 'department') await departmentsAPI.delete(id);
-      else if (type === 'station') await stationsAPI.delete(id);
-      else if (type === 'location') await locationsAPI.delete(id);
-      else if (type === 'asset-type') await assetTypesAPI.delete(id);
-      toast.success('Deleted successfully');
-      loadAll();
-    } catch (e) {
-      toast.error('Failed to delete');
-    }
+  const toggleUserStation = (stationId) => {
+    setUserForm(prev => ({
+      ...prev,
+      assigned_stations: prev.assigned_stations.includes(stationId)
+        ? prev.assigned_stations.filter(s => s !== stationId)
+        : [...prev.assigned_stations, stationId]
+    }));
   };
 
-  // ============ CHECKLIST HELPERS ============
   const addChecklistItem = () => {
-    if (!newChecklistItem.trim()) return;
+    if (!assetTypeForm.checklist) return;
+    const itemName = prompt('Enter checklist item name:');
+    if (itemName) {
+      setAssetTypeForm(prev => ({
+        ...prev,
+        checklist: [...prev.checklist, { name: itemName, description: '', expected_value: '' }]
+      }));
+    }
+  };
+
+  const removeChecklistItem = (index) => {
     setAssetTypeForm(prev => ({
       ...prev,
-      checklist: [...prev.checklist, { name: newChecklistItem.trim(), description: '' }]
-    }));
-    setNewChecklistItem('');
-  };
-
-  const removeChecklistItem = (idx) => {
-    setAssetTypeForm(prev => ({
-      ...prev,
-      checklist: prev.checklist.filter((_, i) => i !== idx)
+      checklist: prev.checklist.filter((_, i) => i !== index)
     }));
   };
 
-  // ============ LOCATIONS GROUPED BY STATION ============
-  const toggleStation = (stationId) => {
-    setExpandedStations(prev => ({ ...prev, [stationId]: !prev[stationId] }));
+  // Filter supervisors by RO's department
+  const getFilteredSupervisors = () => {
+    if (!selectedRO) return [];
+    const ro = users.find(u => u._id === selectedRO);
+    if (!ro || !ro.department_id) return users.filter(u => u.role === 'supervisor');
+    return users.filter(u => u.role === 'supervisor' && u.department_id === ro.department_id);
   };
 
-  const getLocationsForStation = (stationId) => {
-    return locations.filter(l => l.station_id === stationId);
-  };
+  // Filter station staff by selected station
+  const filteredStationStaff = personnelStationFilter === 'all'
+    ? stationStaff
+    : stationStaff.filter(s => s.station_id === personnelStationFilter);
+
+  // Group by department
+  const groupedByDepartment = filteredStationStaff.reduce((acc, station) => {
+    const deptIds = new Set();
+    station.supervisors?.forEach(s => s.department_id && deptIds.add(s.department_id));
+    station.reporting_officers?.forEach(ro => ro.department_id && deptIds.add(ro.department_id));
+    
+    if (deptIds.size === 0) {
+      if (!acc['no-department']) acc['no-department'] = [];
+      acc['no-department'].push(station);
+    } else {
+      deptIds.forEach(deptId => {
+        if (!acc[deptId]) acc[deptId] = [];
+        acc[deptId].push(station);
+      });
+    }
+    return acc;
+  }, {});
 
   if (loading) {
-    return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-xl" />)}</div>;
+    return <div className="space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-xl" />)}</div>;
   }
 
-  // ============ DIALOG CONTENT ============
-  const renderDialogContent = () => {
-    if (dialogType === 'department') {
-      return (
-        <div className="space-y-3">
-          <div><Label>Name *</Label><Input value={deptForm.name} onChange={e => setDeptForm({...deptForm, name: e.target.value})} placeholder="e.g., Electrical" /></div>
-          <div><Label>Code *</Label><Input value={deptForm.code} onChange={e => setDeptForm({...deptForm, code: e.target.value})} placeholder="e.g., ELEC" /></div>
-          <div><Label>Description</Label><Input value={deptForm.description} onChange={e => setDeptForm({...deptForm, description: e.target.value})} placeholder="Optional" /></div>
-        </div>
-      );
-    } else if (dialogType === 'station') {
-      return (
-        <div className="space-y-3">
-          <div><Label>Name *</Label><Input value={stationForm.name} onChange={e => setStationForm({...stationForm, name: e.target.value})} placeholder="e.g., Mumbai Central" /></div>
-          <div><Label>Code *</Label><Input value={stationForm.code} onChange={e => setStationForm({...stationForm, code: e.target.value})} placeholder="e.g., MMCT" /></div>
-          <div><Label>Zone</Label><Input value={stationForm.zone} onChange={e => setStationForm({...stationForm, zone: e.target.value})} placeholder="e.g., Western" /></div>
-          <div><Label>Division</Label><Input value={stationForm.division} onChange={e => setStationForm({...stationForm, division: e.target.value})} placeholder="e.g., Mumbai" /></div>
-        </div>
-      );
-    } else if (dialogType === 'location') {
-      return (
-        <div className="space-y-3">
-          <div><Label>Name *</Label><Input value={locationForm.name} onChange={e => setLocationForm({...locationForm, name: e.target.value})} placeholder="e.g., Platform 1" /></div>
-          <div>
-            <Label>Station *</Label>
-            <Select value={locationForm.station_id} onValueChange={v => setLocationForm({...locationForm, station_id: v})}>
-              <SelectTrigger><SelectValue placeholder="Select station" /></SelectTrigger>
-              <SelectContent>
-                {stations.map(s => <SelectItem key={s._id} value={s._id}>{s.name} ({s.code})</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div><Label>Description</Label><Input value={locationForm.description} onChange={e => setLocationForm({...locationForm, description: e.target.value})} placeholder="Optional" /></div>
-        </div>
-      );
-    } else if (dialogType === 'asset-type') {
-      return (
-        <div className="space-y-3">
-          <div><Label>Name *</Label><Input value={assetTypeForm.name} onChange={e => setAssetTypeForm({...assetTypeForm, name: e.target.value})} placeholder="e.g., Ceiling Fan" /></div>
-          <div>
-            <Label>Department *</Label>
-            <Select value={assetTypeForm.department_id} onValueChange={v => setAssetTypeForm({...assetTypeForm, department_id: v})}>
-              <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
-              <SelectContent>
-                {departments.map(d => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div><Label>Description</Label><Input value={assetTypeForm.description} onChange={e => setAssetTypeForm({...assetTypeForm, description: e.target.value})} placeholder="Optional" /></div>
-          <div>
-            <Label>Inspection Checklist Items</Label>
-            <p className="text-xs text-muted-foreground mb-2">These items will appear as checkpoints during inspections</p>
-            <div className="flex gap-2">
-              <Input 
-                value={newChecklistItem} 
-                onChange={e => setNewChecklistItem(e.target.value)} 
-                placeholder="Add checklist item" 
-                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addChecklistItem())} 
-              />
-              <Button type="button" onClick={addChecklistItem} size="sm" variant="secondary">Add</Button>
-            </div>
-            {assetTypeForm.checklist.length > 0 && (
-              <div className="space-y-1 mt-2 max-h-[200px] overflow-y-auto">
-                {assetTypeForm.checklist.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2 bg-muted rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground font-medium">{idx + 1}.</span>
-                      <span className="text-sm">{item.name}</span>
-                    </div>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeChecklistItem(idx)}>
-                      <Trash2 className="h-3 w-3 text-muted-foreground" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const dialogTitle = () => {
-    const action = dialogMode === 'create' ? 'Add' : 'Edit';
-    const types = { 'department': 'Department', 'station': 'Station', 'location': 'Location', 'asset-type': 'Asset Type' };
-    return `${action} ${types[dialogType] || ''}`;
-  };
-
   return (
-    <div className="space-y-4" data-testid="admin-panel">
+    <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Admin Panel</h1>
         <p className="text-sm text-muted-foreground">Manage system configuration</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-4 w-full max-w-lg">
-          <TabsTrigger value="departments"><Building2 className="h-4 w-4 mr-1 hidden sm:inline" /> Depts</TabsTrigger>
-          <TabsTrigger value="stations"><MapPin className="h-4 w-4 mr-1 hidden sm:inline" /> Stations</TabsTrigger>
-          <TabsTrigger value="locations"><Layers className="h-4 w-4 mr-1 hidden sm:inline" /> Locations</TabsTrigger>
-          <TabsTrigger value="asset-types"><ClipboardList className="h-4 w-4 mr-1 hidden sm:inline" /> Types</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="stations"><Building2 className="h-4 w-4 mr-2" /> Stations</TabsTrigger>
+          <TabsTrigger value="locations"><MapPin className="h-4 w-4 mr-2" /> Locations</TabsTrigger>
+          <TabsTrigger value="asset-types"><Layers className="h-4 w-4 mr-2" /> Asset Types</TabsTrigger>
+          <TabsTrigger value="users"><Users className="h-4 w-4 mr-2" /> Users</TabsTrigger>
+          <TabsTrigger value="link-supervisors"><Link className="h-4 w-4 mr-2" /> Link</TabsTrigger>
+          <TabsTrigger value="personnel-map"><TableIcon className="h-4 w-4 mr-2" /> Personnel Map</TabsTrigger>
         </TabsList>
 
-        {/* ============ DEPARTMENTS ============ */}
-        <TabsContent value="departments" className="space-y-3 mt-4">
+        {/* STATIONS TAB */}
+        <TabsContent value="stations" className="space-y-3">
           <div className="flex justify-between items-center">
-            <h3 className="font-medium">Departments ({departments.length})</h3>
-            <Button size="sm" onClick={() => openCreateDialog('department')}>
-              <Plus className="h-4 w-4 mr-1" /> Add
+            <h3 className="text-sm font-medium">{stations.length} Stations</h3>
+            <Button onClick={() => openCreateDialog('station')} size="sm">
+              <Plus className="h-4 w-4 mr-1" /> Add Station
             </Button>
           </div>
-          {departments.map(d => (
-            <Card key={d._id}>
-              <CardContent className="p-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">{d.name}</p>
-                  <p className="text-xs text-muted-foreground">Code: {d.code} {d.description ? `| ${d.description}` : ''}</p>
-                </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog('department', d)}>
-                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete('department', d._id)}>
-                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </TabsContent>
-
-        {/* ============ STATIONS ============ */}
-        <TabsContent value="stations" className="space-y-3 mt-4">
-          <div className="flex justify-between items-center">
-            <h3 className="font-medium">Stations ({stations.length})</h3>
-            <Button size="sm" onClick={() => openCreateDialog('station')}>
-              <Plus className="h-4 w-4 mr-1" /> Add
-            </Button>
+          <div className="space-y-2">
+            {stations.map(station => (
+              <Card key={station._id}>
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{station.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Code: {station.code}
+                      {station.zone && ` • Zone: ${station.zone}`}
+                      {station.division && ` • Division: ${station.division}`}
+                    </p>
+                    {station.approving_supervisor_name && (
+                      <p className="text-xs text-primary mt-1">
+                        Approving Supervisor: {station.approving_supervisor_name}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="icon" onClick={() => openEditDialog('station', station)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDeleteStation(station._id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-          {stations.map(s => (
-            <Card key={s._id}>
-              <CardContent className="p-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">{s.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Code: {s.code} {s.zone ? `| Zone: ${s.zone}` : ''} {s.division ? `| Div: ${s.division}` : ''}
-                  </p>
-                </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog('station', s)}>
-                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete('station', s._id)}>
-                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
         </TabsContent>
 
-        {/* ============ LOCATIONS (Grouped by Station - Accordion) ============ */}
-        <TabsContent value="locations" className="space-y-3 mt-4">
+        {/* LOCATIONS TAB */}
+        <TabsContent value="locations" className="space-y-3">
           <div className="flex justify-between items-center">
-            <h3 className="font-medium">Locations ({locations.length})</h3>
-            <Button size="sm" onClick={() => openCreateDialog('location')}>
+            <h3 className="text-sm font-medium">{locations.length} Locations</h3>
+            <Button onClick={() => openCreateDialog('location')} size="sm">
               <Plus className="h-4 w-4 mr-1" /> Add Location
             </Button>
           </div>
-          
-          <p className="text-xs text-muted-foreground">Click on a station to view/manage its locations</p>
-          
-          {stations.map(station => {
-            const stationLocations = getLocationsForStation(station._id);
-            const isExpanded = expandedStations[station._id];
-            
-            return (
-              <Card key={station._id} className="overflow-hidden">
-                <div
-                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => toggleStation(station._id)}
-                >
-                  <div className="flex items-center gap-3">
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-primary" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                    )}
-                    <div>
-                      <p className="text-sm font-medium">{station.name}</p>
-                      <p className="text-xs text-muted-foreground">Code: {station.code}</p>
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className="text-xs">
-                    {stationLocations.length} location{stationLocations.length !== 1 ? 's' : ''}
-                  </Badge>
-                </div>
-                
-                {isExpanded && (
-                  <div className="border-t bg-muted/20 px-3 py-2 space-y-2">
-                    {stationLocations.length === 0 ? (
-                      <p className="text-xs text-muted-foreground py-2 text-center">No locations added for this station</p>
-                    ) : (
-                      stationLocations.map(loc => (
-                        <div key={loc._id} className="flex items-center justify-between p-2 bg-background rounded-lg border">
+          <div className="space-y-2">
+            {stations.map(station => {
+              const stationLocs = locations.filter(l => l.station_id === station._id);
+              if (stationLocs.length === 0) return null;
+              return (
+                <Collapsible key={station._id} defaultOpen>
+                  <Card>
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="p-3 hover:bg-accent/30 cursor-pointer">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm font-medium">{station.name}</CardTitle>
                           <div className="flex items-center gap-2">
-                            <Layers className="h-3.5 w-3.5 text-primary/60" />
-                            <div>
-                              <p className="text-sm">{loc.name}</p>
-                              {loc.description && <p className="text-xs text-muted-foreground">{loc.description}</p>}
-                            </div>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openEditDialog('location', loc); }}>
-                              <Pencil className="h-3 w-3 text-muted-foreground" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); handleDelete('location', loc._id); }}>
-                              <Trash2 className="h-3 w-3 text-muted-foreground" />
-                            </Button>
+                            <Badge variant="outline">{stationLocs.length} locations</Badge>
+                            <ChevronDown className="h-4 w-4" />
                           </div>
                         </div>
-                      ))
-                    )}
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full mt-2 text-xs"
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        setLocationForm({ name: '', station_id: station._id, description: '' });
-                        setDialogType('location');
-                        setDialogMode('create');
-                        setEditingItem(null);
-                        setDialogOpen(true);
-                      }}
-                    >
-                      <Plus className="h-3 w-3 mr-1" /> Add Location to {station.name}
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="p-3 pt-0 space-y-1">
+                        {stationLocs.map(loc => (
+                          <div key={loc._id} className="flex items-center justify-between p-2 rounded hover:bg-muted">
+                            <span className="text-sm">{loc.name}</span>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog('location', loc)}>
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteLocation(loc._id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        {/* ASSET TYPES TAB */}
+        <TabsContent value="asset-types" className="space-y-3">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-medium">{assetTypes.length} Asset Types</h3>
+            <Button onClick={() => openCreateDialog('asset-type')} size="sm">
+              <Plus className="h-4 w-4 mr-1" /> Add Asset Type
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {assetTypes.map(type => (
+              <Card key={type._id}>
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{type.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Department: {type.department_name} • {type.checklist?.length || 0} checklist items
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="icon" onClick={() => openEditDialog('asset-type', type)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDeleteAssetType(type._id)}>
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* USERS TAB */}
+        <TabsContent value="users" className="space-y-3">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-medium">{users.length} Users</h3>
+            <Button onClick={() => openCreateDialog('user')} size="sm">
+              <Plus className="h-4 w-4 mr-1" /> Add User
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {users.map(user => (
+              <Card key={user._id}>
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{user.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      ID: {user.employee_id} • {roleLabels[user.role]}
+                      {user.department_name && ` • ${user.department_name}`}
+                    </p>
+                    {user.reports_to_name && (
+                      <p className="text-xs text-primary mt-1">Reports to: {user.reports_to_name}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className={roleColors[user.role]}>{roleLabels[user.role]}</Badge>
+                    <Button variant="ghost" size="icon" onClick={() => openEditDialog('user', user)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user._id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* LINK SUPERVISORS TAB */}
+        <TabsContent value="link-supervisors" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Link Supervisors to Reporting Officer</CardTitle>
+              <p className="text-xs text-muted-foreground">Supervisors can only be linked to Reporting Officers in the same department</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Select Reporting Officer *</Label>
+                <Select value={selectedRO} onValueChange={(v) => { setSelectedRO(v); setSelectedSupervisors([]); }}>
+                  <SelectTrigger><SelectValue placeholder="Choose Reporting Officer" /></SelectTrigger>
+                  <SelectContent>
+                    {users.filter(u => u.role === 'reporting_officer').map(ro => (
+                      <SelectItem key={ro._id} value={ro._id}>
+                        {ro.name} ({ro.employee_id}) - {ro.department_name || 'No Department'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedRO && (
+                <div>
+                  <Label>Select Supervisors (from same department) *</Label>
+                  <div className="mt-2 space-y-2 max-h-[300px] overflow-y-auto border rounded-lg p-3">
+                    {getFilteredSupervisors().length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">No supervisors available in this department</p>
+                    ) : (
+                      getFilteredSupervisors().map(sup => (
+                        <label key={sup._id} className="flex items-center gap-2 p-2 rounded hover:bg-muted cursor-pointer">
+                          <Checkbox
+                            checked={selectedSupervisors.includes(sup._id)}
+                            onCheckedChange={() => toggleSupervisorSelection(sup._id)}
+                          />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{sup.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {sup.employee_id}
+                              {sup.reports_to_name && ` • Currently reports to: ${sup.reports_to_name}`}
+                            </p>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <Button onClick={handleLinkSupervisors} disabled={!selectedRO || selectedSupervisors.length === 0} className="w-full">
+                <Link className="h-4 w-4 mr-2" />
+                Link {selectedSupervisors.length} Supervisor{selectedSupervisors.length !== 1 ? 's' : ''}
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* STATION PERSONNEL MAP TAB */}
+        <TabsContent value="personnel-map" className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Label className="text-sm font-medium">Filter by Station:</Label>
+            <Select value={personnelStationFilter} onValueChange={setPersonnelStationFilter}>
+              <SelectTrigger className="w-[250px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Stations</SelectItem>
+                {stations.map(s => (
+                  <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {Object.keys(groupedByDepartment).map(deptId => {
+            const dept = departments.find(d => d._id === deptId);
+            const deptName = dept?.name || 'No Department';
+            const deptStations = groupedByDepartment[deptId];
+
+            return (
+              <Card key={deptId}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{deptName}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left p-2 text-xs font-medium text-muted-foreground">Station</th>
+                          <th className="text-left p-2 text-xs font-medium text-muted-foreground">Approving Supervisor</th>
+                          <th className="text-left p-2 text-xs font-medium text-muted-foreground">Supervisors</th>
+                          <th className="text-left p-2 text-xs font-medium text-muted-foreground">Reporting Officers</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {deptStations.map(station => (
+                          <tr key={station.station_id} className="border-b hover:bg-muted/30">
+                            <td className="p-2 text-sm font-medium">{station.station_name}</td>
+                            <td className="p-2">
+                              {station.approving_supervisor ? (
+                                <button className="text-sm text-primary hover:underline">
+                                  {station.approving_supervisor.name}
+                                </button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Not assigned</span>
+                              )}
+                            </td>
+                            <td className="p-2">
+                              {station.supervisors?.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {station.supervisors.map(sup => (
+                                    <button key={sup._id} className="text-xs text-primary hover:underline">
+                                      {sup.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">None</span>
+                              )}
+                            </td>
+                            <td className="p-2">
+                              {station.reporting_officers?.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {station.reporting_officers.map(ro => (
+                                    <button key={ro._id} className="text-xs text-primary hover:underline">
+                                      {ro.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">None</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
               </Card>
             );
           })}
         </TabsContent>
-
-        {/* ============ ASSET TYPES ============ */}
-        <TabsContent value="asset-types" className="space-y-3 mt-4">
-          <div className="flex justify-between items-center">
-            <h3 className="font-medium">Asset Types ({assetTypes.length})</h3>
-            <Button size="sm" onClick={() => openCreateDialog('asset-type')}>
-              <Plus className="h-4 w-4 mr-1" /> Add
-            </Button>
-          </div>
-          {assetTypes.map(at => (
-            <Card key={at._id}>
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{at.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Dept: {at.department_name} {at.description ? `| ${at.description}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Badge variant="outline" className="text-[10px]">
-                      {at.checklist?.length || 0} checklist items
-                    </Badge>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog('asset-type', at)}>
-                      <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete('asset-type', at._id)}>
-                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  </div>
-                </div>
-                {/* Show checklist preview */}
-                {at.checklist?.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {at.checklist.map((c, i) => (
-                      <Badge key={i} variant="secondary" className="text-[10px] font-normal">{c.name}</Badge>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </TabsContent>
       </Tabs>
 
-      {/* ============ UNIVERSAL DIALOG ============ */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForms(); }}>
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+      {/* UNIVERSAL DIALOG */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{dialogTitle()}</DialogTitle>
+            <DialogTitle>
+              {dialogMode === 'create' ? 'Create' : 'Edit'}{' '}
+              {dialogType === 'station' && 'Station'}
+              {dialogType === 'location' && 'Location'}
+              {dialogType === 'asset-type' && 'Asset Type'}
+              {dialogType === 'user' && 'User'}
+            </DialogTitle>
           </DialogHeader>
-          {renderDialogContent()}
-          <Button onClick={handleSubmit} className="w-full mt-2">
-            {dialogMode === 'create' ? 'Create' : 'Save Changes'}
-          </Button>
+
+          {/* STATION FORM */}
+          {dialogType === 'station' && (
+            <div className="space-y-3">
+              <div>
+                <Label>Name *</Label>
+                <Input value={stationForm.name} onChange={(e) => setStationForm({...stationForm, name: e.target.value})} />
+              </div>
+              <div>
+                <Label>Code *</Label>
+                <Input value={stationForm.code} onChange={(e) => setStationForm({...stationForm, code: e.target.value})} />
+              </div>
+              <div>
+                <Label>Zone</Label>
+                <Input value={stationForm.zone} onChange={(e) => setStationForm({...stationForm, zone: e.target.value})} />
+              </div>
+              <div>
+                <Label>Division</Label>
+                <Input value={stationForm.division} onChange={(e) => setStationForm({...stationForm, division: e.target.value})} />
+              </div>
+              <div>
+                <Label>Approving Supervisor</Label>
+                <Select value={stationForm.approving_supervisor_id} onValueChange={(v) => setStationForm({...stationForm, approving_supervisor_id: v})}>
+                  <SelectTrigger><SelectValue placeholder="Select Approving Supervisor" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {approvingSupervisors.map(sup => (
+                      <SelectItem key={sup._id} value={sup._id}>{sup.name} ({sup.employee_id})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={handleDialogSubmit} className="w-full">
+                {dialogMode === 'create' ? 'Create' : 'Update'}
+              </Button>
+            </div>
+          )}
+
+          {/* LOCATION FORM */}
+          {dialogType === 'location' && (
+            <div className="space-y-3">
+              <div>
+                <Label>Name *</Label>
+                <Input value={locationForm.name} onChange={(e) => setLocationForm({...locationForm, name: e.target.value})} />
+              </div>
+              <div>
+                <Label>Station *</Label>
+                <Select value={locationForm.station_id} onValueChange={(v) => setLocationForm({...locationForm, station_id: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {stations.map(s => <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input value={locationForm.description} onChange={(e) => setLocationForm({...locationForm, description: e.target.value})} />
+              </div>
+              <Button onClick={handleDialogSubmit} className="w-full">
+                {dialogMode === 'create' ? 'Create' : 'Update'}
+              </Button>
+            </div>
+          )}
+
+          {/* ASSET TYPE FORM */}
+          {dialogType === 'asset-type' && (
+            <div className="space-y-3">
+              <div>
+                <Label>Name *</Label>
+                <Input value={assetTypeForm.name} onChange={(e) => setAssetTypeForm({...assetTypeForm, name: e.target.value})} />
+              </div>
+              <div>
+                <Label>Department *</Label>
+                <Select value={assetTypeForm.department_id} onValueChange={(v) => setAssetTypeForm({...assetTypeForm, department_id: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {departments.map(d => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input value={assetTypeForm.description} onChange={(e) => setAssetTypeForm({...assetTypeForm, description: e.target.value})} />
+              </div>
+              <div>
+                <Label>Checklist Items</Label>
+                <div className="space-y-1 mt-1">
+                  {assetTypeForm.checklist?.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="text-sm flex-1">{item.name}</span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeChecklistItem(idx)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={addChecklistItem} className="w-full">
+                    <Plus className="h-3 w-3 mr-1" /> Add Item
+                  </Button>
+                </div>
+              </div>
+              <Button onClick={handleDialogSubmit} className="w-full">
+                {dialogMode === 'create' ? 'Create' : 'Update'}
+              </Button>
+            </div>
+          )}
+
+          {/* USER FORM */}
+          {dialogType === 'user' && (
+            <div className="space-y-3">
+              <div>
+                <Label>Employee ID *</Label>
+                <Input value={userForm.employee_id} onChange={(e) => setUserForm({...userForm, employee_id: e.target.value})} disabled={dialogMode === 'edit'} />
+              </div>
+              <div>
+                <Label>Name *</Label>
+                <Input value={userForm.name} onChange={(e) => setUserForm({...userForm, name: e.target.value})} />
+              </div>
+              <div>
+                <Label>Role *</Label>
+                <Select value={userForm.role} onValueChange={(v) => setUserForm({...userForm, role: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="supervisor">Supervisor</SelectItem>
+                    <SelectItem value="approving_supervisor">Approving Supervisor</SelectItem>
+                    <SelectItem value="reporting_officer">Reporting Officer</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="superadmin">Super Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Department</Label>
+                <Select value={userForm.department_id} onValueChange={(v) => setUserForm({...userForm, department_id: v})}>
+                  <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {departments.map(d => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Assigned Stations</Label>
+                <div className="space-y-1 mt-1 max-h-[120px] overflow-y-auto">
+                  {stations.map(s => (
+                    <label key={s._id} className="flex items-center gap-2 cursor-pointer text-sm">
+                      <Checkbox
+                        checked={userForm.assigned_stations.includes(s._id)}
+                        onCheckedChange={() => toggleUserStation(s._id)}
+                      />
+                      {s.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label>Reports To (Reporting Officer)</Label>
+                <Select value={userForm.reports_to_id} onValueChange={(v) => setUserForm({...userForm, reports_to_id: v})}>
+                  <SelectTrigger><SelectValue placeholder="Select Reporting Officer" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {users.filter(u => u.role === 'reporting_officer' && u.department_id === userForm.department_id).map(ro => (
+                      <SelectItem key={ro._id} value={ro._id}>{ro.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Password {dialogMode === 'edit' && '(leave blank to keep current)'}</Label>
+                <Input type="password" value={userForm.password} onChange={(e) => setUserForm({...userForm, password: e.target.value})} />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input value={userForm.email} onChange={(e) => setUserForm({...userForm, email: e.target.value})} />
+              </div>
+              <div>
+                <Label>Phone</Label>
+                <Input value={userForm.phone} onChange={(e) => setUserForm({...userForm, phone: e.target.value})} />
+              </div>
+              <Button onClick={handleDialogSubmit} className="w-full">
+                {dialogMode === 'create' ? 'Create' : 'Update'}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

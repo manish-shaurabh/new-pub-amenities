@@ -6,7 +6,6 @@ import DashboardPage from './pages/DashboardPage';
 import AssetsPage from './pages/AssetsPage';
 import InspectionPage from './pages/InspectionPage';
 import OrangeListPage from './pages/OrangeListPage';
-import UsersPage from './pages/UsersPage';
 import AdminPage from './pages/AdminPage';
 import InspectionHistoryPage from './pages/InspectionHistoryPage';
 import SchedulesPage from './pages/SchedulesPage';
@@ -72,13 +71,6 @@ function AppRoutes() {
         <ProtectedRoute>
           <AppLayout>
             <SchedulesPage />
-          </AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/users" element={
-        <ProtectedRoute adminOnly>
-          <AppLayout>
-            <UsersPage />
           </AppLayout>
         </ProtectedRoute>
       } />
