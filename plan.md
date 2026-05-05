@@ -6,14 +6,14 @@
   - Inspections (individual + SIG)
   - Defect tracking + Orange/Red list aging
   - Approval workflow (mark working → approve)
-  - Scheduling/due tracking
+  - Scheduling/due tracking (including **asset-level custom inspection frequency in days**)
   - Photo evidence uploads
   - Multi-role access with clear UX
 - Ensure the **core workflow** is proven end-to-end: inspection → mark defective → Orange List → mark working → approving supervisor field-verifies/approves → removed from Orange List.
 - Provide operational visibility with analytics dashboards, exports, in-app notifications, and auditable event history.
 - Improve day-to-day usability with **neat, categorized, collapsible UIs**, and quick access to **asset history** and **user inspection history** via modals/slide-outs.
 - Prepare for production readiness: reporting/analytics, UX hardening, and external notifications (SMS/WhatsApp) + strict RBAC enforcement.
-- Reduce recurring UI regressions by standardizing Shadcn `<Select>` placeholder handling (never use empty string values).
+- Reduce recurring UI regressions by standardizing Shadcn `<Select>` placeholder handling (**never use empty string values**).
 
 ---
 
@@ -117,8 +117,40 @@ Hardening note (recurring regression):
 
 ---
 
+#### Phase 3.0.1 — Change: Inspection Frequency as Custom “Days” (Asset Registry) ✅ COMPLETE
+**Why:** User requirement: inspection frequency should be configurable as a custom number of days (not only daily/weekly/monthly/quarterly).
+
+Delivered:
+- Backend:
+  - `AssetCreate.schedule_frequency` changed from `Optional[ScheduleFrequency]` → `Optional[int]` (days).
+  - `AssetResponse.schedule_frequency` changed to `Optional[int]`.
+  - `POST /api/assets` and `PUT /api/assets/{asset_id}` store integer directly.
+  - Added `_normalize_freq_days()` in `server.py` to convert legacy strings on reads for backward compatibility:
+    - daily=1, weekly=7, monthly=30, quarterly=90.
+  - Inspection submission improvement: when an inspection is submitted, each inspected asset now updates:
+    - `last_inspected = now`
+    - `next_due = now + freq_days` **if** `schedule_frequency` is set.
+    - (This is an improvement over prior behavior where `next_due` could remain stale unless schedules were separately set.)
+- Frontend (`AssetsPage.js`):
+  - Replaced schedule frequency `<Select>` with `<Input type="number" min="1">` labeled **“Inspection Frequency (days)”**.
+  - Asset badge now renders as **“every Nd”**.
+
+Verification:
+- Backend: validated via requests script:
+  - Legacy values normalize correctly for existing assets.
+  - Create/update with integer days works.
+  - Null clears value.
+- Frontend: validated via screenshot tool:
+  - Edit modal shows “Inspection Frequency (days)” number input with prefilled value.
+  - Badge displays “every Nd”.
+
+Notes / follow-ups:
+- Seed data and backend tests (`test_core.py`) may still contain string frequencies (e.g., "weekly"); normalization on reads covers existing DB values, but tests/seed may be updated later for consistency.
+
+---
+
 #### 3.1 User Management (Departments-first + categorized roles) ✅ COMPLETE
-Delivered (recent session):
+Delivered:
 - User Management moved inside Admin Panel.
 - Station Personnel Mapping implemented in Admin Panel.
 - Linking Supervisors to Reporting Officers implemented (backend + frontend).
@@ -129,7 +161,7 @@ Exit criteria met:
 ---
 
 #### 3.2 Asset Registry (Grouped by Asset Type + asset detail + supervisor history) ✅ COMPLETE
-Delivered (recent session):
+Delivered:
 - Asset Registry grouped by type.
 - Shows supervisor names.
 - Clickable supervisor name opens Supervisor History drawer.
@@ -141,7 +173,7 @@ Note:
 ---
 
 #### 3.3 New Inspection (Role-based filtering + rectification timestamp + photo deletion + remarks attribution) ✅ COMPLETE
-Delivered (recent session):
+Delivered:
 - Role-based filtering:
   - Superadmin: sees all.
   - Approving supervisor: sees assigned stations.
@@ -155,7 +187,7 @@ Delivered (recent session):
 ---
 
 #### 3.4 Inspection History (Asset-wise grouping) ✅ COMPLETE
-Delivered (recent session):
+Delivered:
 - Inspection History restructured to be asset-wise grouped.
 
 ---
@@ -165,6 +197,9 @@ Delivered (recent session):
 
 Dependency:
 - User explicitly requested: **ideate on dashboards and notifications before implementation**.
+
+Status:
+- Ideation pending. User has not yet provided role-wise KPI logic and notification trigger events.
 
 User stories (to be finalized with user):
 1. Each role sees a dashboard relevant to their responsibilities:
@@ -262,6 +297,7 @@ Exit criteria:
    - Add Notifications full-page UI.
 3. Prevent recurrence:
    - Add a quick repo check (grep/lint rule) to fail CI/build if `SelectItem value=""` exists.
+4. (Optional cleanup) Align seed/test data to use integer `schedule_frequency` days everywhere for consistency (normalization already provides backward compatibility).
 
 ---
 
@@ -271,5 +307,6 @@ Exit criteria:
 - Assets are discoverable by type; asset and supervisor histories are one click away.
 - Rectification tracking captures “Rectified On” accurately and is visible in history.
 - Scheduling produces correct due/overdue states and surfaces them clearly.
+- **Inspection frequency supports custom “days” entry per asset and correctly updates `next_due` after inspections.**
 - Notifications: in-app works end-to-end; Notifications page provides complete visibility.
 - After Phase 6: RBAC correctly restricts access by role + station + department with strong security guarantees; external SMS/WhatsApp ready/working.

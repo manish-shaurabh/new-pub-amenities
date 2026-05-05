@@ -84,7 +84,7 @@ export default function AssetsPage() {
     try {
       await assetsAPI.create({
         ...formData,
-        schedule_frequency: formData.schedule_frequency || null,
+        schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
         assigned_supervisor_id: (formData.assigned_supervisor_id && formData.assigned_supervisor_id !== 'none') ? formData.assigned_supervisor_id : null
       });
       toast.success('Asset created successfully');
@@ -120,7 +120,7 @@ export default function AssetsPage() {
     try {
       await assetsAPI.update(editingAsset._id, {
         ...formData,
-        schedule_frequency: formData.schedule_frequency || null,
+        schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
         assigned_supervisor_id: (formData.assigned_supervisor_id && formData.assigned_supervisor_id !== 'none') ? formData.assigned_supervisor_id : null
       });
       toast.success('Asset updated successfully');
@@ -233,16 +233,14 @@ export default function AssetsPage() {
         <Input value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Optional description" />
       </div>
       <div>
-        <Label>Inspection Frequency</Label>
-        <Select value={formData.schedule_frequency} onValueChange={(v) => setFormData({...formData, schedule_frequency: v})}>
-          <SelectTrigger><SelectValue placeholder="Select frequency" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="daily">Daily</SelectItem>
-            <SelectItem value="weekly">Weekly</SelectItem>
-            <SelectItem value="monthly">Monthly</SelectItem>
-            <SelectItem value="quarterly">Quarterly</SelectItem>
-          </SelectContent>
-        </Select>
+        <Label>Inspection Frequency (days)</Label>
+        <Input
+          type="number"
+          min="1"
+          value={formData.schedule_frequency}
+          onChange={(e) => setFormData({...formData, schedule_frequency: e.target.value})}
+          placeholder="e.g., 7 (inspect every 7 days)"
+        />
       </div>
       <Button onClick={isEdit ? handleUpdate : handleCreate} className="w-full">
         {isEdit ? 'Update Asset' : 'Create Asset'}
@@ -280,7 +278,7 @@ export default function AssetsPage() {
       <div className="flex items-center gap-2">
         {statusBadge(asset.status)}
         {asset.schedule_frequency && (
-          <Badge variant="outline" className="text-xs hidden sm:flex">{asset.schedule_frequency}</Badge>
+          <Badge variant="outline" className="text-xs hidden sm:flex">every {asset.schedule_frequency}d</Badge>
         )}
         {isAdmin() && (
           <>

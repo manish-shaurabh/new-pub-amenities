@@ -278,6 +278,24 @@ async def delete_asset_type(asset_type_id: str):
 
 
 # ============ ASSETS ============
+def _normalize_freq_days(value):
+    """Convert legacy string frequency (daily/weekly/monthly/quarterly) to integer days.
+    Returns int (days) or None. Numeric values pass through."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        mapping = {"daily": 1, "weekly": 7, "monthly": 30, "quarterly": 90}
+        if value in mapping:
+            return mapping[value]
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 @app.post("/api/assets")
 async def create_asset(asset: AssetCreate):
     asset_type = await asset_types_collection.find_one({"_id": ObjectId(asset.asset_type_id)})
@@ -297,7 +315,7 @@ async def create_asset(asset: AssetCreate):
         "asset_number": asset.asset_number,
         "status": AssetStatus.WORKING.value,
         "description": asset.description,
-        "schedule_frequency": asset.schedule_frequency.value if asset.schedule_frequency else None,
+        "schedule_frequency": asset.schedule_frequency if asset.schedule_frequency else None,
         "assigned_supervisor_id": asset.assigned_supervisor_id,
         "last_inspected": None,
         "next_due": None,
@@ -367,6 +385,7 @@ async def list_assets(
         doc["checklist"] = types_checklist_map.get(doc["asset_type_id"], [])
         doc["assigned_supervisor_name"] = supervisors_map.get(doc.get("assigned_supervisor_id", ""), None)
         doc["department_id"] = types_dept_map.get(doc["asset_type_id"])
+        doc["schedule_frequency"] = _normalize_freq_days(doc.get("schedule_frequency"))
     
     return [serialize_doc(d) for d in docs]
 
@@ -384,6 +403,7 @@ async def get_asset(asset_id: str):
     doc["location_name"] = location["name"] if location else "Unknown"
     if asset_type:
         doc["checklist"] = asset_type.get("checklist", [])
+    doc["schedule_frequency"] = _normalize_freq_days(doc.get("schedule_frequency"))
     return serialize_doc(doc)
 
 
@@ -396,7 +416,7 @@ async def update_asset(asset_id: str, asset: AssetCreate):
         "location_id": asset.location_id,
         "asset_number": asset.asset_number,
         "description": asset.description,
-        "schedule_frequency": asset.schedule_frequency.value if asset.schedule_frequency else None,
+        "schedule_frequency": asset.schedule_frequency if asset.schedule_frequency else None,
         "assigned_supervisor_id": asset.assigned_supervisor_id,
     }
     result = await assets_collection.update_one(
@@ -406,6 +426,7 @@ async def update_asset(asset_id: str, asset: AssetCreate):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Asset not found")
     doc = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    doc["schedule_frequency"] = _normalize_freq_days(doc.get("schedule_frequency"))
     return serialize_doc(doc)
 
 
@@ -861,11 +882,18 @@ async def create_inspection(inspection: InspectionCreate):
             "created_at": datetime.utcnow()
         })
     
-    # Update last_inspected for all inspected assets
+    # Update last_inspected for all inspected assets, and recompute next_due if frequency is set
     for item in inspection.items:
+        now_ts = datetime.utcnow()
+        update_fields = {"last_inspected": now_ts}
+        asset_doc = await assets_collection.find_one({"_id": ObjectId(item.asset_id)})
+        if asset_doc:
+            freq_days = _normalize_freq_days(asset_doc.get("schedule_frequency"))
+            if freq_days and freq_days > 0:
+                update_fields["next_due"] = now_ts + timedelta(days=freq_days)
         await assets_collection.update_one(
             {"_id": ObjectId(item.asset_id)},
-            {"$set": {"last_inspected": datetime.utcnow()}}
+            {"$set": update_fields}
         )
     
     doc["_id"] = result.inserted_id
