@@ -493,6 +493,61 @@ async def list_supervisors_for_assignment(
     return [serialize_doc(d) for d in docs]
 
 
+@app.get("/api/users/supervisors")
+async def list_supervisors_for_assignment(
+    station_id: Optional[str] = None,
+    department_id: Optional[str] = None
+):
+    """Get active supervisors for asset assignment"""
+    query = {
+        "role": {"$in": [UserRole.SUPERVISOR.value, UserRole.APPROVING_SUPERVISOR.value]},
+        "is_active": True
+    }
+    if station_id:
+        query["assigned_stations"] = station_id
+    if department_id:
+        query["department_id"] = department_id
+    
+    docs = await users_collection.find(query).to_list(1000)
+    for doc in docs:
+        doc.pop("password", None)
+    return [serialize_doc(d) for d in docs]
+
+
+@app.get("/api/users/station-staff")
+async def get_station_wise_staff():
+    """Get station-wise view of all staff (Supervisors, Reporting Officers, Approving Supervisors)"""
+    stations = await stations_collection.find({}).to_list(1000)
+    users = await users_collection.find({"role": {"$in": ["supervisor", "reporting_officer", "approving_supervisor"]}}).to_list(1000)
+    
+    # Build station-wise staff map
+    station_staff = []
+    for station in stations:
+        station_id = str(station["_id"])
+        
+        # Find approving supervisor for this station
+        approving_supervisor = None
+        if station.get("approving_supervisor_id"):
+            approving_supervisor = next((u for u in users if str(u["_id"]) == station["approving_supervisor_id"]), None)
+        
+        # Find supervisors assigned to this station
+        supervisors = [u for u in users if u["role"] == "supervisor" and station_id in u.get("assigned_stations", [])]
+        
+        # Find reporting officers for this station's department (through supervisors)
+        ro_ids = set(s.get("reports_to_id") for s in supervisors if s.get("reports_to_id"))
+        reporting_officers = [u for u in users if str(u["_id"]) in ro_ids]
+        
+        station_staff.append({
+            "station_id": station_id,
+            "station_name": station["name"],
+            "approving_supervisor": serialize_doc(approving_supervisor) if approving_supervisor else None,
+            "supervisors": [serialize_doc(s) for s in supervisors],
+            "reporting_officers": [serialize_doc(ro) for ro in reporting_officers]
+        })
+    
+    return station_staff
+
+
 @app.get("/api/users/{user_id}")
 async def get_user(user_id: str):
     doc = await users_collection.find_one({"_id": ObjectId(user_id)})
@@ -551,40 +606,6 @@ async def link_supervisors_to_reporting_officer(reporting_officer_id: str, super
     )
     
     return {"message": f"{result.modified_count} supervisors linked", "modified_count": result.modified_count}
-
-
-@app.get("/api/users/station-staff")
-async def get_station_wise_staff():
-    """Get station-wise view of all staff (Supervisors, Reporting Officers, Approving Supervisors)"""
-    stations = await stations_collection.find({}).to_list(1000)
-    users = await users_collection.find({"role": {"$in": ["supervisor", "reporting_officer", "approving_supervisor"]}}).to_list(1000)
-    
-    # Build station-wise staff map
-    station_staff = []
-    for station in stations:
-        station_id = str(station["_id"])
-        
-        # Find approving supervisor for this station
-        approving_supervisor = None
-        if station.get("approving_supervisor_id"):
-            approving_supervisor = next((u for u in users if str(u["_id"]) == station["approving_supervisor_id"]), None)
-        
-        # Find supervisors assigned to this station
-        supervisors = [u for u in users if u["role"] == "supervisor" and station_id in u.get("assigned_stations", [])]
-        
-        # Find reporting officers for this station's department (through supervisors)
-        ro_ids = set(s.get("reports_to_id") for s in supervisors if s.get("reports_to_id"))
-        reporting_officers = [u for u in users if str(u["_id"]) in ro_ids]
-        
-        station_staff.append({
-            "station_id": station_id,
-            "station_name": station["name"],
-            "approving_supervisor": serialize_doc(approving_supervisor) if approving_supervisor else None,
-            "supervisors": [serialize_doc(s) for s in supervisors],
-            "reporting_officers": [serialize_doc(ro) for ro in reporting_officers]
-        })
-    
-    return station_staff
 
 
 # ============ AUTH ============
