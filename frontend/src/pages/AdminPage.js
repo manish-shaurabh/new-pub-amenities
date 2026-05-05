@@ -655,51 +655,91 @@ export default function AdminPage() {
                         <tr className="border-b">
                           <th className="text-left p-2 text-xs font-medium text-muted-foreground">Station</th>
                           <th className="text-left p-2 text-xs font-medium text-muted-foreground">Approving Supervisor</th>
+                          <th className="text-left p-2 text-xs font-medium text-muted-foreground">Reporting Officer</th>
                           <th className="text-left p-2 text-xs font-medium text-muted-foreground">Supervisors</th>
-                          <th className="text-left p-2 text-xs font-medium text-muted-foreground">Reporting Officers</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {deptStations.map(station => (
-                          <tr key={station.station_id} className="border-b hover:bg-muted/30">
-                            <td className="p-2 text-sm font-medium">{station.station_name}</td>
-                            <td className="p-2">
-                              {station.approving_supervisor ? (
-                                <button className="text-sm text-primary hover:underline">
-                                  {station.approving_supervisor.name}
-                                </button>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">Not assigned</span>
-                              )}
-                            </td>
-                            <td className="p-2">
-                              {station.supervisors?.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {station.supervisors.map(sup => (
-                                    <button key={sup._id} className="text-xs text-primary hover:underline">
-                                      {sup.name}
+                        {deptStations.map(station => {
+                          // Get unique reporting officers for this station
+                          const reportingOfficers = station.reporting_officers || [];
+                          
+                          // If no ROs, show one row with station info
+                          if (reportingOfficers.length === 0) {
+                            return (
+                              <tr key={`${station.station_id}-no-ro`} className="border-b hover:bg-muted/30">
+                                <td className="p-2 text-sm font-medium">{station.station_name}</td>
+                                <td className="p-2">
+                                  {station.approving_supervisor ? (
+                                    <button className="text-sm text-primary hover:underline">
+                                      {station.approving_supervisor.name}
                                     </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">None</span>
-                              )}
-                            </td>
-                            <td className="p-2">
-                              {station.reporting_officers?.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {station.reporting_officers.map(ro => (
-                                    <button key={ro._id} className="text-xs text-primary hover:underline">
-                                      {ro.name}
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">Not assigned</span>
+                                  )}
+                                </td>
+                                <td className="p-2">
+                                  <span className="text-xs text-muted-foreground">None</span>
+                                </td>
+                                <td className="p-2">
+                                  {station.supervisors?.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {station.supervisors.map(sup => (
+                                        <button key={sup._id} className="text-xs text-primary hover:underline">
+                                          {sup.name}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">None</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          }
+                          
+                          // One row per Reporting Officer
+                          return reportingOfficers.map((ro, roIndex) => {
+                            // Get supervisors linked to this RO
+                            const linkedSupervisors = station.supervisors?.filter(sup => sup.reports_to_id === ro._id) || [];
+                            
+                            return (
+                              <tr key={`${station.station_id}-${ro._id}`} className="border-b hover:bg-muted/30">
+                                {/* Show station name only in first row for this station */}
+                                <td className="p-2 text-sm font-medium">
+                                  {roIndex === 0 ? station.station_name : ''}
+                                </td>
+                                <td className="p-2">
+                                  {roIndex === 0 && station.approving_supervisor ? (
+                                    <button className="text-sm text-primary hover:underline">
+                                      {station.approving_supervisor.name}
                                     </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">None</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                                  ) : roIndex === 0 ? (
+                                    <span className="text-xs text-muted-foreground">Not assigned</span>
+                                  ) : ''}
+                                </td>
+                                <td className="p-2">
+                                  <button className="text-sm text-primary hover:underline">
+                                    {ro.name}
+                                  </button>
+                                </td>
+                                <td className="p-2">
+                                  {linkedSupervisors.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {linkedSupervisors.map(sup => (
+                                        <button key={sup._id} className="text-xs text-primary hover:underline">
+                                          {sup.name}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">None linked</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })}
                       </tbody>
                     </table>
                   </div>

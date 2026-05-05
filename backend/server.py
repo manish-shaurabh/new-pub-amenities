@@ -592,8 +592,14 @@ async def delete_user(user_id: str):
 
 
 @app.post("/api/users/link-supervisors")
-async def link_supervisors_to_reporting_officer(reporting_officer_id: str, supervisor_ids: List[str]):
+async def link_supervisors_to_reporting_officer(payload: dict):
     """Link multiple supervisors to a reporting officer"""
+    reporting_officer_id = payload.get("reporting_officer_id")
+    supervisor_ids = payload.get("supervisor_ids", [])
+    
+    if not reporting_officer_id or not supervisor_ids:
+        raise HTTPException(status_code=400, detail="Missing reporting_officer_id or supervisor_ids")
+    
     # Verify reporting officer exists
     ro = await users_collection.find_one({"_id": ObjectId(reporting_officer_id)})
     if not ro or ro["role"] != "reporting_officer":
