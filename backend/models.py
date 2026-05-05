@@ -123,6 +123,7 @@ class AssetCreate(BaseModel):
     asset_number: str
     description: Optional[str] = None
     schedule_frequency: Optional[ScheduleFrequency] = None
+    assigned_supervisor_id: Optional[str] = None  # NEW: supervisor assignment
 
 
 class AssetResponse(BaseModel):
@@ -137,6 +138,8 @@ class AssetResponse(BaseModel):
     status: str = "working"
     description: Optional[str] = None
     schedule_frequency: Optional[str] = None
+    assigned_supervisor_id: Optional[str] = None  # NEW
+    assigned_supervisor_name: Optional[str] = None  # NEW
     last_inspected: Optional[str] = None
     next_due: Optional[str] = None
     created_at: str
@@ -190,6 +193,7 @@ class InspectionCreate(BaseModel):
     items: List[InspectionItemRecord]
     participants: List[str] = []  # For SIG - list of employee IDs
     overall_remarks: Optional[str] = None
+    inspection_at: Optional[str] = None  # NEW: Manual inspection date/time (ISO)
 
 
 class InspectionResponse(BaseModel):
@@ -198,10 +202,11 @@ class InspectionResponse(BaseModel):
     station_id: str
     station_name: Optional[str] = None
     inspector_id: str
-    inspector_name: Optional[str] = None
+    inspector_name: str
     items: List[Dict[str, Any]] = []
     participants: List[Dict[str, Any]] = []
     overall_remarks: Optional[str] = None
+    inspection_at: Optional[str] = None  # NEW
     created_at: str
 
 
@@ -223,58 +228,18 @@ class ApproveWorkingRequest(BaseModel):
     remarks: Optional[str] = None
 
 
-class OrangeListResponse(BaseModel):
-    id: str
-    asset_id: str
-    asset_info: Optional[Dict[str, Any]] = None
-    inspection_id: str
-    reported_by: str
-    reporter_name: Optional[str] = None
-    status: str
-    remarks: Optional[str] = None
-    marked_working_by: Optional[str] = None
-    marked_working_at: Optional[str] = None
-    approved_by: Optional[str] = None
-    approved_at: Optional[str] = None
-    created_at: str
-
-
-# Notification
+# Notifications
 class NotificationCreate(BaseModel):
     user_id: str
     title: str
     message: str
-    notification_type: str = "info"  # info, warning, alert
-    related_entity_type: Optional[str] = None  # asset, inspection, orange_list
-    related_entity_id: Optional[str] = None
-
-
-class NotificationResponse(BaseModel):
-    id: str
-    user_id: str
-    title: str
-    message: str
-    notification_type: str
-    is_read: bool = False
+    notification_type: str = "info"
     related_entity_type: Optional[str] = None
     related_entity_id: Optional[str] = None
-    created_at: str
 
 
-# Schedule
+# Schedules
 class ScheduleCreate(BaseModel):
     asset_id: str
     frequency: ScheduleFrequency
-    set_by: str  # user_id of admin/RO who set it
-
-
-class ScheduleResponse(BaseModel):
-    id: str
-    asset_id: str
-    asset_info: Optional[Dict[str, Any]] = None
-    frequency: str
     set_by: str
-    next_due: Optional[str] = None
-    last_inspected: Optional[str] = None
-    is_overdue: bool = False
-    created_at: str

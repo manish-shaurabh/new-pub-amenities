@@ -78,6 +78,7 @@ export const assetsAPI = {
   create: (data) => api.post('/assets', data),
   update: (id, data) => api.put(`/assets/${id}`, data),
   delete: (id) => api.delete(`/assets/${id}`),
+  inspections: (id, limit) => api.get(`/assets/${id}/inspections`, { params: { limit } }),
 };
 
 // Users
@@ -89,6 +90,8 @@ export const usersAPI = {
   delete: (id) => api.delete(`/users/${id}`),
   grantAdmin: (userId, grantedBy) => api.post(`/users/${userId}/grant-admin?granted_by=${grantedBy}`),
   revokeAdmin: (userId, revokedBy, newRole) => api.post(`/users/${userId}/revoke-admin?revoked_by=${revokedBy}&new_role=${newRole}`),
+  supervisors: (params) => api.get('/users/supervisors', { params }),
+  inspections: (id, limit) => api.get(`/users/${id}/inspections`, { params: { limit } }),
 };
 
 // Inspections

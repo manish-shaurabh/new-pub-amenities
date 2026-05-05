@@ -282,6 +282,7 @@ async def create_asset(asset: AssetCreate):
         "status": AssetStatus.WORKING.value,
         "description": asset.description,
         "schedule_frequency": asset.schedule_frequency.value if asset.schedule_frequency else None,
+        "assigned_supervisor_id": asset.assigned_supervisor_id,
         "last_inspected": None,
         "next_due": None,
         "defective_since": None,
@@ -320,6 +321,7 @@ async def list_assets(
     type_ids = list(set(d["asset_type_id"] for d in docs if d.get("asset_type_id")))
     station_ids = list(set(d["station_id"] for d in docs if d.get("station_id")))
     location_ids = list(set(d["location_id"] for d in docs if d.get("location_id")))
+    supervisor_ids = list(set(d.get("assigned_supervisor_id") for d in docs if d.get("assigned_supervisor_id")))
     
     types_map = {}
     types_checklist_map = {}
@@ -335,12 +337,17 @@ async def list_assets(
     if location_ids:
         locs_docs = await locations_collection.find({"_id": {"$in": [ObjectId(lid) for lid in location_ids]}}).to_list(1000)
         locations_map = {str(l["_id"]): l["name"] for l in locs_docs}
+    supervisors_map = {}
+    if supervisor_ids:
+        supervisors_docs = await users_collection.find({"_id": {"$in": [ObjectId(sid) for sid in supervisor_ids]}}).to_list(1000)
+        supervisors_map = {str(u["_id"]): u["name"] for u in supervisors_docs}
     
     for doc in docs:
         doc["asset_type_name"] = types_map.get(doc["asset_type_id"], "Unknown")
         doc["station_name"] = stations_map.get(doc["station_id"], "Unknown")
         doc["location_name"] = locations_map.get(doc["location_id"], "Unknown")
         doc["checklist"] = types_checklist_map.get(doc["asset_type_id"], [])
+        doc["assigned_supervisor_name"] = supervisors_map.get(doc.get("assigned_supervisor_id", ""), None)
     
     return [serialize_doc(d) for d in docs]
 
@@ -371,6 +378,7 @@ async def update_asset(asset_id: str, asset: AssetCreate):
         "asset_number": asset.asset_number,
         "description": asset.description,
         "schedule_frequency": asset.schedule_frequency.value if asset.schedule_frequency else None,
+        "assigned_supervisor_id": asset.assigned_supervisor_id,
     }
     result = await assets_collection.update_one(
         {"_id": ObjectId(asset_id)},
@@ -435,6 +443,27 @@ async def list_users(role: Optional[str] = None, department_id: Optional[str] = 
     for doc in docs:
         doc.pop("password", None)
         doc["department_name"] = depts_map.get(doc.get("department_id", ""), "")
+    return [serialize_doc(d) for d in docs]
+
+
+@app.get("/api/users/supervisors")
+async def list_supervisors_for_assignment(
+    station_id: Optional[str] = None,
+    department_id: Optional[str] = None
+):
+    """Get active supervisors for asset assignment"""
+    query = {
+        "role": {"$in": [UserRole.SUPERVISOR.value, UserRole.APPROVING_SUPERVISOR.value]},
+        "is_active": True
+    }
+    if station_id:
+        query["assigned_stations"] = station_id
+    if department_id:
+        query["department_id"] = department_id
+    
+    docs = await users_collection.find(query).to_list(1000)
+    for doc in docs:
+        doc.pop("password", None)
     return [serialize_doc(d) for d in docs]
 
 
@@ -600,6 +629,7 @@ async def create_inspection(inspection: InspectionCreate):
         "items": items_data,
         "participants": participants_data,
         "overall_remarks": inspection.overall_remarks,
+        "inspection_at": inspection.inspection_at or datetime.utcnow().isoformat(),
         "created_at": datetime.utcnow()
     }
     result = await inspections_collection.insert_one(doc)
@@ -771,6 +801,48 @@ async def get_inspection(inspection_id: str):
     station = await stations_collection.find_one({"_id": ObjectId(doc["station_id"])})
     doc["station_name"] = station["name"] if station else "Unknown"
     return serialize_doc(doc)
+
+
+@app.get("/api/assets/{asset_id}/inspections")
+async def get_asset_inspections(asset_id: str, limit: int = 50):
+    """Get inspection history for a specific asset"""
+    # Find all inspections that include this asset
+    inspections = await inspections_collection.find(
+        {"items.asset_id": asset_id}
+    ).sort("created_at", -1).to_list(limit)
+    
+    # Enrich with station names
+    station_ids = list(set(i["station_id"] for i in inspections if i.get("station_id")))
+    stations_map = {}
+    if station_ids:
+        stations_docs = await stations_collection.find({"_id": {"$in": [ObjectId(sid) for sid in station_ids]}}).to_list(1000)
+        stations_map = {str(s["_id"]): s["name"] for s in stations_docs}
+    
+    # Filter items to only show this asset's inspection data
+    for insp in inspections:
+        insp["station_name"] = stations_map.get(insp["station_id"], "Unknown")
+        insp["items"] = [item for item in insp.get("items", []) if item.get("asset_id") == asset_id]
+    
+    return [serialize_doc(i) for i in inspections]
+
+
+@app.get("/api/users/{user_id}/inspections")
+async def get_user_inspections(user_id: str, limit: int = 50):
+    """Get inspection history for a specific user (supervisor/inspector)"""
+    inspections = await inspections_collection.find(
+        {"inspector_id": user_id}
+    ).sort("created_at", -1).to_list(limit)
+    
+    station_ids = list(set(i["station_id"] for i in inspections if i.get("station_id")))
+    stations_map = {}
+    if station_ids:
+        stations_docs = await stations_collection.find({"_id": {"$in": [ObjectId(sid) for sid in station_ids]}}).to_list(1000)
+        stations_map = {str(s["_id"]): s["name"] for s in stations_docs}
+    
+    for insp in inspections:
+        insp["station_name"] = stations_map.get(insp["station_id"], "Unknown")
+    
+    return [serialize_doc(i) for i in inspections]
 
 
 # ============ ORANGE LIST / RED LIST ============

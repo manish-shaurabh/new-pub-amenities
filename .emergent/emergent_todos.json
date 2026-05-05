@@ -1,18 +1,34 @@
 [
   {
-    "content": "Admin Panel: Add edit functionality for Stations",
+    "content": "Fix inspection date/time picker (calendar UI distortion + manual time entry)",
+    "status": "completed"
+  },
+  {
+    "content": "Add supervisor assignment to Asset model and API endpoints",
+    "status": "completed"
+  },
+  {
+    "content": "Create reusable modal components (AssetHistory, SupervisorHistory)",
+    "status": "completed"
+  },
+  {
+    "content": "Restructure User Management page (department-first + role grouping + edit functionality)",
     "status": "in_progress"
   },
   {
-    "content": "Admin Panel: Redesign Locations tab as station-grouped accordion with edit",
+    "content": "Restructure Asset Registry (group by asset type + supervisor display + clickable asset history)",
     "status": "pending"
   },
   {
-    "content": "Admin Panel: Add edit functionality for Asset Types + verify checklist in inspection",
+    "content": "Update New Inspection page (group assets by type + clickable asset history)",
     "status": "pending"
   },
   {
-    "content": "Backend: Add PUT endpoints for locations and asset-types + include checklist in asset list",
+    "content": "Restructure Inspection History page (asset-wise + collapsible + latest-first)",
+    "status": "pending"
+  },
+  {
+    "content": "Test all changes via screenshot tool",
     "status": "pending"
   }
 ]

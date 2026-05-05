@@ -1,10 +1,18 @@
 # plan.md
 
 ## Objectives
-- Deliver an MVP Railway Asset Inspection Management System for passenger-amenity assets with: asset master data, inspections (individual + SIG), Orange List workflow, scheduling/overdue tracking, photo evidence uploads, and multi-role access.
+- Deliver a production-usable Railway Asset Inspection Management System with:
+  - Asset master data (stations/locations/asset types/assets)
+  - Inspections (individual + SIG)
+  - Defect tracking + Orange/Red list aging
+  - Approval workflow (mark working → approve)
+  - Scheduling/due tracking
+  - Photo evidence uploads
+  - Multi-role access with clear UX
 - Ensure the **core workflow** is proven end-to-end: inspection → mark defective → Orange List → mark working → approving supervisor field-verifies/approves → removed from Orange List.
-- Provide operational visibility with an in-app notification center (bell icon + unread count) and auditable event history.
-- Prepare for production readiness: reporting/analytics, hardening, and external notifications (SMS/WhatsApp) + strict RBAC enforcement.
+- Provide operational visibility with analytics dashboards, exports, in-app notifications, and auditable event history.
+- Improve day-to-day usability with **neat, categorized, collapsible UIs**, and quick access to **asset history** and **user inspection history** via modals/slide-outs.
+- Prepare for production readiness: reporting/analytics, UX hardening, and external notifications (SMS/WhatsApp) + strict RBAC enforcement.
 
 ---
 
@@ -50,7 +58,7 @@ Implemented (Frontend + Backend):
 - **Inspections:**
   - Individual: station → location → assets → status/checklist/remarks/photos.
   - SIG: station-wide assets, participant selection, submit by approving supervisor.
-  - UX improvement: assets load on station select; location refines the list.
+  - UX: assets load on station select; location refines the list.
 - **Orange List:** Defective tracking, mark working, approve/resolved workflow.
 - **Notifications:** In-app bell icon + unread count + mark-all-read.
 - **Schedules:** Due/overdue tracking + due-today list.
@@ -68,7 +76,134 @@ Testing / Exit criteria met:
 
 ---
 
-### Phase 3 — Hardening + Reporting + Schedules/Overdue UX (Future)
+### Phase 2.1 — Admin Panel UX Improvements + Inspection Checklist Rendering ✅ COMPLETE
+**Goal:** Implement requested admin UX changes and ensure checklists appear during inspection.
+
+Delivered:
+- Admin Panel:
+  - ✅ Edit/update for Stations
+  - ✅ Edit/update for Locations
+  - ✅ Locations view reorganized into a station-grouped accordion
+  - ✅ Edit/update for Asset Types (including checklist)
+- Inspection Flow:
+  - ✅ Checklist from Asset Type appears during inspection for selected assets
+  - ✅ Checklist items are interactive and submitted with inspection payload
+
+Exit criteria met:
+- Checklist verified in UI during inspection (screenshots + live verification).
+
+---
+
+### Phase 3 — UX Restructure + Assignment Improvements (Current / Next)
+**Goal:** Implement the next set of changes across Users, Assets, Inspections, and History for a categorized, faster workflow. Add supervisor assignment control in Asset Registry.
+
+#### 3.1 User Management (Departments-first + categorized roles) (P0)
+User stories:
+1. As Admin/Superadmin, I can see **Departments first** and expand to see users.
+2. Users inside a department are grouped by role (Supervisors, Approving Supervisors, Reporting Officers, Others).
+3. I can still search users and filter by role across the full dataset.
+4. I can **edit** and **delete** users.
+
+Implementation steps:
+- Frontend (`UsersPage.js`):
+  - Replace flat list with department-grouped accordion.
+  - Within each department, render role sections with counts.
+  - Preserve existing search + role filter; apply after grouping.
+  - Add Edit action that opens a modal/slide-out with the existing create form fields.
+- Backend:
+  - Reuse existing `PUT /api/users/{id}`.
+  - Confirm `DELETE /api/users/{id}` is stable and add safeguards (cannot delete self, optionally cannot delete superadmin).
+
+Exit criteria:
+- Users page supports Create, Edit, Delete.
+- Department accordion + role grouping works with search/filter.
+
+#### 3.2 Asset Registry (Grouped by Asset Type + asset detail + supervisor assignment) (P0)
+User stories:
+1. As Admin/RO, I see assets grouped under headings of each **Asset Type** (collapsible).
+2. Asset name is clickable → opens a slide-out showing that asset’s inspection history.
+3. For each asset, I can see assigned **Supervisor(s)** for that asset’s station+department.
+4. As Admin, I can manually **allot/assign** an asset to a selected supervisor (not auto-only).
+
+Implementation steps:
+- Data model change:
+  - Add `assigned_supervisor_ids: string[]` (or `assigned_supervisor_id: string`) to `assets`.
+  - Decide single vs multiple assignment:
+    - Default: single primary supervisor (simpler) but allow future extension.
+- Backend:
+  - Update Asset schemas and endpoints:
+    - `POST/PUT /api/assets` accept supervisor assignment.
+    - `GET /api/assets` returns assigned supervisors (ids + display names) and available supervisors for assignment (optional).
+  - Add helper endpoint if needed:
+    - `GET /api/users/supervisors?station_id=...&department_id=...` → active supervisors list.
+- Frontend (`AssetsPage.js`):
+  - Group by asset type with Collapsible/Accordion sections.
+  - Add supervisor “chip/button” (clickable) to open **Supervisor Inspection History** slide-out.
+  - Add “Assign Supervisor” action in asset card (Admin-only) to choose from supervisors filtered by station+department.
+  - Make asset number clickable to open Asset History slide-out.
+
+Exit criteria:
+- Assets are grouped by type, collapsible.
+- Asset detail slide-out works.
+- Supervisor assignment is manual and visible.
+
+#### 3.3 New Inspection (Assets grouped by Asset Type + quick history access) (P0)
+User stories:
+1. During inspection, assets appear grouped by **Asset Type** (collapsible headers).
+2. Asset name is clickable → opens asset history slide-out without leaving the inspection form.
+
+Implementation steps:
+- Frontend (`InspectionPage.js`):
+  - Transform assets list into groups keyed by `asset_type_name`.
+  - Add clickable asset number that opens asset history slide-out.
+  - Keep selection controls intact for both Individual and SIG modes.
+
+Exit criteria:
+- Inspection page shows grouped assets and history slide-out.
+
+#### 3.4 Inspection Date/Time Fixes (Manual entry + calendar UI distortion) (P0)
+User stories:
+1. Inspector can enter **inspection date/time manually** (for history correctness).
+2. Calendar popover renders correctly (no distortion).
+3. Time selection saves exactly what the user selected.
+
+Implementation steps:
+- Backend:
+  - Extend inspection create schema to accept `inspection_datetime` (ISO) and store it (instead of only server `created_at` for display).
+  - Keep `created_at` as system timestamp; add `inspection_at` as user-provided.
+- Frontend:
+  - Add date+time input to inspection submission (top-level for the inspection).
+  - Fix Popover/Calendar CSS constraints (z-index, overflow containers, width).
+  - Fix time parsing and ISO generation to prevent “random time”.
+
+Exit criteria:
+- Inspection list/detail uses `inspection_at` for display.
+- Manual date/time works reliably.
+
+#### 3.5 Inspection History (Asset-wise, latest-first, collapsible + clickable) (P0)
+User stories:
+1. Inspection history view is asset-wise (not station-wise list).
+2. Under each asset heading, inspections are ordered **latest → oldest**.
+3. Headings are collapsible for neat UI.
+4. Asset name clickable → opens asset history slide-out.
+
+Implementation steps:
+- Backend:
+  - Add endpoint(s) for asset-centric history:
+    - `GET /api/inspections/by-asset?asset_id=...`
+    - or `GET /api/assets/{id}/inspections`.
+  - Enrich inspection items with asset_number/type_name for display.
+- Frontend (`InspectionHistoryPage.js`):
+  - Replace flat inspection list with asset-grouped accordion.
+  - Keep existing filters (station/type) but apply to grouped results.
+  - Add slide-out details for inspection and asset.
+
+Exit criteria:
+- History page is asset-first, collapsible, clickable.
+
+---
+
+### Phase 4 — Hardening + Reporting + Schedules/Overdue UX (Future)
 **Goal:** Make the MVP production-ready and management-usable with stronger reporting, reliability, and scheduling experience.
 
 User stories:
@@ -95,11 +230,11 @@ Implementation steps:
   - Regression suite for workflows + schedule computations; E2E test pass.
 
 Exit criteria:
-- Overdue logic stable; metrics consistent; no broken flows from Phase 2.
+- Overdue logic stable; metrics consistent; no broken flows from Phase 3.
 
 ---
 
-### Phase 4 — Full RBAC Enforcement + External Notifications (SMS/WhatsApp) (Future)
+### Phase 5 — Full RBAC Enforcement + External Notifications (SMS/WhatsApp) (Future)
 **Goal:** Enforce strict role- and assignment-based access + integrate external notifications.
 
 User stories:
@@ -130,16 +265,24 @@ Exit criteria:
 ---
 
 ## Next Actions
-1. Confirm external notification provider for **SMS + WhatsApp** (Twilio vs other) and obtain API keys for integration.
-2. Decide photo storage target for production (local dev + S3-compatible in prod, e.g., MinIO/S3) and implement storage abstraction if needed.
-3. Prioritize Phase 3 reporting requirements (exact KPIs, export formats, and management dashboards).
+1. **Phase 3 execution order (recommended):**
+   - 3.4 Inspection date/time fixes (unblocks accurate history)
+   - 3.1 User management restructure + edit
+   - 3.2 Asset registry grouping + supervisor assignment
+   - 3.3 New inspection grouping + quick asset history
+   - 3.5 Inspection history asset-wise restructure
+2. Confirm **single vs multiple supervisor** assignment per asset (defaulting to single primary).
+3. Confirm naming/UX for slide-outs:
+   - “Asset History” drawer
+   - “Supervisor History” drawer
 
 ---
 
 ## Success Criteria
 - Core flow works reliably: inspection → defect → Orange List → mark working → approve → removed, with full audit trail.
-- SIG inspection works: station-wide coverage + participant list.
-- Photos upload and display correctly.
+- Admin UX supports fast maintenance: categorized pages, modals/slide-outs, minimal scrolling.
+- Assets are discoverable by type; asset and supervisor histories are one click away.
+- Manual inspection date/time is accurate and consistently displayed.
 - Scheduling produces correct due/overdue states and surfaces them clearly.
 - Notifications: in-app works end-to-end; SMS/WhatsApp ready after provider integration.
-- After Phase 4: RBAC correctly restricts access by role + station + department with strong security guarantees.
+- After Phase 5: RBAC correctly restricts access by role + station + department with strong security guarantees.
