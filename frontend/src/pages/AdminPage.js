@@ -64,6 +64,7 @@ export default function AdminPage() {
   
   // Personnel Map filter
   const [personnelStationFilter, setPersonnelStationFilter] = useState('all');
+  const [personnelDepartmentFilter, setPersonnelDepartmentFilter] = useState('all');
   
   useEffect(() => { loadAll(); }, []);
 
@@ -531,37 +532,86 @@ export default function AdminPage() {
         <TabsContent value="users" className="space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-medium">{users.length} Users</h3>
-            <Button onClick={() => openCreateDialog('user')} size="sm">
-              <Plus className="h-4 w-4 mr-1" /> Add User
-            </Button>
+            <div className="flex gap-2">
+              <Select value={personnelStationFilter} onValueChange={setPersonnelStationFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="All Stations" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Stations</SelectItem>
+                  {stations.map(s => (
+                    <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button onClick={() => openCreateDialog('user')} size="sm">
+                <Plus className="h-4 w-4 mr-1" /> Add User
+              </Button>
+            </div>
           </div>
-          <div className="space-y-2">
-            {users.map(user => (
-              <Card key={user._id}>
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{user.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      ID: {user.employee_id} • {roleLabels[user.role]}
-                      {user.department_name && ` • ${user.department_name}`}
-                    </p>
-                    {user.reports_to_name && (
-                      <p className="text-xs text-primary mt-1">Reports to: {user.reports_to_name}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge className={roleColors[user.role]}>{roleLabels[user.role]}</Badge>
-                    <Button variant="ghost" size="icon" onClick={() => openEditDialog('user', user)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user._id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+          
+          {/* Group users by role */}
+          {['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor'].map(role => {
+            const roleUsers = users.filter(u => {
+              const matchRole = u.role === role;
+              if (!matchRole) return false;
+              
+              // Filter by station
+              if (personnelStationFilter === 'all') return true;
+              
+              // For approving supervisors, check station assignment via stations collection
+              if (role === 'approving_supervisor') {
+                return stations.some(s => s.approving_supervisor_id === u._id && s._id === personnelStationFilter);
+              }
+              
+              // For others, check assigned_stations
+              return u.assigned_stations?.includes(personnelStationFilter);
+            });
+            
+            if (roleUsers.length === 0) return null;
+            
+            return (
+              <Card key={role}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium">
+                    {roleLabels[role]} ({roleUsers.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {roleUsers.map(user => (
+                    <Card key={user._id}>
+                      <CardContent className="p-4 flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{user.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            ID: {user.employee_id}
+                            {user.department_name && ` • ${user.department_name}`}
+                          </p>
+                          {user.assigned_stations?.length > 0 && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Stations: {user.assigned_stations.map(sid => stations.find(s => s._id === sid)?.name).filter(Boolean).join(', ')}
+                            </p>
+                          )}
+                          {user.reports_to_name && (
+                            <p className="text-xs text-primary mt-1">Reports to: {user.reports_to_name}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={roleColors[user.role]}>{roleLabels[user.role]}</Badge>
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog('user', user)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user._id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </CardContent>
               </Card>
-            ))}
-          </div>
+            );
+          })}
         </TabsContent>
 
         {/* LINK SUPERVISORS TAB */}
@@ -626,7 +676,7 @@ export default function AdminPage() {
           <div className="flex items-center gap-3">
             <Label className="text-sm font-medium">Filter by Station:</Label>
             <Select value={personnelStationFilter} onValueChange={setPersonnelStationFilter}>
-              <SelectTrigger className="w-[250px]">
+              <SelectTrigger className="w-[200px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -636,9 +686,27 @@ export default function AdminPage() {
                 ))}
               </SelectContent>
             </Select>
+            
+            <Label className="text-sm font-medium">Filter by Department:</Label>
+            <Select value={personnelDepartmentFilter} onValueChange={setPersonnelDepartmentFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map(d => (
+                  <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {Object.keys(groupedByDepartment).map(deptId => {
+            // Skip if department filter is active and doesn't match
+            if (personnelDepartmentFilter !== 'all' && deptId !== personnelDepartmentFilter && deptId !== 'no-department') {
+              return null;
+            }
+            
             const dept = departments.find(d => d._id === deptId);
             const deptName = dept?.name || 'No Department';
             const deptStations = groupedByDepartment[deptId];
@@ -661,13 +729,19 @@ export default function AdminPage() {
                       </thead>
                       <tbody>
                         {deptStations.map(station => {
-                          // Get unique reporting officers for this station
-                          const reportingOfficers = station.reporting_officers || [];
+                          // Filter supervisors and ROs by department
+                          const deptSupervisors = station.supervisors?.filter(s => 
+                            s.department_id === deptId || (deptId === 'no-department' && !s.department_id)
+                          ) || [];
                           
-                          // If no ROs, show one row with station info
-                          if (reportingOfficers.length === 0) {
+                          const deptROs = station.reporting_officers?.filter(ro =>
+                            ro.department_id === deptId || (deptId === 'no-department' && !ro.department_id)
+                          ) || [];
+                          
+                          // If no ROs for this department, show one row with unlinked supervisors
+                          if (deptROs.length === 0) {
                             return (
-                              <tr key={`${station.station_id}-no-ro`} className="border-b hover:bg-muted/30">
+                              <tr key={`${station.station_id}-${deptId}-no-ro`} className="border-b hover:bg-muted/30">
                                 <td className="p-2 text-sm font-medium">{station.station_name}</td>
                                 <td className="p-2">
                                   {station.approving_supervisor ? (
@@ -682,9 +756,9 @@ export default function AdminPage() {
                                   <span className="text-xs text-muted-foreground">None</span>
                                 </td>
                                 <td className="p-2">
-                                  {station.supervisors?.length > 0 ? (
+                                  {deptSupervisors.length > 0 ? (
                                     <div className="flex flex-wrap gap-1">
-                                      {station.supervisors.map(sup => (
+                                      {deptSupervisors.map(sup => (
                                         <button key={sup._id} className="text-xs text-primary hover:underline">
                                           {sup.name}
                                         </button>
@@ -699,13 +773,13 @@ export default function AdminPage() {
                           }
                           
                           // One row per Reporting Officer
-                          return reportingOfficers.map((ro, roIndex) => {
-                            // Get supervisors linked to this RO
-                            const linkedSupervisors = station.supervisors?.filter(sup => sup.reports_to_id === ro._id) || [];
+                          return deptROs.map((ro, roIndex) => {
+                            // Get supervisors linked to this RO in this department
+                            const linkedSupervisors = deptSupervisors.filter(sup => sup.reports_to_id === ro._id);
                             
                             return (
-                              <tr key={`${station.station_id}-${ro._id}`} className="border-b hover:bg-muted/30">
-                                {/* Show station name only in first row for this station */}
+                              <tr key={`${station.station_id}-${deptId}-${ro._id}`} className="border-b hover:bg-muted/30">
+                                {/* Show station name only in first row */}
                                 <td className="p-2 text-sm font-medium">
                                   {roIndex === 0 ? station.station_name : ''}
                                 </td>
@@ -922,11 +996,23 @@ export default function AdminPage() {
                   <SelectTrigger><SelectValue placeholder="Select Reporting Officer" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
-                    {users.filter(u => u.role === 'reporting_officer' && u.department_id === userForm.department_id).map(ro => (
-                      <SelectItem key={ro._id} value={ro._id}>{ro.name}</SelectItem>
+                    {users.filter(u => {
+                      // Must be reporting officer
+                      if (u.role !== 'reporting_officer') return false;
+                      // Must be in same department
+                      if (u.department_id !== userForm.department_id) return false;
+                      // Must have overlapping stations
+                      if (!userForm.assigned_stations || userForm.assigned_stations.length === 0) return true;
+                      if (!u.assigned_stations || u.assigned_stations.length === 0) return false;
+                      return userForm.assigned_stations.some(s => u.assigned_stations.includes(s));
+                    }).map(ro => (
+                      <SelectItem key={ro._id} value={ro._id}>{ro.name} ({ro.employee_id})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Shows ROs from same department with overlapping stations
+                </p>
               </div>
               <div>
                 <Label>Password {dialogMode === 'edit' && '(leave blank to keep current)'}</Label>
