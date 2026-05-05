@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
-import { assetsAPI, stationsAPI, locationsAPI, assetTypesAPI, departmentsAPI } from '../lib/api';
+import { assetsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
-import { Card, CardContent } from '../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { toast } from 'sonner';
-import { Plus, Search, Box, Trash2, Pencil } from 'lucide-react';
+import { Plus, Search, Box, Trash2, Pencil, ChevronDown, User } from 'lucide-react';
+import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
+import SupervisorHistoryDrawer from '../components/SupervisorHistoryDrawer';
 
 export default function AssetsPage() {
   const { isAdmin } = useAuth();
@@ -17,6 +20,7 @@ export default function AssetsPage() {
   const [stations, setStations] = useState([]);
   const [locations, setLocations] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
+  const [supervisors, setSupervisors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStation, setFilterStation] = useState('');
@@ -24,8 +28,10 @@ export default function AssetsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
+  const [assetHistory, setAssetHistory] = useState(null);
+  const [supervisorHistory, setSupervisorHistory] = useState(null);
   const [formData, setFormData] = useState({
-    asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: ''
+    asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', assigned_supervisor_id: ''
   });
 
   useEffect(() => { loadAll(); }, []);
@@ -54,6 +60,22 @@ export default function AssetsPage() {
     }
   };
 
+  const loadSupervisors = async (stationId, assetTypeId) => {
+    // Get department from asset type
+    const assetType = assetTypes.find(t => t._id === assetTypeId);
+    const params = {};
+    if (stationId) params.station_id = stationId;
+    if (assetType?.department_id) params.department_id = assetType.department_id;
+    
+    try {
+      const res = await usersAPI.supervisors(params);
+      setSupervisors(res.data);
+    } catch (e) {
+      console.error('Failed to load supervisors', e);
+      setSupervisors([]);
+    }
+  };
+
   const handleCreate = async () => {
     if (!formData.asset_type_id || !formData.station_id || !formData.location_id || !formData.asset_number) {
       toast.error('Please fill all required fields');
@@ -62,7 +84,8 @@ export default function AssetsPage() {
     try {
       await assetsAPI.create({
         ...formData,
-        schedule_frequency: formData.schedule_frequency || null
+        schedule_frequency: formData.schedule_frequency || null,
+        assigned_supervisor_id: formData.assigned_supervisor_id || null
       });
       toast.success('Asset created successfully');
       setShowCreate(false);
@@ -73,7 +96,6 @@ export default function AssetsPage() {
     }
   };
 
-  // Change 5: Edit asset
   const handleEdit = (asset) => {
     setEditingAsset(asset);
     setFormData({
@@ -82,9 +104,11 @@ export default function AssetsPage() {
       location_id: asset.location_id || '',
       asset_number: asset.asset_number || '',
       description: asset.description || '',
-      schedule_frequency: asset.schedule_frequency || ''
+      schedule_frequency: asset.schedule_frequency || '',
+      assigned_supervisor_id: asset.assigned_supervisor_id || ''
     });
     loadLocations(asset.station_id);
+    loadSupervisors(asset.station_id, asset.asset_type_id);
     setShowEdit(true);
   };
 
@@ -96,7 +120,8 @@ export default function AssetsPage() {
     try {
       await assetsAPI.update(editingAsset._id, {
         ...formData,
-        schedule_frequency: formData.schedule_frequency || null
+        schedule_frequency: formData.schedule_frequency || null,
+        assigned_supervisor_id: formData.assigned_supervisor_id || null
       });
       toast.success('Asset updated successfully');
       setShowEdit(false);
@@ -120,7 +145,9 @@ export default function AssetsPage() {
   };
 
   const resetForm = () => {
-    setFormData({ asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '' });
+    setFormData({ asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', assigned_supervisor_id: '' });
+    setLocations([]);
+    setSupervisors([]);
   };
 
   const filteredAssets = assets.filter(a => {
@@ -132,6 +159,15 @@ export default function AssetsPage() {
     const matchStatus = !filterStatus || filterStatus === 'all' || a.status === filterStatus;
     return matchSearch && matchStation && matchStatus;
   });
+
+  // Group by asset type
+  const groupedByType = assetTypes.reduce((acc, type) => {
+    acc[type._id] = {
+      ...type,
+      assets: filteredAssets.filter(a => a.asset_type_id === type._id)
+    };
+    return acc;
+  }, {});
 
   const statusBadge = (status) => {
     const styles = {
@@ -146,7 +182,10 @@ export default function AssetsPage() {
     <div className="space-y-4">
       <div>
         <Label>Asset Type *</Label>
-        <Select value={formData.asset_type_id} onValueChange={(v) => setFormData({...formData, asset_type_id: v})}>
+        <Select value={formData.asset_type_id} onValueChange={(v) => {
+          setFormData({...formData, asset_type_id: v});
+          if (formData.station_id) loadSupervisors(formData.station_id, v);
+        }}>
           <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
           <SelectContent>
             {assetTypes.map(t => <SelectItem key={t._id} value={t._id}>{t.name} ({t.department_name})</SelectItem>)}
@@ -155,7 +194,11 @@ export default function AssetsPage() {
       </div>
       <div>
         <Label>Station *</Label>
-        <Select value={formData.station_id} onValueChange={(v) => { setFormData({...formData, station_id: v, location_id: ''}); loadLocations(v); }}>
+        <Select value={formData.station_id} onValueChange={(v) => { 
+          setFormData({...formData, station_id: v, location_id: ''}); 
+          loadLocations(v);
+          if (formData.asset_type_id) loadSupervisors(v, formData.asset_type_id);
+        }}>
           <SelectTrigger><SelectValue placeholder="Select station" /></SelectTrigger>
           <SelectContent>
             {stations.map(s => <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>)}
@@ -174,6 +217,16 @@ export default function AssetsPage() {
       <div>
         <Label>Asset Number *</Label>
         <Input value={formData.asset_number} onChange={(e) => setFormData({...formData, asset_number: e.target.value})} placeholder="e.g., FAN-P1-001" />
+      </div>
+      <div>
+        <Label>Assigned Supervisor</Label>
+        <Select value={formData.assigned_supervisor_id} onValueChange={(v) => setFormData({...formData, assigned_supervisor_id: v})}>
+          <SelectTrigger><SelectValue placeholder="Select supervisor (optional)" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">No Assignment</SelectItem>
+            {supervisors.map(s => <SelectItem key={s._id} value={s._id}>{s.name} ({s.employee_id})</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
       <div>
         <Label>Description</Label>
@@ -197,6 +250,52 @@ export default function AssetsPage() {
     </div>
   );
 
+  const AssetCard = ({ asset }) => (
+    <div className="flex items-center justify-between p-3 border-l-2 border-primary/20 hover:border-primary/50 hover:bg-accent/30 transition-all">
+      <div className="flex items-center gap-3 flex-1">
+        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+          <Box className="h-4 w-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <button
+            onClick={() => setAssetHistory({ id: asset._id, number: asset.asset_number })}
+            className="font-medium text-sm hover:text-primary transition-colors text-left"
+          >
+            {asset.asset_number}
+          </button>
+          <p className="text-xs text-muted-foreground truncate">
+            {asset.station_name} &middot; {asset.location_name}
+          </p>
+          {asset.assigned_supervisor_name && (
+            <button
+              onClick={() => setSupervisorHistory({ id: asset.assigned_supervisor_id, name: asset.assigned_supervisor_name })}
+              className="flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+            >
+              <User className="h-3 w-3" />
+              {asset.assigned_supervisor_name}
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {statusBadge(asset.status)}
+        {asset.schedule_frequency && (
+          <Badge variant="outline" className="text-xs hidden sm:flex">{asset.schedule_frequency}</Badge>
+        )}
+        {isAdmin() && (
+          <>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(asset)} data-testid="asset-edit-button">
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(asset._id)}>
+              <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   if (loading) {
     return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-xl" />)}</div>;
   }
@@ -215,7 +314,7 @@ export default function AssetsPage() {
                 <Plus className="h-4 w-4 mr-2" /> Add Asset
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Create New Asset</DialogTitle></DialogHeader>
               <AssetForm isEdit={false} />
             </DialogContent>
@@ -247,8 +346,8 @@ export default function AssetsPage() {
         </Select>
       </div>
 
-      {/* Asset List */}
-      <div className="space-y-2">
+      {/* Asset List Grouped by Type */}
+      <div className="space-y-3">
         {filteredAssets.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
@@ -257,54 +356,58 @@ export default function AssetsPage() {
             </CardContent>
           </Card>
         ) : (
-          filteredAssets.map((asset) => (
-            <Card key={asset._id} className="table-row-hover">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Box className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{asset.asset_number}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {asset.asset_type_name} &middot; {asset.station_name} &middot; {asset.location_name}
-                      </p>
-                      {asset.defective_since && asset.status === 'defective' && (
-                        <p className="text-[10px] text-destructive">Defective since: {new Date(asset.defective_since).toLocaleString()}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {statusBadge(asset.status)}
-                    {asset.schedule_frequency && (
-                      <Badge variant="outline" className="text-xs hidden sm:flex">{asset.schedule_frequency}</Badge>
-                    )}
-                    {isAdmin() && (
-                      <>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(asset)} data-testid="asset-edit-button">
-                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(asset._id)}>
-                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+          Object.values(groupedByType).map((type) => {
+            if (type.assets.length === 0) return null;
+            
+            return (
+              <Collapsible key={type._id} defaultOpen>
+                <Card>
+                  <CollapsibleTrigger className="w-full">
+                    <CardHeader className="p-4 hover:bg-accent/30 transition-colors cursor-pointer">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          {type.name}
+                          <Badge variant="outline" className="text-xs font-normal">{type.assets.length} assets</Badge>
+                        </CardTitle>
+                        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform ui-open:rotate-180" />
+                      </div>
+                    </CardHeader>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent className="p-4 pt-0 space-y-1">
+                      {type.assets.map(asset => <AssetCard key={asset._id} asset={asset} />)}
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            );
+          })
         )}
       </div>
 
-      {/* Edit Dialog - Change 5 */}
+      {/* Edit Dialog */}
       <Dialog open={showEdit} onOpenChange={(open) => { setShowEdit(open); if (!open) { setEditingAsset(null); resetForm(); } }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Edit Asset</DialogTitle></DialogHeader>
           <AssetForm isEdit={true} />
         </DialogContent>
       </Dialog>
+
+      {/* Asset History Drawer */}
+      <AssetHistoryDrawer
+        assetId={assetHistory?.id}
+        assetNumber={assetHistory?.number}
+        open={!!assetHistory}
+        onOpenChange={(open) => !open && setAssetHistory(null)}
+      />
+
+      {/* Supervisor History Drawer */}
+      <SupervisorHistoryDrawer
+        supervisorId={supervisorHistory?.id}
+        supervisorName={supervisorHistory?.name}
+        open={!!supervisorHistory}
+        onOpenChange={(open) => !open && setSupervisorHistory(null)}
+      />
     </div>
   );
 }

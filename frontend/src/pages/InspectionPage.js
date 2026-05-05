@@ -13,9 +13,11 @@ import { Checkbox } from '../components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { Calendar } from '../components/ui/calendar';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { toast } from 'sonner';
-import { ClipboardCheck, Camera, Users, CalendarIcon, Clock, AlertTriangle } from 'lucide-react';
+import { ClipboardCheck, Camera, Users, CalendarIcon, Clock, AlertTriangle, ChevronDown } from 'lucide-react';
 import { format } from 'date-fns';
+import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 
 export default function InspectionPage() {
   const { user } = useAuth();
@@ -31,6 +33,9 @@ export default function InspectionPage() {
   const [participants, setParticipants] = useState([]);
   const [overallRemarks, setOverallRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [assetHistory, setAssetHistory] = useState(null);
+  const [inspectionDate, setInspectionDate] = useState(new Date());
+  const [inspectionTime, setInspectionTime] = useState(format(new Date(), 'HH:mm'));
 
   useEffect(() => {
     loadStations();
@@ -160,10 +165,18 @@ export default function InspectionPage() {
 
     setSubmitting(true);
     try {
+      // Build inspection_at from inspectionDate and inspectionTime
+      const inspectionDateTime = new Date(inspectionDate);
+      if (inspectionTime) {
+        const [hours, minutes] = inspectionTime.split(':');
+        inspectionDateTime.setHours(parseInt(hours), parseInt(minutes));
+      }
+
       const payload = {
         inspection_type: inspectionType,
         station_id: selectedStation,
         inspector_id: user._id,
+        inspection_at: inspectionDateTime.toISOString(),
         items: inspectionItems.map(item => {
           let defective_since = null;
           if (item.status === 'not_ok' || item.status === 'needs_repair') {
@@ -195,6 +208,8 @@ export default function InspectionPage() {
       setInspectionItems([]);
       setParticipants([]);
       setOverallRemarks('');
+      setInspectionDate(new Date());
+      setInspectionTime(format(new Date(), 'HH:mm'));
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Failed to submit inspection');
     } finally {
@@ -277,48 +292,119 @@ export default function InspectionPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Asset Selection */}
+      {/* Inspection Date/Time */}
       {selectedStation && assets.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium">Select Assets ({assets.length} available)</CardTitle>
-              {inspectionType === 'sig' && (
-                <Button variant="outline" size="sm" onClick={selectAllAssets}>Select All</Button>
-              )}
-            </div>
+            <CardTitle className="text-sm font-medium">Inspection Date & Time</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[300px] overflow-y-auto">
-              {assets.map(asset => (
-                <label key={asset._id} className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
-                  selectedAssets.find(a => a._id === asset._id) ? 'border-primary bg-accent' : 'hover:bg-muted'
-                }`}>
-                  <Checkbox
-                    checked={!!selectedAssets.find(a => a._id === asset._id)}
-                    onCheckedChange={() => toggleAssetSelection(asset)}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1">
-                      <p className="text-sm font-medium truncate">{asset.asset_number}</p>
-                      {/* Change 3: Show defective since for already-defective assets */}
-                      {asset.status === 'defective' && (
-                        <Badge className="status-defective text-[9px] px-1 py-0">Defective</Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{asset.asset_type_name} &middot; {asset.location_name}</p>
-                    {asset.status === 'defective' && asset.defective_since && (
-                      <p className="text-[10px] text-destructive mt-0.5 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3" />
-                        Defective since: {new Date(asset.defective_since).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-                </label>
-              ))}
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <Label className="text-xs">Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left font-normal mt-1">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {inspectionDate ? format(inspectionDate, 'dd MMM yyyy') : 'Pick date'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={inspectionDate}
+                      onSelect={(date) => setInspectionDate(date || new Date())}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="w-[140px]">
+                <Label className="text-xs">Time</Label>
+                <Input
+                  type="time"
+                  value={inspectionTime}
+                  onChange={(e) => setInspectionTime(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Asset Selection - Grouped by Type */}
+      {selectedStation && assets.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">Select Assets ({assets.length} available)</h3>
+            {inspectionType === 'sig' && (
+              <Button variant="outline" size="sm" onClick={selectAllAssets}>Select All</Button>
+            )}
+          </div>
+          
+          {/* Group assets by type */}
+          {(() => {
+            const grouped = assets.reduce((acc, asset) => {
+              const typeKey = asset.asset_type_name || 'Unknown';
+              if (!acc[typeKey]) acc[typeKey] = [];
+              acc[typeKey].push(asset);
+              return acc;
+            }, {});
+
+            return Object.keys(grouped).map(typeName => (
+              <Collapsible key={typeName} defaultOpen>
+                <Card>
+                  <CollapsibleTrigger className="w-full">
+                    <CardHeader className="p-3 hover:bg-accent/30 transition-colors cursor-pointer">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          {typeName}
+                          <Badge variant="outline" className="text-xs font-normal">{grouped[typeName].length} assets</Badge>
+                        </CardTitle>
+                        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform ui-open:rotate-180" />
+                      </div>
+                    </CardHeader>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent className="p-3 pt-0">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {grouped[typeName].map(asset => (
+                          <label key={asset._id} className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            selectedAssets.find(a => a._id === asset._id) ? 'border-primary bg-accent' : 'hover:bg-muted'
+                          }`}>
+                            <Checkbox
+                              checked={!!selectedAssets.find(a => a._id === asset._id)}
+                              onCheckedChange={() => toggleAssetSelection(asset)}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <button
+                                onClick={(e) => { e.preventDefault(); setAssetHistory({ id: asset._id, number: asset.asset_number }); }}
+                                className="text-sm font-medium truncate hover:text-primary transition-colors text-left"
+                              >
+                                {asset.asset_number}
+                              </button>
+                              {asset.status === 'defective' && (
+                                <Badge className="status-defective text-[9px] px-1 py-0 ml-1">Defective</Badge>
+                              )}
+                              <p className="text-xs text-muted-foreground">{asset.location_name}</p>
+                              {asset.status === 'defective' && asset.defective_since && (
+                                <p className="text-[10px] text-destructive mt-0.5 flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  Since: {new Date(asset.defective_since).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            ));
+          })()}
+        </div>
       )}
 
       {/* Inspection Items */}
@@ -490,6 +576,14 @@ export default function InspectionPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Asset History Drawer */}
+      <AssetHistoryDrawer
+        assetId={assetHistory?.id}
+        assetNumber={assetHistory?.number}
+        open={!!assetHistory}
+        onOpenChange={(open) => !open && setAssetHistory(null)}
+      />
     </div>
   );
 }

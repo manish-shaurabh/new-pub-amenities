@@ -1,34 +1,22 @@
 [
   {
-    "content": "Fix inspection date/time picker (calendar UI distortion + manual time entry)",
+    "content": "Complete Asset Registry restructure (group by type + supervisor assignment)",
     "status": "completed"
   },
   {
-    "content": "Add supervisor assignment to Asset model and API endpoints",
+    "content": "Update New Inspection page (group by type + fix date/time picker)",
     "status": "completed"
   },
   {
-    "content": "Create reusable modal components (AssetHistory, SupervisorHistory)",
+    "content": "Restructure Inspection History page (asset-wise grouping)",
     "status": "completed"
   },
   {
-    "content": "Restructure User Management page (department-first + role grouping + edit functionality)",
-    "status": "in_progress"
+    "content": "Test all pages with screenshot tool",
+    "status": "completed"
   },
   {
-    "content": "Restructure Asset Registry (group by asset type + supervisor display + clickable asset history)",
-    "status": "pending"
-  },
-  {
-    "content": "Update New Inspection page (group assets by type + clickable asset history)",
-    "status": "pending"
-  },
-  {
-    "content": "Restructure Inspection History page (asset-wise + collapsible + latest-first)",
-    "status": "pending"
-  },
-  {
-    "content": "Test all changes via screenshot tool",
-    "status": "pending"
+    "content": "Verify all clickable elements (asset/supervisor history)",
+    "status": "completed"
   }
 ]
