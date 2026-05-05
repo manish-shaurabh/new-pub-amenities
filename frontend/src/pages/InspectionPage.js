@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popove
 import { Calendar } from '../components/ui/calendar';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { toast } from 'sonner';
-import { ClipboardCheck, Camera, Users, CalendarIcon, Clock, AlertTriangle, ChevronDown } from 'lucide-react';
+import { ClipboardCheck, Camera, Users, CalendarIcon, Clock, AlertTriangle, ChevronDown, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 
@@ -124,6 +124,7 @@ export default function InspectionPage() {
         status: 'ok',
         checklist_responses: (asset.checklist || []).map(c => ({ name: c.name, value: '', status: 'pass' })),
         remarks: '',
+        remarks_by: user.name, // Track who is making remarks
         photo_urls: [],
         defective_since_date: null,
         defective_since_time: ''
@@ -169,6 +170,15 @@ export default function InspectionPage() {
     } catch (e) {
       toast.error('Photo upload failed');
     }
+  };
+
+  const handlePhotoDelete = (assetId, photoUrl) => {
+    setInspectionItems(prev => prev.map(item =>
+      item.asset_id === assetId
+        ? { ...item, photo_urls: item.photo_urls.filter(url => url !== photoUrl) }
+        : item
+    ));
+    toast.success('Photo removed');
   };
 
   const toggleParticipant = (empId) => {
@@ -221,6 +231,7 @@ export default function InspectionPage() {
             status: item.status,
             checklist_responses: item.checklist_responses,
             remarks: item.remarks,
+            remarks_by: item.remarks_by, // Include who made the remarks
             photo_urls: item.photo_urls,
             defective_since: defective_since
           };
@@ -551,8 +562,14 @@ export default function InspectionPage() {
                   <Label className="text-xs font-medium">Photos</Label>
                   <div className="mt-1 flex items-center gap-2 flex-wrap">
                     {item.photo_urls.map((url, pidx) => (
-                      <div key={pidx} className="relative h-16 w-16 rounded-lg overflow-hidden border">
+                      <div key={pidx} className="relative h-16 w-16 rounded-lg overflow-hidden border group">
                         <img src={`${process.env.REACT_APP_BACKEND_URL}${url}`} alt="" className="h-full w-full object-cover" />
+                        <button
+                          onClick={() => handlePhotoDelete(item.asset_id, url)}
+                          className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="h-4 w-4 text-white" />
+                        </button>
                       </div>
                     ))}
                     <label className="h-16 w-16 rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-muted/40">

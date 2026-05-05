@@ -188,6 +188,7 @@ class InspectionItemRecord(BaseModel):
     status: InspectionItemStatus
     checklist_responses: List[Dict[str, Any]] = []
     remarks: Optional[str] = None
+    remarks_by: Optional[str] = None  # NEW: Track who made the remarks
     photo_urls: List[str] = []
     defective_since: Optional[str] = None  # ISO date-time string when defect started
 

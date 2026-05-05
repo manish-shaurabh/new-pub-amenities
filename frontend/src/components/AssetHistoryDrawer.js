@@ -94,7 +94,12 @@ export default function AssetHistoryDrawer({ assetId, assetNumber, open, onOpenC
                     <div className="mt-2 pt-2 border-t">
                       <div className="flex items-start gap-1.5">
                         <FileText className="h-3 w-3 text-muted-foreground mt-0.5" />
-                        <p className="text-xs text-muted-foreground">{insp.items[0].remarks}</p>
+                        <div className="flex-1">
+                          <p className="text-xs text-muted-foreground">{insp.items[0].remarks}</p>
+                          {insp.items[0].remarks_by && (
+                            <p className="text-[10px] text-muted-foreground/70 mt-0.5">— {insp.items[0].remarks_by}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
