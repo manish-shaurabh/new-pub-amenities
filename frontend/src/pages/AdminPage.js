@@ -743,11 +743,11 @@ export default function AdminPage() {
                 <Input value={stationForm.division} onChange={(e) => setStationForm({...stationForm, division: e.target.value})} />
               </div>
               <div>
-                <Label>Approving Supervisor</Label>
-                <Select value={stationForm.approving_supervisor_id} onValueChange={(v) => setStationForm({...stationForm, approving_supervisor_id: v})}>
+                <Label>Approving Supervisor (Optional)</Label>
+                <Select value={stationForm.approving_supervisor_id || 'none'} onValueChange={(v) => setStationForm({...stationForm, approving_supervisor_id: v === 'none' ? '' : v})}>
                   <SelectTrigger><SelectValue placeholder="Select Approving Supervisor" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {approvingSupervisors.map(sup => (
                       <SelectItem key={sup._id} value={sup._id}>{sup.name} ({sup.employee_id})</SelectItem>
                     ))}
@@ -854,10 +854,10 @@ export default function AdminPage() {
               </div>
               <div>
                 <Label>Department</Label>
-                <Select value={userForm.department_id} onValueChange={(v) => setUserForm({...userForm, department_id: v})}>
+                <Select value={userForm.department_id || 'none'} onValueChange={(v) => setUserForm({...userForm, department_id: v === 'none' ? '' : v})}>
                   <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {departments.map(d => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -878,10 +878,10 @@ export default function AdminPage() {
               </div>
               <div>
                 <Label>Reports To (Reporting Officer)</Label>
-                <Select value={userForm.reports_to_id} onValueChange={(v) => setUserForm({...userForm, reports_to_id: v})}>
+                <Select value={userForm.reports_to_id || 'none'} onValueChange={(v) => setUserForm({...userForm, reports_to_id: v === 'none' ? '' : v})}>
                   <SelectTrigger><SelectValue placeholder="Select Reporting Officer" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {users.filter(u => u.role === 'reporting_officer' && u.department_id === userForm.department_id).map(ro => (
                       <SelectItem key={ro._id} value={ro._id}>{ro.name}</SelectItem>
                     ))}
