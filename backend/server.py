@@ -719,23 +719,22 @@ async def upload_multiple_files(files: List[UploadFile] = File(...)):
 # ============ INSPECTIONS ============
 @app.post("/api/inspections")
 async def create_inspection(inspection: InspectionCreate):
+    """Submit an inspection. Each item is stored with approval_status='pending_approval';
+    no asset state changes are applied until an Approving Supervisor (or Superadmin) marks
+    each item Pass or Fail."""
     inspector = await users_collection.find_one({"_id": ObjectId(inspection.inspector_id)})
     if not inspector:
         raise HTTPException(status_code=404, detail="Inspector not found")
-    
+
     items_data = []
-    defective_assets = []
-    
     for item in inspection.items:
         item_dict = item.model_dump()
+        item_dict["approval_status"] = "pending_approval"
+        item_dict["reviewed_by"] = None
+        item_dict["reviewed_at"] = None
+        item_dict["reviewer_remarks"] = None
         items_data.append(item_dict)
-        
-        if item.status in [InspectionItemStatus.NOT_OK, InspectionItemStatus.NEEDS_REPAIR]:
-            defective_assets.append({
-                "asset_id": item.asset_id,
-                "defective_since": item.defective_since  # Change 2: date/time from user
-            })
-    
+
     # Resolve participant names for SIG
     participants_data = []
     if inspection.inspection_type == "sig" and inspection.participants:
@@ -749,7 +748,7 @@ async def create_inspection(inspection: InspectionCreate):
                 })
             else:
                 participants_data.append({"employee_id": emp_id, "name": "Unknown", "role": "unknown"})
-    
+
     doc = {
         "inspection_type": inspection.inspection_type.value,
         "station_id": inspection.station_id,
@@ -763,141 +762,381 @@ async def create_inspection(inspection: InspectionCreate):
     }
     result = await inspections_collection.insert_one(doc)
     inspection_id = str(result.inserted_id)
-    
-    # Handle defective assets - add to Orange/Red List
-    for defect_info in defective_assets:
-        asset_id = defect_info["asset_id"]
-        defective_since = defect_info.get("defective_since")
-        
-        # Parse defective_since or use current time
+
+    # Notify approvers (Approving Supervisor for the station + Admins/Superadmins) that
+    # there are inspection items awaiting their review.
+    station_doc = await stations_collection.find_one({"_id": ObjectId(inspection.station_id)})
+    station_name = station_doc.get("name") if station_doc else "Unknown station"
+    asup_id = station_doc.get("approving_supervisor_id") if station_doc else None
+
+    notify_user_ids = set()
+    if asup_id:
+        notify_user_ids.add(asup_id)
+    admins = await users_collection.find({
+        "role": {"$in": [UserRole.ADMIN.value, UserRole.SUPERADMIN.value]},
+        "is_active": True,
+    }).to_list(50)
+    for a in admins:
+        notify_user_ids.add(str(a["_id"]))
+    notify_user_ids.discard(inspection.inspector_id)
+
+    for uid in notify_user_ids:
+        await notifications_collection.insert_one({
+            "user_id": uid,
+            "title": "Inspection Awaiting Approval",
+            "message": f"{len(items_data)} item(s) submitted by {inspector['name']} at {station_name} require Pass/Fail review.",
+            "notification_type": "info",
+            "related_entity_type": "inspection",
+            "related_entity_id": inspection_id,
+            "is_read": False,
+            "created_at": datetime.utcnow()
+        })
+
+    # Audit log
+    await audit_log_collection.insert_one({
+        "entity_type": "inspection",
+        "entity_id": inspection_id,
+        "action": "submitted",
+        "performed_by": inspection.inspector_id,
+        "details": {"item_count": len(items_data), "station_id": inspection.station_id},
+        "created_at": datetime.utcnow()
+    })
+
+    doc["_id"] = result.inserted_id
+    return serialize_doc(doc)
+
+
+# ===== Approval helpers =====
+async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, reviewer_id: str):
+    """Apply the asset/orange-list state changes that the inspection item represents.
+    Called when an item is approved (Pass)."""
+    asset_id = item["asset_id"]
+    inspection_id = str(inspection_doc["_id"])
+    inspector_id = inspection_doc["inspector_id"]
+    item_status = item.get("status")
+
+    if item_status in (InspectionItemStatus.NOT_OK.value, InspectionItemStatus.NEEDS_REPAIR.value):
+        # Mark asset defective and add to orange list (if not already)
+        defective_since = item.get("defective_since")
         if defective_since:
             try:
-                defective_since_dt = datetime.fromisoformat(defective_since.replace('Z', '+00:00').replace('+00:00', ''))
+                defective_since_dt = datetime.fromisoformat(
+                    defective_since.replace('Z', '+00:00').replace('+00:00', '')
+                )
             except (ValueError, AttributeError):
                 defective_since_dt = datetime.utcnow()
         else:
             defective_since_dt = datetime.utcnow()
-        
-        # Update asset status and defective_since
+
         await assets_collection.update_one(
             {"_id": ObjectId(asset_id)},
             {"$set": {
                 "status": AssetStatus.DEFECTIVE.value,
-                "defective_since": defective_since_dt
+                "defective_since": defective_since_dt,
             }}
         )
-        
-        # Check if already in orange/red list
-        existing_orange = await orange_list_collection.find_one({
+
+        existing = await orange_list_collection.find_one({
             "asset_id": asset_id,
             "status": {"$ne": OrangeListStatus.RESOLVED.value}
         })
-        
-        if not existing_orange:
-            orange_doc = {
+        if not existing:
+            await orange_list_collection.insert_one({
                 "asset_id": asset_id,
                 "inspection_id": inspection_id,
-                "reported_by": inspection.inspector_id,
+                "reported_by": inspector_id,
                 "status": OrangeListStatus.DEFECTIVE.value,
                 "defective_since": defective_since_dt,
-                "remarks": "Marked defective during inspection",
+                "remarks": "Marked defective during inspection (approved)",
                 "marked_working_by": None,
                 "marked_working_at": None,
                 "approved_by": None,
                 "approved_at": None,
                 "created_at": datetime.utcnow()
-            }
-            await orange_list_collection.insert_one(orange_doc)
-        
-        # Change 1: TARGETED NOTIFICATIONS - only to assigned supervisor/RO/approving supervisor for this asset
+            })
+
+        # Notify supervisors / ROs / ASUPs (existing behavior)
         asset = await assets_collection.find_one({"_id": ObjectId(asset_id)})
         if asset:
             asset_type = await asset_types_collection.find_one({"_id": ObjectId(asset["asset_type_id"])})
             dept_id = asset_type["department_id"] if asset_type else None
-            asset_station_id = asset["station_id"]
-            
-            # Find users to notify:
-            # 1. Supervisors assigned to this station AND this department
-            # 2. ROs assigned to this station AND this department
-            # 3. Approving Supervisors assigned to this station
-            # 4. All Admins and Superadmins
-            
-            notification_targets = []
-            
+            station_id = asset["station_id"]
+            targets = []
             if dept_id:
-                # Supervisors for this dept + station
-                supervisors = await users_collection.find({
-                    "role": UserRole.SUPERVISOR.value,
-                    "department_id": dept_id,
-                    "assigned_stations": asset_station_id
+                targets += await users_collection.find({
+                    "role": UserRole.SUPERVISOR.value, "department_id": dept_id, "assigned_stations": station_id
                 }).to_list(100)
-                notification_targets.extend(supervisors)
-                
-                # ROs for this dept + station
-                ros = await users_collection.find({
-                    "role": UserRole.REPORTING_OFFICER.value,
-                    "department_id": dept_id,
-                    "assigned_stations": asset_station_id
+                targets += await users_collection.find({
+                    "role": UserRole.REPORTING_OFFICER.value, "department_id": dept_id, "assigned_stations": station_id
                 }).to_list(100)
-                notification_targets.extend(ros)
-            
-            # Approving Supervisors for this station
-            approving_sups = await users_collection.find({
-                "role": UserRole.APPROVING_SUPERVISOR.value,
-                "assigned_stations": asset_station_id
-            }).to_list(100)
-            notification_targets.extend(approving_sups)
-            
-            # All Admins and Superadmins get all notifications
-            admins = await users_collection.find({
-                "role": {"$in": [UserRole.ADMIN.value, UserRole.SUPERADMIN.value]}
-            }).to_list(100)
-            notification_targets.extend(admins)
-            
-            # Remove duplicates and exclude the inspector themselves
-            notified_ids = set()
-            for target in notification_targets:
-                target_id = str(target["_id"])
-                if target_id != inspection.inspector_id and target_id not in notified_ids:
-                    notified_ids.add(target_id)
-                    notification = {
-                        "user_id": target_id,
-                        "title": "Asset Marked Defective",
-                        "message": f"Asset {asset.get('asset_number', 'Unknown')} ({asset_type['name'] if asset_type else 'Unknown'}) at station has been marked defective since {defective_since_dt.strftime('%d-%b-%Y %H:%M')}.",
-                        "notification_type": "alert",
-                        "related_entity_type": "orange_list",
-                        "related_entity_id": asset_id,
-                        "is_read": False,
-                        "created_at": datetime.utcnow()
-                    }
-                    await notifications_collection.insert_one(notification)
-        
-        # Audit log
-        await audit_log_collection.insert_one({
-            "entity_type": "asset",
-            "entity_id": asset_id,
-            "action": "marked_defective",
-            "performed_by": inspection.inspector_id,
-            "details": {"inspection_id": inspection_id, "defective_since": defective_since_dt.isoformat()},
-            "created_at": datetime.utcnow()
+            seen = set()
+            for t in targets:
+                tid = str(t["_id"])
+                if tid in seen or tid == inspector_id:
+                    continue
+                seen.add(tid)
+                await notifications_collection.insert_one({
+                    "user_id": tid,
+                    "title": "Asset Marked Defective",
+                    "message": f"Asset {asset.get('asset_number','Unknown')} ({asset_type['name'] if asset_type else 'Unknown'}) marked defective since {defective_since_dt.strftime('%d-%b-%Y %H:%M')}.",
+                    "notification_type": "alert",
+                    "related_entity_type": "orange_list",
+                    "related_entity_id": asset_id,
+                    "is_read": False,
+                    "created_at": datetime.utcnow()
+                })
+
+    # Update last_inspected and next_due (only on Pass)
+    now_ts = datetime.utcnow()
+    update_fields = {"last_inspected": now_ts}
+    asset_doc = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    if asset_doc:
+        freq_days = _normalize_freq_days(asset_doc.get("schedule_frequency"))
+        if freq_days and freq_days > 0:
+            update_fields["next_due"] = now_ts + timedelta(days=freq_days)
+    await assets_collection.update_one({"_id": ObjectId(asset_id)}, {"$set": update_fields})
+
+    await audit_log_collection.insert_one({
+        "entity_type": "inspection_item",
+        "entity_id": f"{inspection_id}:{asset_id}",
+        "action": "approved",
+        "performed_by": reviewer_id,
+        "details": {"inspection_id": inspection_id, "asset_id": asset_id, "item_status": item_status},
+        "created_at": datetime.utcnow()
+    })
+
+
+async def _can_review_inspection(reviewer: dict, inspection_doc: dict) -> bool:
+    """Allowed reviewers: Superadmin, Admin, or the Approving Supervisor for the station."""
+    if not reviewer:
+        return False
+    role = reviewer.get("role")
+    if role in (UserRole.SUPERADMIN.value, UserRole.ADMIN.value):
+        return True
+    if role == UserRole.APPROVING_SUPERVISOR.value:
+        station_id = inspection_doc.get("station_id")
+        if station_id:
+            station = await stations_collection.find_one({"_id": ObjectId(station_id)})
+            if station and station.get("approving_supervisor_id") == str(reviewer["_id"]):
+                return True
+    return False
+
+
+@app.post("/api/inspections/{inspection_id}/items/{item_index}/approve")
+async def approve_inspection_item(inspection_id: str, item_index: int, payload: dict):
+    """Mark a single inspection item as Pass. Body: {reviewer_id, remarks?}."""
+    reviewer_id = payload.get("reviewer_id")
+    remarks = payload.get("remarks")
+    if not reviewer_id:
+        raise HTTPException(status_code=400, detail="reviewer_id is required")
+    try:
+        insp = await inspections_collection.find_one({"_id": ObjectId(inspection_id)})
+        reviewer = await users_collection.find_one({"_id": ObjectId(reviewer_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id format")
+    if not insp:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    if not reviewer:
+        raise HTTPException(status_code=404, detail="Reviewer not found")
+    if not await _can_review_inspection(reviewer, insp):
+        raise HTTPException(status_code=403, detail="You are not authorized to review this inspection")
+    items = insp.get("items", [])
+    if item_index < 0 or item_index >= len(items):
+        raise HTTPException(status_code=404, detail="Item index out of range")
+    item = items[item_index]
+    if item.get("approval_status") != "pending_approval":
+        raise HTTPException(status_code=400, detail=f"Item already {item.get('approval_status')}")
+
+    # Apply effects then mark item approved
+    await _apply_inspection_item_effects(insp, item, reviewer_id)
+    items[item_index]["approval_status"] = "approved"
+    items[item_index]["reviewed_by"] = reviewer_id
+    items[item_index]["reviewed_at"] = datetime.utcnow()
+    items[item_index]["reviewer_remarks"] = remarks
+    await inspections_collection.update_one(
+        {"_id": ObjectId(inspection_id)},
+        {"$set": {"items": items}}
+    )
+
+    # Notify the original inspector
+    await notifications_collection.insert_one({
+        "user_id": insp["inspector_id"],
+        "title": "Inspection Item Approved",
+        "message": f"Your inspection item for asset {item.get('asset_id')} was approved by {reviewer['name']}.",
+        "notification_type": "info",
+        "related_entity_type": "inspection",
+        "related_entity_id": inspection_id,
+        "is_read": False,
+        "created_at": datetime.utcnow()
+    })
+
+    return {"message": "Item approved", "inspection_id": inspection_id, "item_index": item_index}
+
+
+@app.post("/api/inspections/{inspection_id}/items/{item_index}/reject")
+async def reject_inspection_item(inspection_id: str, item_index: int, payload: dict):
+    """Mark a single inspection item as Fail. Body: {reviewer_id, remarks?}.
+    Asset state is NOT changed; if the asset was already defective, its original
+    defective_since is preserved. The gap between submission and rejection is logged."""
+    reviewer_id = payload.get("reviewer_id")
+    remarks = payload.get("remarks")
+    if not reviewer_id:
+        raise HTTPException(status_code=400, detail="reviewer_id is required")
+    try:
+        insp = await inspections_collection.find_one({"_id": ObjectId(inspection_id)})
+        reviewer = await users_collection.find_one({"_id": ObjectId(reviewer_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id format")
+    if not insp:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    if not reviewer:
+        raise HTTPException(status_code=404, detail="Reviewer not found")
+    if not await _can_review_inspection(reviewer, insp):
+        raise HTTPException(status_code=403, detail="You are not authorized to review this inspection")
+    items = insp.get("items", [])
+    if item_index < 0 or item_index >= len(items):
+        raise HTTPException(status_code=404, detail="Item index out of range")
+    item = items[item_index]
+    if item.get("approval_status") != "pending_approval":
+        raise HTTPException(status_code=400, detail=f"Item already {item.get('approval_status')}")
+
+    submission_time = insp.get("created_at") or datetime.utcnow()
+    rejection_time = datetime.utcnow()
+    gap_seconds = max(0, int((rejection_time - submission_time).total_seconds()))
+
+    items[item_index]["approval_status"] = "rejected"
+    items[item_index]["reviewed_by"] = reviewer_id
+    items[item_index]["reviewed_at"] = rejection_time
+    items[item_index]["reviewer_remarks"] = remarks
+    items[item_index]["gap_seconds"] = gap_seconds
+    await inspections_collection.update_one(
+        {"_id": ObjectId(inspection_id)},
+        {"$set": {"items": items}}
+    )
+
+    # Audit log captures the gap-time
+    await audit_log_collection.insert_one({
+        "entity_type": "inspection_item",
+        "entity_id": f"{inspection_id}:{item.get('asset_id')}",
+        "action": "rejected",
+        "performed_by": reviewer_id,
+        "details": {
+            "inspection_id": inspection_id,
+            "asset_id": item.get("asset_id"),
+            "item_status": item.get("status"),
+            "submitted_at": submission_time.isoformat() if hasattr(submission_time, 'isoformat') else str(submission_time),
+            "rejected_at": rejection_time.isoformat(),
+            "gap_seconds": gap_seconds,
+            "reviewer_remarks": remarks,
+        },
+        "created_at": rejection_time
+    })
+
+    # Notify the original inspector
+    await notifications_collection.insert_one({
+        "user_id": insp["inspector_id"],
+        "title": "Inspection Item Rejected",
+        "message": f"Your inspection item for asset {item.get('asset_id')} was rejected by {reviewer['name']}. Re-inspect the asset.",
+        "notification_type": "alert",
+        "related_entity_type": "inspection",
+        "related_entity_id": inspection_id,
+        "is_read": False,
+        "created_at": datetime.utcnow()
+    })
+
+    return {
+        "message": "Item rejected",
+        "inspection_id": inspection_id,
+        "item_index": item_index,
+        "gap_seconds": gap_seconds,
+    }
+
+
+@app.get("/api/inspections/pending-approvals")
+async def list_pending_approvals(reviewer_id: str = Query(...)):
+    """Return inspection items pending Pass/Fail for this reviewer.
+    - Approving Supervisor: items at stations where they are the assigned ASUP.
+    - Superadmin / Admin: all pending items.
+    """
+    try:
+        reviewer = await users_collection.find_one({"_id": ObjectId(reviewer_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid reviewer_id")
+    if not reviewer:
+        raise HTTPException(status_code=404, detail="Reviewer not found")
+
+    role = reviewer.get("role")
+    station_filter = None
+    if role == UserRole.APPROVING_SUPERVISOR.value:
+        stations = await stations_collection.find(
+            {"approving_supervisor_id": reviewer_id}
+        ).to_list(1000)
+        station_ids = [str(s["_id"]) for s in stations]
+        if not station_ids:
+            return {"reviewer_id": reviewer_id, "total_items": 0, "inspections": []}
+        station_filter = {"$in": station_ids}
+    elif role not in (UserRole.SUPERADMIN.value, UserRole.ADMIN.value):
+        raise HTTPException(status_code=403, detail="Not authorized to review inspections")
+
+    query = {"items.approval_status": "pending_approval"}
+    if station_filter is not None:
+        query["station_id"] = station_filter
+
+    insps = await inspections_collection.find(query).sort("created_at", -1).to_list(500)
+
+    # Pre-fetch related lookups
+    asset_ids = list({it["asset_id"] for d in insps for it in d.get("items", []) if it.get("asset_id")})
+    assets_map = {}
+    if asset_ids:
+        ad = await assets_collection.find({"_id": {"$in": [ObjectId(a) for a in asset_ids]}}).to_list(1000)
+        assets_map = {str(a["_id"]): a for a in ad}
+    type_ids = list({a.get("asset_type_id") for a in assets_map.values() if a.get("asset_type_id")})
+    types_map = {}
+    if type_ids:
+        td = await asset_types_collection.find({"_id": {"$in": [ObjectId(t) for t in type_ids]}}).to_list(1000)
+        types_map = {str(t["_id"]): t["name"] for t in td}
+    station_ids_all = list({d.get("station_id") for d in insps if d.get("station_id")})
+    stations_map = {}
+    if station_ids_all:
+        sd = await stations_collection.find({"_id": {"$in": [ObjectId(s) for s in station_ids_all]}}).to_list(1000)
+        stations_map = {str(s["_id"]): s["name"] for s in sd}
+
+    out_inspections = []
+    total_items = 0
+    for d in insps:
+        pending_items = []
+        for idx, it in enumerate(d.get("items", [])):
+            if it.get("approval_status") == "pending_approval":
+                asset = assets_map.get(it.get("asset_id"))
+                pending_items.append({
+                    "item_index": idx,
+                    "asset_id": it.get("asset_id"),
+                    "asset_number": asset.get("asset_number") if asset else None,
+                    "asset_type_name": types_map.get(asset.get("asset_type_id")) if asset else None,
+                    "status": it.get("status"),
+                    "remarks": it.get("remarks"),
+                    "remarks_by": it.get("remarks_by"),
+                    "photo_urls": it.get("photo_urls", []),
+                    "defective_since": it.get("defective_since"),
+                    "rectified_on": it.get("rectified_on"),
+                    "checklist_responses": it.get("checklist_responses", []),
+                })
+        if not pending_items:
+            continue
+        total_items += len(pending_items)
+        out_inspections.append({
+            "inspection_id": str(d["_id"]),
+            "inspection_type": d.get("inspection_type"),
+            "station_id": d.get("station_id"),
+            "station_name": stations_map.get(d.get("station_id"), "Unknown"),
+            "inspector_id": d.get("inspector_id"),
+            "inspector_name": d.get("inspector_name"),
+            "submitted_at": d.get("created_at").isoformat() if d.get("created_at") else None,
+            "overall_remarks": d.get("overall_remarks"),
+            "pending_items": pending_items,
         })
-    
-    # Update last_inspected for all inspected assets, and recompute next_due if frequency is set
-    for item in inspection.items:
-        now_ts = datetime.utcnow()
-        update_fields = {"last_inspected": now_ts}
-        asset_doc = await assets_collection.find_one({"_id": ObjectId(item.asset_id)})
-        if asset_doc:
-            freq_days = _normalize_freq_days(asset_doc.get("schedule_frequency"))
-            if freq_days and freq_days > 0:
-                update_fields["next_due"] = now_ts + timedelta(days=freq_days)
-        await assets_collection.update_one(
-            {"_id": ObjectId(item.asset_id)},
-            {"$set": update_fields}
-        )
-    
-    doc["_id"] = result.inserted_id
-    return serialize_doc(doc)
+
+    return {"reviewer_id": reviewer_id, "total_items": total_items, "inspections": out_inspections}
 
 
 @app.get("/api/inspections")
@@ -1522,6 +1761,168 @@ async def get_supervisor_schedule(
     }
 
 
+@app.get("/api/schedules/admin")
+async def get_admin_schedule(
+    station_ids: Optional[List[str]] = Query(None),
+    department_ids: Optional[List[str]] = Query(None),
+    asset_type_ids: Optional[List[str]] = Query(None),
+    supervisor_ids: Optional[List[str]] = Query(None),
+    reporting_officer_ids: Optional[List[str]] = Query(None),
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+):
+    """Multi-filter schedule view for Superadmin / Admin / Reporting Officer.
+    All filters are optional; when omitted, no filter is applied for that dimension.
+    Returns tasks grouped by asset type, with supervisor info on each task."""
+    # Parse date range
+    try:
+        if from_date:
+            range_start = datetime.strptime(from_date, "%Y-%m-%d")
+        else:
+            today = datetime.utcnow()
+            range_start = datetime(today.year, today.month, today.day)
+        if to_date:
+            range_end = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        else:
+            range_end = range_start + timedelta(days=7)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format; use YYYY-MM-DD")
+    if range_end < range_start:
+        raise HTTPException(status_code=400, detail="to_date must be on or after from_date")
+
+    # If reporting_officer_ids passed, expand to supervisor_ids who report to them
+    expanded_supervisor_ids = list(supervisor_ids) if supervisor_ids else None
+    if reporting_officer_ids:
+        ro_supervisors = await users_collection.find({
+            "role": UserRole.SUPERVISOR.value,
+            "reports_to_id": {"$in": reporting_officer_ids}
+        }).to_list(1000)
+        ro_sup_ids = [str(s["_id"]) for s in ro_supervisors]
+        if expanded_supervisor_ids is None:
+            expanded_supervisor_ids = ro_sup_ids
+        else:
+            # Intersect when both filters are provided
+            expanded_supervisor_ids = list(set(expanded_supervisor_ids).intersection(ro_sup_ids))
+
+    # If department_ids passed, expand to asset_type_ids in those departments
+    expanded_type_ids = list(asset_type_ids) if asset_type_ids else None
+    if department_ids:
+        dept_types = await asset_types_collection.find({
+            "department_id": {"$in": department_ids}
+        }).to_list(1000)
+        dept_type_ids = [str(t["_id"]) for t in dept_types]
+        if expanded_type_ids is None:
+            expanded_type_ids = dept_type_ids
+        else:
+            expanded_type_ids = list(set(expanded_type_ids).intersection(dept_type_ids))
+
+    # Build asset query
+    asset_query: dict = {"schedule_frequency": {"$ne": None}}
+    if station_ids:
+        asset_query["station_id"] = {"$in": station_ids}
+    if expanded_type_ids is not None:
+        if not expanded_type_ids:
+            return {"from_date": range_start.date().isoformat(), "to_date": range_end.date().isoformat(),
+                    "total_tasks": 0, "groups": []}
+        asset_query["asset_type_id"] = {"$in": expanded_type_ids}
+    if expanded_supervisor_ids is not None:
+        if not expanded_supervisor_ids:
+            return {"from_date": range_start.date().isoformat(), "to_date": range_end.date().isoformat(),
+                    "total_tasks": 0, "groups": []}
+        asset_query["assigned_supervisor_id"] = {"$in": expanded_supervisor_ids}
+
+    assets = await assets_collection.find(asset_query).to_list(5000)
+
+    # Pre-fetch lookup data
+    type_ids_set = list({a.get("asset_type_id") for a in assets if a.get("asset_type_id")})
+    station_ids_set = list({a.get("station_id") for a in assets if a.get("station_id")})
+    location_ids_set = list({a.get("location_id") for a in assets if a.get("location_id")})
+    sup_ids_set = list({a.get("assigned_supervisor_id") for a in assets if a.get("assigned_supervisor_id")})
+
+    types_map = {}
+    if type_ids_set:
+        td = await asset_types_collection.find({"_id": {"$in": [ObjectId(t) for t in type_ids_set]}}).to_list(1000)
+        types_map = {str(t["_id"]): {"name": t["name"], "department_id": t.get("department_id")} for t in td}
+    stations_map = {}
+    if station_ids_set:
+        sd = await stations_collection.find({"_id": {"$in": [ObjectId(s) for s in station_ids_set]}}).to_list(1000)
+        stations_map = {str(s["_id"]): s["name"] for s in sd}
+    locations_map = {}
+    if location_ids_set:
+        ld = await locations_collection.find({"_id": {"$in": [ObjectId(l) for l in location_ids_set]}}).to_list(1000)
+        locations_map = {str(loc["_id"]): loc["name"] for loc in ld}
+    sups_map = {}
+    if sup_ids_set:
+        ud = await users_collection.find({"_id": {"$in": [ObjectId(u) for u in sup_ids_set]}}).to_list(1000)
+        sups_map = {str(u["_id"]): {"name": u.get("name"), "employee_id": u.get("employee_id")} for u in ud}
+
+    now = datetime.utcnow()
+    grouped: dict = {}
+    for asset in assets:
+        freq_days = _normalize_freq_days(asset.get("schedule_frequency"))
+        if not freq_days or freq_days <= 0:
+            continue
+        last_inspected = asset.get("last_inspected")
+        next_due = (last_inspected + timedelta(days=freq_days)) if last_inspected else (asset.get("created_at") or now)
+        due_dates = []
+        max_iters = 200
+        iters = 0
+        while next_due <= range_end and iters < max_iters:
+            if next_due >= range_start:
+                due_dates.append(next_due)
+            next_due = next_due + timedelta(days=freq_days)
+            iters += 1
+        if not due_dates:
+            continue
+        type_id = asset.get("asset_type_id")
+        type_info = types_map.get(type_id, {"name": "Unknown", "department_id": None})
+        if type_id not in grouped:
+            grouped[type_id] = {
+                "asset_type_id": type_id,
+                "asset_type_name": type_info["name"],
+                "department_id": type_info.get("department_id"),
+                "tasks": [],
+            }
+        sup_info = sups_map.get(asset.get("assigned_supervisor_id"), None)
+        for d in due_dates:
+            grouped[type_id]["tasks"].append({
+                "asset_id": str(asset["_id"]),
+                "asset_number": asset.get("asset_number"),
+                "station_id": asset.get("station_id"),
+                "station_name": stations_map.get(asset.get("station_id"), "Unknown"),
+                "location_id": asset.get("location_id"),
+                "location_name": locations_map.get(asset.get("location_id"), "Unknown"),
+                "supervisor_id": asset.get("assigned_supervisor_id"),
+                "supervisor_name": sup_info["name"] if sup_info else None,
+                "supervisor_employee_id": sup_info["employee_id"] if sup_info else None,
+                "due_date": d.isoformat(),
+                "days_left": (d.date() - now.date()).days,
+                "is_overdue": d < now,
+                "frequency_days": freq_days,
+                "asset_status": asset.get("status", "working"),
+            })
+
+    groups = list(grouped.values())
+    for g in groups:
+        g["tasks"].sort(key=lambda t: t["due_date"])
+        g["task_count"] = len(g["tasks"])
+    groups.sort(key=lambda g: g["asset_type_name"])
+
+    return {
+        "from_date": range_start.date().isoformat(),
+        "to_date": range_end.date().isoformat(),
+        "filters_applied": {
+            "stations": station_ids or [],
+            "departments": department_ids or [],
+            "asset_types": asset_type_ids or [],
+            "supervisors": supervisor_ids or [],
+            "reporting_officers": reporting_officer_ids or [],
+        },
+        "total_tasks": sum(g["task_count"] for g in groups),
+        "groups": groups,
+    }
+
+
 @app.get("/api/schedules/approving-supervisor/{user_id}/supervisors")
 async def get_supervisors_under_approving(user_id: str):
     """Return the list of supervisors that work at any station assigned to this
@@ -1795,3 +2196,362 @@ def calculate_next_due(from_date: datetime, frequency: ScheduleFrequency) -> dat
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
+
+# ============ ANALYTICS / PERFORMANCE ============
+def _compute_asset_metrics(asset: dict, orange_records: list, now: datetime) -> dict:
+    """Compute average repair time and % uptime for a single asset using
+    its orange-list history."""
+    created_at = asset.get("created_at") or now
+    if isinstance(created_at, str):
+        try:
+            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00").replace("+00:00", ""))
+        except Exception:
+            created_at = now
+
+    total_seconds = max(1, int((now - created_at).total_seconds()))
+    repair_durations = []
+    total_defective = 0
+
+    for rec in orange_records:
+        ds = rec.get("defective_since")
+        if not ds:
+            continue
+        if isinstance(ds, str):
+            try:
+                ds = datetime.fromisoformat(ds.replace("Z", "+00:00").replace("+00:00", ""))
+            except Exception:
+                continue
+        # End of defect window: approved_at > marked_working_at > now
+        end = rec.get("approved_at") or rec.get("marked_working_at")
+        if isinstance(end, str):
+            try:
+                end = datetime.fromisoformat(end.replace("Z", "+00:00").replace("+00:00", ""))
+            except Exception:
+                end = None
+        if end and end >= ds:
+            dur = int((end - ds).total_seconds())
+            repair_durations.append(dur)
+            total_defective += dur
+        else:
+            # Still ongoing
+            ongoing = max(0, int((now - ds).total_seconds()))
+            total_defective += ongoing
+
+    avg_repair_seconds = int(sum(repair_durations) / len(repair_durations)) if repair_durations else 0
+    pct_functional = max(0.0, min(100.0, (1 - total_defective / total_seconds) * 100))
+    return {
+        "avg_repair_seconds": avg_repair_seconds,
+        "avg_repair_hours": round(avg_repair_seconds / 3600, 2),
+        "pct_functional": round(pct_functional, 2),
+        "defect_count": len(orange_records),
+        "current_status": asset.get("status", "working"),
+    }
+
+
+async def _analytics_for_asset_set(asset_docs: list) -> list:
+    """Build per-category analytics with nested per-asset metrics for a set of assets."""
+    if not asset_docs:
+        return []
+    now = datetime.utcnow()
+
+    asset_ids = [str(a["_id"]) for a in asset_docs]
+    type_ids = list({a.get("asset_type_id") for a in asset_docs if a.get("asset_type_id")})
+
+    # Fetch orange list history for these assets in one query
+    history = await orange_list_collection.find({"asset_id": {"$in": asset_ids}}).to_list(10000)
+    history_by_asset: dict = {}
+    for rec in history:
+        history_by_asset.setdefault(rec["asset_id"], []).append(rec)
+
+    types_map = {}
+    if type_ids:
+        td = await asset_types_collection.find({"_id": {"$in": [ObjectId(t) for t in type_ids]}}).to_list(1000)
+        types_map = {str(t["_id"]): t["name"] for t in td}
+
+    # Compute per-asset metrics, group by type
+    grouped: dict = {}
+    for asset in asset_docs:
+        aid = str(asset["_id"])
+        type_id = asset.get("asset_type_id") or "unknown"
+        type_name = types_map.get(type_id, "Unknown")
+        m = _compute_asset_metrics(asset, history_by_asset.get(aid, []), now)
+        m.update({
+            "asset_id": aid,
+            "asset_number": asset.get("asset_number"),
+        })
+        grouped.setdefault(type_id, {"asset_type_id": type_id, "asset_type_name": type_name, "assets": []})
+        grouped[type_id]["assets"].append(m)
+
+    # Aggregate per-category
+    result = []
+    for type_id, info in grouped.items():
+        assets = info["assets"]
+        avg_repairs = [a["avg_repair_seconds"] for a in assets if a["avg_repair_seconds"] > 0]
+        avg_repair_seconds = int(sum(avg_repairs) / len(avg_repairs)) if avg_repairs else 0
+        pct_functionals = [a["pct_functional"] for a in assets]
+        avg_pct_functional = round(sum(pct_functionals) / len(pct_functionals), 2) if pct_functionals else 100.0
+        defective_count = sum(1 for a in assets if a["current_status"] != "working")
+        result.append({
+            "asset_type_id": type_id,
+            "asset_type_name": info["asset_type_name"],
+            "asset_count": len(assets),
+            "defective_count": defective_count,
+            "working_count": len(assets) - defective_count,
+            "avg_repair_seconds": avg_repair_seconds,
+            "avg_repair_hours": round(avg_repair_seconds / 3600, 2),
+            "pct_functional": avg_pct_functional,
+            "assets": assets,
+        })
+
+    result.sort(key=lambda r: r["asset_type_name"])
+    return result
+
+
+@app.get("/api/analytics/supervisor/{user_id}")
+async def supervisor_analytics(user_id: str):
+    """Performance analytics for a supervisor: per-category metrics for assets
+    allocated to them, with nested per-asset breakdown."""
+    try:
+        user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    assets = await assets_collection.find({"assigned_supervisor_id": user_id}).to_list(5000)
+    categories = await _analytics_for_asset_set(assets)
+
+    overall_pct = round(sum(c["pct_functional"] * c["asset_count"] for c in categories) / max(1, sum(c["asset_count"] for c in categories)), 2) if categories else 100.0
+    return {
+        "user_id": user_id,
+        "user_name": user.get("name"),
+        "total_assets": sum(c["asset_count"] for c in categories),
+        "overall_pct_functional": overall_pct,
+        "categories": categories,
+    }
+
+
+@app.get("/api/analytics/approving-supervisor/{user_id}/supervisors")
+async def approving_supervisor_analytics(user_id: str):
+    """For each supervisor under this approving sup, return their per-category analytics."""
+    try:
+        asup = await users_collection.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    if not asup:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    asup_stations = asup.get("assigned_stations", []) or []
+    if not asup_stations:
+        return {"approving_supervisor_id": user_id, "supervisors": []}
+
+    sup_docs = await users_collection.find({
+        "role": UserRole.SUPERVISOR.value,
+        "is_active": True,
+        "assigned_stations": {"$in": asup_stations}
+    }).to_list(1000)
+
+    out = []
+    for s in sup_docs:
+        sid = str(s["_id"])
+        assets = await assets_collection.find({"assigned_supervisor_id": sid}).to_list(5000)
+        categories = await _analytics_for_asset_set(assets)
+        # Strip the per-asset list to keep payload manageable; keep aggregates
+        slim = [{k: v for k, v in c.items() if k != "assets"} for c in categories]
+        # Department name
+        dept_name = None
+        if s.get("department_id"):
+            dept = await departments_collection.find_one({"_id": ObjectId(s["department_id"])})
+            dept_name = dept["name"] if dept else None
+        out.append({
+            "_id": sid,
+            "name": s.get("name"),
+            "employee_id": s.get("employee_id"),
+            "department_name": dept_name,
+            "total_assets": sum(c["asset_count"] for c in categories),
+            "categories": slim,
+        })
+    out.sort(key=lambda x: x["name"] or "")
+    return {"approving_supervisor_id": user_id, "supervisors": out}
+
+
+@app.get("/api/analytics/asset/{asset_id}")
+async def asset_analytics(asset_id: str):
+    """Performance analytics for a single asset."""
+    try:
+        asset = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid asset_id")
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    history = await orange_list_collection.find({"asset_id": asset_id}).to_list(10000)
+    return _compute_asset_metrics(asset, history, datetime.utcnow())
+
+
+# ============ DASHBOARD (role-scoped) ============
+RED_THRESHOLD_HOURS = 24
+
+
+def _classify_health(asset: dict, now: datetime) -> str:
+    """Return 'working', 'orange', or 'red' based on defective duration."""
+    if asset.get("status") == "working":
+        return "working"
+    ds = asset.get("defective_since")
+    if not ds:
+        return "orange"
+    if isinstance(ds, str):
+        try:
+            ds = datetime.fromisoformat(ds.replace("Z", "+00:00").replace("+00:00", ""))
+        except Exception:
+            return "orange"
+    hours = (now - ds).total_seconds() / 3600
+    return "red" if hours > RED_THRESHOLD_HOURS else "orange"
+
+
+@app.get("/api/dashboard/supervisor/{user_id}")
+async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
+    """Dashboard payload for a supervisor: per-category buttons + health pie data
+    scoped to assets allocated to them. Optional station_id filter."""
+    try:
+        user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    query = {"assigned_supervisor_id": user_id}
+    if station_id:
+        query["station_id"] = station_id
+    assets = await assets_collection.find(query).to_list(5000)
+
+    # Lookups
+    type_ids = list({a.get("asset_type_id") for a in assets if a.get("asset_type_id")})
+    station_ids_seen = list({a.get("station_id") for a in assets if a.get("station_id")})
+    types_map = {}
+    if type_ids:
+        td = await asset_types_collection.find({"_id": {"$in": [ObjectId(t) for t in type_ids]}}).to_list(1000)
+        types_map = {str(t["_id"]): t["name"] for t in td}
+    stations_map = {}
+    if station_ids_seen:
+        sd = await stations_collection.find({"_id": {"$in": [ObjectId(s) for s in station_ids_seen]}}).to_list(1000)
+        stations_map = {str(s["_id"]): s["name"] for s in sd}
+    department_name = None
+    if user.get("department_id"):
+        dept = await departments_collection.find_one({"_id": ObjectId(user["department_id"])})
+        department_name = dept["name"] if dept else None
+
+    # Build the user's available stations list (for dropdown). Use assigned_stations
+    user_stations = []
+    user_station_ids = user.get("assigned_stations") or []
+    if user_station_ids:
+        ud = await stations_collection.find({"_id": {"$in": [ObjectId(s) for s in user_station_ids]}}).to_list(100)
+        user_stations = [{"_id": str(s["_id"]), "name": s.get("name")} for s in ud]
+
+    now = datetime.utcnow()
+    grouped: dict = {}
+    health_counts = {"working": 0, "orange": 0, "red": 0}
+
+    for asset in assets:
+        type_id = asset.get("asset_type_id") or "unknown"
+        type_name = types_map.get(type_id, "Unknown")
+        cls = _classify_health(asset, now)
+        health_counts[cls] += 1
+        bucket = grouped.setdefault(type_id, {
+            "asset_type_id": type_id,
+            "asset_type_name": type_name,
+            "asset_count": 0,
+            "working": 0, "orange": 0, "red": 0,
+        })
+        bucket["asset_count"] += 1
+        bucket[cls] += 1
+
+    categories = sorted(grouped.values(), key=lambda c: c["asset_type_name"])
+    return {
+        "user_id": user_id,
+        "user_name": user.get("name"),
+        "department_id": user.get("department_id"),
+        "department_name": department_name,
+        "available_stations": user_stations,
+        "selected_station_id": station_id,
+        "total_assets": len(assets),
+        "health": health_counts,
+        "categories": categories,
+    }
+
+
+@app.get("/api/dashboard/supervisor/{user_id}/my-tasks")
+async def supervisor_my_tasks(user_id: str, station_id: Optional[str] = None):
+    """Returns asset lists for a supervisor's My Tasks page:
+    - my_assets: every allocated asset
+    - pending_tasks: assets currently NOT in working condition, grouped by category
+    """
+    try:
+        user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    query = {"assigned_supervisor_id": user_id}
+    if station_id:
+        query["station_id"] = station_id
+    assets = await assets_collection.find(query).to_list(5000)
+
+    type_ids = list({a.get("asset_type_id") for a in assets if a.get("asset_type_id")})
+    station_ids_seen = list({a.get("station_id") for a in assets if a.get("station_id")})
+    location_ids_seen = list({a.get("location_id") for a in assets if a.get("location_id")})
+    types_map = {}
+    if type_ids:
+        td = await asset_types_collection.find({"_id": {"$in": [ObjectId(t) for t in type_ids]}}).to_list(1000)
+        types_map = {str(t["_id"]): t["name"] for t in td}
+    stations_map = {}
+    if station_ids_seen:
+        sd = await stations_collection.find({"_id": {"$in": [ObjectId(s) for s in station_ids_seen]}}).to_list(1000)
+        stations_map = {str(s["_id"]): s["name"] for s in sd}
+    locations_map = {}
+    if location_ids_seen:
+        ld = await locations_collection.find({"_id": {"$in": [ObjectId(l) for l in location_ids_seen]}}).to_list(1000)
+        locations_map = {str(loc["_id"]): loc["name"] for loc in ld}
+
+    now = datetime.utcnow()
+    by_category: dict = {}
+    pending_by_category: dict = {}
+
+    for asset in assets:
+        type_id = asset.get("asset_type_id") or "unknown"
+        type_name = types_map.get(type_id, "Unknown")
+        cls = _classify_health(asset, now)
+        item = {
+            "_id": str(asset["_id"]),
+            "asset_number": asset.get("asset_number"),
+            "station_name": stations_map.get(asset.get("station_id"), "Unknown"),
+            "location_name": locations_map.get(asset.get("location_id"), "Unknown"),
+            "status": asset.get("status", "working"),
+            "health_class": cls,
+            "defective_since": asset.get("defective_since").isoformat() if isinstance(asset.get("defective_since"), datetime) else asset.get("defective_since"),
+            "asset_type_id": type_id,
+            "asset_type_name": type_name,
+        }
+        by_category.setdefault(type_id, {"asset_type_id": type_id, "asset_type_name": type_name, "assets": []})["assets"].append(item)
+        if cls != "working":
+            pending_by_category.setdefault(type_id, {"asset_type_id": type_id, "asset_type_name": type_name, "assets": []})["assets"].append(item)
+
+    by_category_list = sorted(by_category.values(), key=lambda c: c["asset_type_name"])
+    pending_list = sorted(pending_by_category.values(), key=lambda c: c["asset_type_name"])
+    for c in by_category_list:
+        c["asset_count"] = len(c["assets"])
+    for c in pending_list:
+        c["asset_count"] = len(c["assets"])
+
+    return {
+        "user_id": user_id,
+        "user_name": user.get("name"),
+        "selected_station_id": station_id,
+        "my_assets": by_category_list,
+        "pending_tasks": pending_list,
+        "totals": {
+            "total": sum(c["asset_count"] for c in by_category_list),
+            "pending": sum(c["asset_count"] for c in pending_list),
+        },
+    }

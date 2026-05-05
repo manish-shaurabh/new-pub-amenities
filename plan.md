@@ -6,17 +6,22 @@
   - Inspections (individual + SIG)
   - Defect tracking + Orange/Red list aging
   - Approval workflow:
-    - Current: defective → working (pending approval) → approve
-    - Upcoming: **every inspection requires Pass/Fail approval by Approving Supervisor (or Superadmin)**
+    - Legacy (done): defective → working (pending approval) → approve
+    - Current (done): **every inspection item requires Pass/Fail approval** by Approving Supervisor (or Admin/Superadmin)
   - Scheduling/due tracking:
     - **Asset-level custom inspection frequency in days**
-    - **Role-based schedules view** (Supervisor / Approving Supervisor / Admin)
+    - **Role-based schedules view** (Supervisor / Approving Supervisor / Admin / Superadmin / RO)
+    - **Superadmin optional advanced filters** (stations/departments/asset categories/ROs/supervisors)
   - Photo evidence uploads
-  - Multi-role access with clear UX
-- Ensure the core workflow is proven end-to-end: inspection → mark defective → Orange List → mark working → approve → removed from Orange List.
-- Provide operational visibility with analytics dashboards, exports, in-app notifications, and auditable event history.
-- Improve usability with neat, categorized, collapsible UIs and quick access to asset/supervisor histories.
-- Prepare for production readiness: reporting/analytics, UX hardening, and external notifications (SMS/WhatsApp) + strict RBAC enforcement.
+  - Multi-role access with clear UX and strict scoping (users see only assigned stations/departments/assets)
+- Ensure the core workflow is proven end-to-end:
+  - inspection submit → pending approval → Pass applies effects → defect aging continues correctly
+  - Fail keeps previous effective state and logs gap time
+- Provide operational visibility with:
+  - Role-specific dashboards (Supervisor, Approving Supervisor, Reporting Officer, Superadmin)
+  - Minimal, clean UI with charts where helpful
+  - "My Tasks" and approvals that are actionable from dashboard
+- Improve usability with neat, categorized, collapsible UIs and quick access to inspection actions.
 - Reduce recurring UI regressions by standardizing Shadcn `<Select>` placeholder handling (**never use empty string values**).
 
 ---
@@ -38,7 +43,6 @@ Implemented:
 - Photo uploads (local storage) + URL persistence.
 - In-app notifications persisted in DB.
 - Audit logging for key state changes.
-- Scripted POC test suite validating the full lifecycle.
 
 Exit criteria met:
 - Scripted test proves the full flow with real MongoDB + real file writes.
@@ -58,22 +62,21 @@ Delivered user stories:
 Implemented (Frontend + Backend):
 - Authentication: Employee ID + Password + JWT.
 - App shell: Responsive layout (sidebar + topbar) + notification bell.
-- Dashboard: KPI stats + charts + recent inspections + Orange List summary (will be redesigned per role).
+- Dashboard: KPI stats + charts (later redesigned per role).
 - Asset Registry: Search + filtering + CRUD (admin-only actions).
 - Inspections: Individual + SIG.
 - Orange List: Defective tracking and approval workflow.
 - Notifications: In-app bell dropdown + unread count + mark-all-read.
-- Schedules: Due/overdue tracking + due-today list (later replaced with frequency-based schedules).
+- Schedules: Due/overdue tracking + due-today list (superseded by frequency-based schedules).
 - User Management: CRUD + assignments.
 - Admin Panel: Departments, Stations, Locations, Asset Types + checklist builder.
 - Role Management: Superadmin can grant/revoke Admin.
 - File Upload: Photo evidence upload and preview.
 - Audit Logging.
-- Seed script.
 
 Testing / Exit criteria met:
-- Backend: 100% pass rate for tested flows.
-- Frontend: 95%+ for major user journeys.
+- Backend: major flows verified.
+- Frontend: key user journeys verified.
 
 ---
 
@@ -109,7 +112,7 @@ Delivered:
 - Backend:
   - `schedule_frequency` changed to `Optional[int]` (days) in asset schema.
   - `_normalize_freq_days()` converts legacy strings (daily=1, weekly=7, monthly=30, quarterly=90) on reads.
-  - On inspection submission, assets update `last_inspected` and compute `next_due = now + freq_days` when frequency exists.
+  - On inspection Pass approval, assets update `last_inspected` and compute `next_due = now + freq_days` when frequency exists.
 - Frontend:
   - Frequency select replaced by `Input type=number` labeled “Inspection Frequency (days)”.
   - Asset badge displays “every Nd”.
@@ -149,12 +152,12 @@ Delivered:
 ---
 
 #### Phase 3.0.2 — Role-based Sidebar + Frequency-based Schedules + Transfer Supervisor ✅ COMPLETE
-**Why:** User requested schedules to be the primary operational view (week default) and role-based navigation, plus supervisor transfer handling.
+**Why:** Schedules should be the primary operational view (week default) and role-based navigation, plus supervisor transfer handling.
 
 Delivered:
 1. **Sidebar RBAC changes** (Frontend: `AppLayout.js`):
    - Asset Registry: visible **only** to Superadmin.
-   - Orange List: visible only to **Superadmin/Admin/Reporting Officer**.
+   - Orange List page: visible only to **Superadmin/Admin/Reporting Officer** (removed from Supervisor/ASUP).
    - Schedules: visible to all.
 
 2. **Backend endpoints** (FastAPI):
@@ -173,7 +176,7 @@ Delivered:
 3. **Frontend Schedules UI redesign** (`SchedulesPage.js` + `api.js`):
    - Supervisor view: date range picker + 7d/14d/30d presets + grouped tasks.
    - Approving Supervisor view: supervisor cards → click opens that supervisor schedule.
-   - Admin/Superadmin/RO view: pick supervisor dropdown → view schedule.
+   - Admin/Superadmin/RO view (initial): supervisor picker.
 
 4. **Admin Panel — Transfer tab** (`AdminPage.js`):
    - New “Transfer” tab.
@@ -186,27 +189,122 @@ Verification:
 
 ---
 
-### Phase 4 — Dashboards + Notifications UX/Logic (Next, P1) ⏳ PENDING (awaiting remaining user input)
-**Goal:** Implement role-specific dashboards and a clean, minimal UX per the new dashboard requirements.
+#### Phase 3.0.3 — Superadmin Optional Advanced Schedules Filters ✅ COMPLETE
+**Why:** Superadmin needs optional drill-down across stations/departments/asset categories/ROs/supervisors.
 
-Known requirements from user (captured):
-- Dashboard should be minimalistic; remove “Orange/Red list (active)” block from dashboard.
-- Supervisor dashboard (planned): station dropdown, dept highlight, asset-type buttons with summary counts, My Tasks (My Assets / Pending Tasks), single-asset inspection via task click, health pie charts, My Performance metrics.
-- Approving Supervisor dashboard (planned): station dropdown + department dropdown, My Supervisors analytics, station health pie, collapsible station → asset category → assets list, My Tasks = approvals queue with Pass/Fail.
-- **Every inspection requires approval** (Approving Supervisor or Superadmin). Fail should revert effective state and preserve defect aging.
+Delivered:
+- Backend:
+  - `GET /api/schedules/admin` with optional multi-filters:
+    - `station_ids[]`, `department_ids[]`, `asset_type_ids[]`, `supervisor_ids[]`, `reporting_officer_ids[]`, `from_date`, `to_date`
+    - Expands department→asset types and RO→supervisors when provided.
+- Frontend:
+  - Multi-select filter UI (Stations/Departments/Asset Categories/ROs/Supervisors) + Clear filters.
+  - Date range + presets retained.
+  - Tasks show supervisor name where relevant.
 
-Missing inputs (blocked by user):
-- Admin dashboard logic.
-- Reporting Officer dashboard logic.
+---
 
-Implementation steps:
-1. Dashboard design pass: implement Supervisor + Approving Supervisor first, then Admin/RO when user provides logic.
-2. Add a dedicated Notifications page/button (user requested earlier) after dashboard scope is locked.
-3. Implement updated approval workflow (Pass/Fail for all inspections) and integrate into dashboards “My Tasks”.
+#### Phase 3.0.4 — Inspection Approval Overhaul (Every inspection item needs Pass/Fail) ✅ COMPLETE
+**Why:** All inspections at stations require approval, and approvals are per-item (asset) within an inspection.
 
-Exit criteria:
-- Supervisor and Approving Supervisor dashboards match the agreed logic.
-- Approval queue works end-to-end (Pass/Fail + audit + history integrity).
+Delivered:
+- Inspection submission:
+  - Each inspection item stored with `approval_status=pending_approval` and review metadata.
+  - Asset state changes are deferred until Pass.
+- Approval endpoints:
+  - `GET /api/inspections/pending-approvals?reviewer_id=`
+  - `POST /api/inspections/{inspection_id}/items/{item_index}/approve`
+  - `POST /api/inspections/{inspection_id}/items/{item_index}/reject`
+- Behavior:
+  - **Pass:** applies effects (defective updates, orange list insert if needed, last_inspected/next_due updates).
+  - **Fail:** applies no asset state change; logs `gap_seconds` and audit entry.
+- Notifications:
+  - Notifies station ASUP + admins/superadmins on submission.
+  - Notifies inspector on approve/reject.
+
+Verified with scripted tests:
+- Pending status after submission.
+- Pass changes asset state.
+- Reject keeps asset state.
+
+---
+
+#### Phase 3.0.5 — Performance Analytics Endpoints ✅ COMPLETE
+**Why:** Support “My Performance” views and supervisor comparison analytics.
+
+Delivered:
+- `GET /api/analytics/supervisor/{user_id}`
+  - Per-category aggregate metrics + per-asset breakdown:
+    - avg repair time, % time functional (lifetime), defect count, current status.
+- `GET /api/analytics/approving-supervisor/{user_id}/supervisors`
+  - Supervisor comparison list with per-category aggregates (assets list omitted for payload size).
+- `GET /api/analytics/asset/{asset_id}`
+  - Single asset metrics.
+
+---
+
+### Phase 4 — Role Dashboards (Minimalistic, Operational) 🚧 IN PROGRESS
+**Goal:** Implement role-specific dashboards with minimal, clean UI, removing the old “Recent Inspections” and “Orange/Red list (active)” blocks, and surfacing actionable tasks.
+
+#### Phase 4.1 — Supervisor Dashboard ✅ COMPLETE
+Implemented exactly per agreed logic:
+- Scope: only assets allocated to the supervisor.
+- Station dropdown for filtering (based on assigned stations).
+- Department badge highlighted.
+- Tabs:
+  - **Overview:** asset health pie chart + asset-type clickable buttons with summary counts.
+  - **My Tasks:** sub-tabs “My Assets” and “Pending Tasks” (only non-working assets), category-wise collapsible lists.
+  - **My Performance:** category-wise average repair time + % time functional, collapsible per-asset list.
+
+Notes:
+- Clicking an asset in My Tasks navigates to `New Inspection` with a deep link (requires Phase 4.2 enhancement to pre-select asset automatically).
+- Verified with screenshot tool.
+
+---
+
+#### Phase 4.2 — Single-Asset Inspection Deep Link (from dashboard) ⏳ PENDING
+**Goal:** When navigating to `/inspection?asset_id=...`, the New Inspection page should:
+- Pre-select the specific asset.
+- Switch to single-asset mode automatically.
+
+---
+
+#### Phase 4.3 — Approving Supervisor Dashboard ⏳ NEXT (Priority)
+**Goal:** Match agreed UI/logic:
+- Scope: all assets across stations assigned to ASUP.
+- Station dropdown + department dropdown.
+- Asset-type buttons with summaries.
+- “My Supervisors” button/view:
+  - Supervisor-wise analytics (avg repair time, % functional by category).
+- Station health pie + drill-down by station.
+- Collapsible station → asset category → assets list with status + avg repair time + % functional.
+- **My Tasks:** approval queue:
+  - List pending inspection items from supervisors under ASUP.
+  - Approve/Reject each item individually.
+  - Superadmin can also approve/reject.
+
+Blocked only on frontend implementation (backend is ready).
+
+---
+
+#### Phase 4.4 — Reporting Officer Dashboard ⏳ PENDING
+**Goal:** “Like Approving Supervisor but scoped”:
+- RO sees only:
+  - assigned stations
+  - their department
+  - supervisors who report to them
+- Same style of analytics/health views but filtered.
+
+---
+
+#### Phase 4.5 — Superadmin Dashboard Redesign ⏳ PENDING
+**Goal:** System-wide operational dashboard with drill-down:
+- Asset category buttons (all)
+- ROs summary
+- Approving Supervisors summary
+- Stations summary
+- Divisions summary
+- Drill-downs to match the same metrics shown in other dashboards
 
 ---
 
@@ -225,19 +323,24 @@ Exit criteria:
 ---
 
 ## Next Actions
-1. **Continue Phase 4 ideation**: user to provide Admin + Reporting Officer dashboard logic.
-2. Implement **Supervisor dashboard** and **Approving Supervisor dashboard** per the detailed requirements already provided.
-3. Implement **inspection approval for every inspection** (Pass/Fail), ensuring defect aging and inspection history rules.
-4. Add Notifications full-page view (after dashboard UX is finalized).
+1. **Phase 4.3 (Approving Supervisor Dashboard)** — implement UI, starting with **My Tasks approvals queue** (Pass/Fail per item) since backend is ready.
+2. **Phase 4.2** — implement `/inspection?asset_id=` deep link preselection.
+3. **Phase 4.4** — Reporting Officer dashboard scoped to assigned stations + department + linked supervisors.
+4. **Phase 4.5** — Superadmin dashboard redesign with drill-down.
 
 ---
 
 ## Success Criteria
 - Core workflow works reliably with full audit trail.
 - Scheduling:
-  - Frequency is configured in days.
-  - Supervisor/Approving Supervisor/Admin can view schedules as requested (week default + date range).
+  - Frequency configured in days.
+  - Supervisor/ASUP/Admin/Superadmin/RO can view schedules as requested (week default + date range + filters).
   - Supervisor transfer/reassignment supported.
-- Dashboards are role-specific, minimal, and operationally useful.
-- Every inspection requires approval at the station level (Approving Supervisor/Superadmin).
+- Dashboards:
+  - Supervisor dashboard matches agreed logic and is minimalistic.
+  - Approving Supervisor dashboard includes approvals queue and supervisor analytics.
+  - Reporting Officer and Superadmin dashboards show only relevant scope and drill-down.
+- Approval:
+  - Every inspection item requires Pass/Fail approval.
+  - Fail preserves defect aging (no state applied) and gap is audit logged.
 - Notifications and approvals are actionable from the UI.

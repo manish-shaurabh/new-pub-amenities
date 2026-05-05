@@ -1,34 +1,34 @@
 [
   {
-    "content": "Sidebar: hide Asset Registry from non-Superadmin; hide Orange List from Supervisor/Approving Supervisor",
+    "content": "Phase A1+A2 (Schedules multi-filter)",
     "status": "completed"
   },
   {
-    "content": "Backend: GET /api/schedules/supervisor/{user_id}?from_date=&to_date= → returns due tasks asset-category-wise based on assigned assets + frequency",
+    "content": "Phase B1+B2 (Approval workflow with Pass/Fail)",
     "status": "completed"
   },
   {
-    "content": "Backend: GET /api/schedules/approving-supervisor/{user_id}/supervisors → list of supervisors at this approving sup's stations",
+    "content": "Phase C1 - Backend: Performance analytics endpoints",
     "status": "completed"
   },
   {
-    "content": "Backend: POST /api/admin/transfer-supervisor → bulk reassign all assets from old→new supervisor",
+    "content": "Phase D1+D2+D3 - Supervisor Dashboard (Overview / My Tasks / My Performance) with station filter, dept badge, health pie",
     "status": "completed"
   },
   {
-    "content": "Frontend: Add API client methods for new schedules endpoints",
-    "status": "completed"
+    "content": "Phase D4 - Single-asset inspect deep link (?asset_id= on /inspection page) — currently only navigates, not pre-selecting",
+    "status": "pending"
   },
   {
-    "content": "Frontend: Redesign SchedulesPage with role-based views (Supervisor: date range + category-wise; Approving Sup: supervisor list; Admin/Superadmin: pick supervisor)",
-    "status": "completed"
+    "content": "Phase E - Approving Supervisor Dashboard (asset buttons, station/dept filters, station-health pie + drill-down, My Supervisors, My Tasks approval queue)",
+    "status": "pending"
   },
   {
-    "content": "Frontend: Admin Panel — add 'Transfer Supervisor' section for bulk reassignment",
-    "status": "completed"
+    "content": "Phase F - Reporting Officer Dashboard (ASUP-style scoped to dept + assigned stations)",
+    "status": "pending"
   },
   {
-    "content": "Test schedules end-to-end (frontend UI + backend)",
-    "status": "completed"
+    "content": "Phase G - Superadmin Dashboard redesign (asset categories, ROs/ASUPs/Stations/Divisions buttons with drill-downs)",
+    "status": "pending"
   }
 ]

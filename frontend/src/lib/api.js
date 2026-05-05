@@ -121,6 +121,21 @@ export const notificationsAPI = {
   unreadCount: (userId) => api.get(`/notifications/unread-count?user_id=${userId}`),
 };
 
+// Dashboard / Analytics
+export const analyticsAPI = {
+  supervisor: (userId) => api.get(`/analytics/supervisor/${userId}`),
+  approvingSupervisorList: (userId) => api.get(`/analytics/approving-supervisor/${userId}/supervisors`),
+  asset: (assetId) => api.get(`/analytics/asset/${assetId}`),
+};
+
+export const approvalsAPI = {
+  pending: (reviewerId) => api.get('/inspections/pending-approvals', { params: { reviewer_id: reviewerId } }),
+  approve: (inspectionId, itemIndex, reviewerId, remarks) =>
+    api.post(`/inspections/${inspectionId}/items/${itemIndex}/approve`, { reviewer_id: reviewerId, remarks }),
+  reject: (inspectionId, itemIndex, reviewerId, remarks) =>
+    api.post(`/inspections/${inspectionId}/items/${itemIndex}/reject`, { reviewer_id: reviewerId, remarks }),
+};
+
 // Schedules
 export const schedulesAPI = {
   list: (overdueOnly) => api.get('/schedules', { params: { overdue_only: overdueOnly } }),
@@ -130,6 +145,18 @@ export const schedulesAPI = {
     params: { from_date: fromDate, to_date: toDate }
   }),
   supervisorsUnderApproving: (userId) => api.get(`/schedules/approving-supervisor/${userId}/supervisors`),
+  admin: (filters) => {
+    // filters: { station_ids: [], department_ids: [], asset_type_ids: [], supervisor_ids: [], reporting_officer_ids: [], from_date, to_date }
+    const p = new URLSearchParams();
+    (filters.station_ids || []).forEach((v) => p.append('station_ids', v));
+    (filters.department_ids || []).forEach((v) => p.append('department_ids', v));
+    (filters.asset_type_ids || []).forEach((v) => p.append('asset_type_ids', v));
+    (filters.supervisor_ids || []).forEach((v) => p.append('supervisor_ids', v));
+    (filters.reporting_officer_ids || []).forEach((v) => p.append('reporting_officer_ids', v));
+    if (filters.from_date) p.append('from_date', filters.from_date);
+    if (filters.to_date) p.append('to_date', filters.to_date);
+    return api.get(`/schedules/admin?${p.toString()}`);
+  },
 };
 
 // Admin
@@ -142,8 +169,15 @@ export const adminAPI = {
 
 // Dashboard
 export const dashboardAPI = {
+  superadmin: () => api.get('/dashboard'),
   stats: () => api.get('/dashboard/stats'),
   recentInspections: (limit) => api.get('/dashboard/recent-inspections', { params: { limit } }),
+  supervisor: (userId, stationId) => api.get(`/dashboard/supervisor/${userId}`, {
+    params: stationId ? { station_id: stationId } : {}
+  }),
+  supervisorMyTasks: (userId, stationId) => api.get(`/dashboard/supervisor/${userId}/my-tasks`, {
+    params: stationId ? { station_id: stationId } : {}
+  }),
 };
 
 // Upload
