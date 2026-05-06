@@ -73,7 +73,16 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 - RO dashboard: replaced with "Dept Defects" tab using OrangeListPanel mode='ro'
 - All tested: 32/32 frontend checks pass (iteration_9.json), zero regressions
 
-### Backend Scoping & Notification Fixes (DONE — May 2026)
+### Phase 4 — Supervisor Performance Analytics (DONE — May 2026)
+- Data model fix: `reject_working` now preserves `last_marked_working_by` for rejection count tracking
+- New `GET /api/analytics/supervisor/{id}/performance` — date range + station/location filters, Option A timing, only resolved defects, rejection count
+- New `GET /api/analytics/approving-supervisor/{id}/performance-summary` — comparison table for ASUP
+- New `GET /api/analytics/reporting-officer/{id}/performance-summary` — comparison table for RO
+- New `GET /api/dashboard/admin` — admin dashboard endpoint (was missing)
+- New `SupervisorAnalyticsView.js` — reusable component with filters, 4 stat cards, category cards, per-asset rows
+- SUP "My Performance" tab now uses SupervisorAnalyticsView with date/station/location filters
+- ASUP + RO dashboards: new "Performance" tab with sortable comparison table + click-to-drill-down
+- Admin dashboard: "Performance Analytics" button → inline panel with station/dept filter → supervisor picker → full analytics
 - Fix 1: `GET /api/schedules/supervisor/{user_id}` — replaced dead `assigned_supervisor_id` query with implicit station+department scoping
 - Fix 2: `GET /api/schedules/approving-supervisor/{id}/supervisors` — asset counts now use implicit scoping
 - Fix 3: `approve_working` — SUP who marked asset working now notified when ASUP approves
