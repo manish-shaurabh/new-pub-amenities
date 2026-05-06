@@ -1,6 +1,6 @@
 [
   {
-    "content": "Trace + fix the React runtime error ('Objects are not valid as a React child') on Admin Panel",
+    "content": "Trace + fix the React runtime error",
     "status": "completed"
   },
   {
@@ -8,7 +8,7 @@
     "status": "completed"
   },
   {
-    "content": "Departments: super-admin only role gate (backend) + hide buttons for non-superadmin (frontend) + S&T seed",
+    "content": "Departments: super-admin only role gate + S&T seed",
     "status": "completed"
   },
   {
@@ -16,7 +16,7 @@
     "status": "completed"
   },
   {
-    "content": "Backend: POST /api/assets/{asset_id}/mark-defective endpoint with synthetic inspection + orange-list entry + audit",
+    "content": "Backend: POST /api/assets/{asset_id}/mark-defective endpoint",
     "status": "completed"
   },
   {
@@ -24,15 +24,15 @@
     "status": "completed"
   },
   {
-    "content": "Frontend: row action menu on Asset Registry + Mark-Defective modal",
+    "content": "Frontend: row action menu + Mark-Defective modal",
     "status": "completed"
   },
   {
     "content": "Test end-to-end (backend + frontend agent)",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Update plan.md Phase 8 to COMPLETED",
-    "status": "pending"
+    "status": "completed"
   }
 ]

@@ -29,10 +29,22 @@
   - Notifications:
     - Bell dropdown (done)
     - **Full Notifications page** with pagination + filters + search + bulk actions + deep links (done)
+  - **Manual Defect Marking (Admin/Superadmin):**
+    - Mark an asset defective without a full inspection
+    - Capture **failure date+time** (starts orange/red clock)
+    - Auto-create audit trail + inspection history entry + orange list + notifications to full chain
+  - **Department Governance:**
+    - Only **Superadmin** can create/update/delete departments (Admin and below are read-only)
+
 - Ensure the core workflow is proven end-to-end:
   - inspection submit → items pending approval → Pass applies effects → defect aging continues correctly
   - Fail keeps previous effective state and logs gap time
-- Reduce recurring UI regressions by standardizing Shadcn `<Select>` placeholder handling (**never use empty string values**).
+  - manual mark-defective → orange-list entry + synthetic inspection + notifications fan-out
+
+- Reduce recurring UI regressions by:
+  - Standardizing Shadcn `<Select>` placeholder handling (**never use empty string values**)
+  - Standardizing error rendering (avoid React crash on structured validation errors)
+
 - Improve maintainability and scalability:
   - **Backend refactored by splitting `server.py` into routers** while preserving route paths, `/api` prefix behavior, CORS, static mounts, and helper semantics (done).
 
@@ -419,12 +431,80 @@ Testing approach (per instruction: **use both**):
 
 ---
 
+### Phase 8 — Bug Fixes + Manual Mark-Defective + Orange List Scoping ✅ COMPLETE
+**Goal:** Stabilize admin UX, enforce department governance, fix orange list role visibility, and add a manual defect entry path that notifies the full chain.
+
+#### Phase 8.1 — Fix React runtime error on structured validation errors ✅ COMPLETE
+Delivered:
+- Added `frontend/src/lib/err.js`:
+  - `errString()` converts FastAPI/Pydantic v2 validation `detail` arrays into readable strings.
+- Patched error handling across 6 pages/components to prevent:
+  - **“Objects are not valid as a React child”** runtime crashes.
+
+#### Phase 8.2 — Departments governance: Superadmin-only manage ✅ COMPLETE
+Delivered:
+- Backend:
+  - `POST/PUT/DELETE /api/departments` now require `current_user_id` query param and enforce role == `superadmin`.
+  - Deletion safety: blocks deletion when asset types still reference a department (`409`).
+- Frontend:
+  - Admin Panel **Depts** tab:
+    - Superadmin sees Add/Edit/Delete controls.
+    - Non-superadmin users see a read-only list and a note: “Read-only — only Super Admin can manage departments”.
+- Seed:
+  - Seeded **S&T** department (Signal & Telecommunications) and added idempotent seeds in `seed.py`.
+
+#### Phase 8.3 — Manual Mark-Defective (Admin/Superadmin) ✅ COMPLETE
+Delivered:
+- Backend:
+  - New endpoint: `POST /api/assets/{asset_id}/mark-defective`
+    - Accepts: `status`, `remarks` (≥10 chars), `defective_at` (ISO, not future), `performed_by`, optional `photo_urls`.
+    - Creates a synthetic inspection: `inspection_type='manual_marking'`.
+    - Creates an orange-list entry and audit log entry `action='manual_mark_defective'`.
+    - Clock rule enforced: **does not reset defective_since** if asset is already defective.
+  - New helper: `broadcast_asset_defect_notifications()` in `helpers.py`.
+    - Recipients: asset supervisor + station ASUP + dept RO + umbrella RO Commercial + all admins + all superadmins.
+    - Deduplicated; performer excluded.
+
+- Frontend:
+  - Asset Registry updated with a clean per-row **3-dot action menu**:
+    - View history
+    - Edit asset (admin/SA)
+    - **Mark defective** (admin/SA)
+    - Delete
+  - New modal: `MarkDefectiveDialog`:
+    - Status radio: Not OK / Needs Repair
+    - **Date+time of failure** (default now; backdating allowed; future blocked)
+    - Remarks min-length validation
+    - Optional photos
+    - Recipient preview
+
+#### Phase 8.4 — Orange List scoping + refresh ✅ COMPLETE
+Delivered:
+- Backend:
+  - `GET /api/orange-list` accepts `for_user_id`:
+    - Supervisor: assets assigned to them OR items they reported
+    - ASUP: assets at their stations
+    - RO: assets in their department AND assigned stations
+    - Admin/Superadmin: global list
+- Frontend:
+  - Orange List page sends `for_user_id` for non-admin/SA roles.
+  - Added a **Refresh** button.
+
+#### Phase 8.5 — Testing & verification for Phase 8 ✅ COMPLETE
+Testing approach (per instruction: **use both**):
+- Backend: **100%** (24/24)
+- Frontend: **100%**
+- No regressions detected.
+
+---
+
 ## Next Actions (Optional / Future)
 1. **Integrate real SMS/WhatsApp provider** (adapter infrastructure exists; pending API keys).
 2. Add pagination for other large datasets (inspections, assets, orange list) if performance requires.
 3. Add automated unit tests for approval edge cases and schedule computations.
 4. Optional: Add notification retention policies (auto-delete older than N days) and indexes in MongoDB for notifications.
 5. Optional: Add “permission-aware view-as” constraints (e.g., admin can view-as only within scope) if required.
+6. Optional: Add an admin UI to configure umbrella notification recipients instead of hard-coded “Commercial”.
 
 ---
 
@@ -446,15 +526,22 @@ Testing approach (per instruction: **use both**):
   - Fail preserves defect aging and audit logs gap time.
 - Scoping:
   - Stakeholders see only assigned stations/departments/assets.
+  - Orange list is role-scoped when `for_user_id` is provided.
 - Notifications:
   - Dropdown remains functional.
   - Full Notifications page supports pagination/filters/search/bulk actions.
+  - Defect notifications reach the full chain (Supervisor, ASUP, RO, RO Commercial, Admin, Superadmin).
   - Deep links:
     - `?asset_id=` opens asset drawer
     - `?inspection_id=` opens inspection modal in all-items mode
+- Manual defect marking:
+  - Admin/Superadmin can mark defective with a failure timestamp.
+  - Does not reset the defect clock if already defective.
+  - Generates synthetic inspection + orange list entry + audit + notifications.
 - Reporting:
   - Printable inspection report available after submission and from history.
 - Maintainability:
   - Backend modularized into routers with no route regressions.
 - Stability:
   - No Shadcn Select empty-string regressions (`value=""` not used).
+  - No React runtime crashes on structured error payloads.
