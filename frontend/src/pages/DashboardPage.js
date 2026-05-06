@@ -9,9 +9,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import {
-  Box, ClipboardCheck,
-  ChevronDown, Wrench, ListChecks, BarChart3, ArrowRight, ArrowLeft, Eye,
+  Box,
+  ChevronDown, Wrench, AlertTriangle, BarChart3, ArrowRight, ArrowLeft, Eye,
 } from 'lucide-react';
+import OrangeListPanel from '../components/OrangeListPanel';
 import {
   Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -128,129 +129,6 @@ function SupervisorOverviewTab({ data, onSelectCategory }) {
         )}
       </div>
     </div>
-  );
-}
-
-function SupervisorMyTasksTab({ userId, stationId }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [activeSubTab, setActiveSubTab] = useState('my-assets');
-  const navigate = useNavigate();
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await dashboardAPI.supervisorMyTasks(userId, stationId);
-      setData(r.data);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }, [userId, stationId]);
-  useEffect(() => { load(); }, [load]);
-
-  const inspectAsset = (assetId) => {
-    navigate(`/inspection?asset_id=${assetId}`);
-  };
-
-  if (loading) {
-    return <div className="space-y-3">
-      {[1,2,3].map((i) => <div key={i} className="h-20 bg-muted/50 animate-pulse rounded-xl" />)}
-    </div>;
-  }
-  if (!data) return null;
-
-  const renderCategoryGroup = (c, isPending) => (
-    <Card key={c.asset_type_id} className="overflow-hidden">
-      <Collapsible defaultOpen>
-        <CollapsibleTrigger asChild>
-          <button className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors">
-            <div className="flex items-center gap-3">
-              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform" />
-              <span className="font-medium text-sm">{c.asset_type_name}</span>
-              <Badge variant="secondary" className="text-xs">{c.asset_count}</Badge>
-            </div>
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="border-t">
-            {c.assets.map((a) => (
-              <button
-                key={a._id}
-                onClick={() => inspectAsset(a._id)}
-                className="w-full flex items-center justify-between px-4 py-2.5 border-b last:border-0 hover:bg-muted/30 text-left"
-                data-testid={`asset-inspect-${a._id}`}
-              >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className={`h-8 w-8 rounded-md flex items-center justify-center flex-shrink-0 ${
-                    a.health_class === 'red' ? 'bg-red-50 text-red-600' :
-                    a.health_class === 'orange' ? 'bg-orange-50 text-orange-600' :
-                    'bg-emerald-50 text-emerald-600'
-                  }`}>
-                    {a.health_class === 'working' ? <Box className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{a.asset_number}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {a.station_name} &middot; {a.location_name}
-                    </p>
-                  </div>
-                </div>
-                <Badge className={
-                  a.health_class === 'red' ? 'bg-red-100 text-red-700 border-red-200 text-[10px]' :
-                  a.health_class === 'orange' ? 'bg-orange-100 text-orange-700 border-orange-200 text-[10px]' :
-                  'bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]'
-                }>
-                  {a.health_class === 'working' ? 'OK' : a.health_class.toUpperCase()}
-                </Badge>
-              </button>
-            ))}
-            {isPending && c.assets.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-6">No pending tasks here</p>
-            )}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </Card>
-  );
-
-  return (
-    <Tabs value={activeSubTab} onValueChange={setActiveSubTab}>
-      <TabsList>
-        <TabsTrigger value="my-assets" data-testid="tab-my-assets">
-          My Assets <Badge variant="secondary" className="ml-2 text-[10px]">{data.totals.total}</Badge>
-        </TabsTrigger>
-        <TabsTrigger value="pending" data-testid="tab-pending-tasks">
-          Pending Tasks <Badge variant="secondary" className="ml-2 text-[10px]">{data.totals.pending}</Badge>
-        </TabsTrigger>
-      </TabsList>
-
-      <TabsContent value="my-assets" className="space-y-3 mt-4">
-        <p className="text-xs text-muted-foreground">
-          Click any asset to start a single-asset inspection. Use the "New Inspection" page for multi-asset inspections.
-        </p>
-        {data.my_assets.length === 0 ? (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <Box className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm font-medium">No assets allocated</p>
-            </CardContent>
-          </Card>
-        ) : data.my_assets.map((c) => renderCategoryGroup(c, false))}
-      </TabsContent>
-
-      <TabsContent value="pending" className="space-y-3 mt-4">
-        <p className="text-xs text-muted-foreground">
-          Assets currently in Orange or Red list. Click to inspect and mark working.
-        </p>
-        {data.pending_tasks.length === 0 ? (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <ClipboardCheck className="h-10 w-10 text-emerald-500/60 mx-auto mb-3" />
-              <p className="text-sm font-medium">All caught up — nothing pending!</p>
-            </CardContent>
-          </Card>
-        ) : data.pending_tasks.map((c) => renderCategoryGroup(c, true))}
-      </TabsContent>
-    </Tabs>
   );
 }
 
@@ -420,8 +298,8 @@ function SupervisorDashboard({ targetUser = null }) {
           <TabsTrigger value="overview" data-testid="tab-overview">
             <BarChart3 className="h-4 w-4 mr-2" /> Overview
           </TabsTrigger>
-          <TabsTrigger value="my-tasks" data-testid="tab-my-tasks">
-            <ListChecks className="h-4 w-4 mr-2" /> My Tasks
+          <TabsTrigger value="defects" data-testid="tab-defects">
+            <AlertTriangle className="h-4 w-4 mr-2" /> Defects
           </TabsTrigger>
           <TabsTrigger value="performance" data-testid="tab-my-performance">
             <Wrench className="h-4 w-4 mr-2" /> My Performance
@@ -429,11 +307,11 @@ function SupervisorDashboard({ targetUser = null }) {
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
-          <SupervisorOverviewTab data={data} onSelectCategory={() => setActiveTab('my-tasks')} />
+          <SupervisorOverviewTab data={data} onSelectCategory={() => setActiveTab('defects')} />
         </TabsContent>
 
-        <TabsContent value="my-tasks" className="mt-4">
-          <SupervisorMyTasksTab userId={user._id} stationId={stationFilter !== 'all' ? stationFilter : null} />
+        <TabsContent value="defects" className="mt-4">
+          <OrangeListPanel userId={user._id} mode="sup" />
         </TabsContent>
 
         <TabsContent value="performance" className="mt-4">

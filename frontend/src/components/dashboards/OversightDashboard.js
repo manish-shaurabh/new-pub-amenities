@@ -5,21 +5,20 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../lib/auth-context';
-import { errString } from '../../lib/err';
-import { dashboardAPI, analyticsAPI, approvalsAPI } from '../../lib/api';
+import { dashboardAPI, analyticsAPI } from '../../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
-import { Textarea } from '../ui/textarea';
 import {
-  Box, BarChart3, ListChecks, Users, ChevronDown, ArrowLeft, ArrowRight,
-  CheckCircle2, XCircle, Building2, Wrench, AlertCircle,
+  Box, BarChart3, Users, ChevronDown, ArrowLeft, ArrowRight,
+  CheckCircle2, Building2, Wrench, AlertCircle, AlertTriangle,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
+import OrangeListPanel from '../OrangeListPanel';
 
 const HEALTH_COLORS = { working: '#0e7c6b', orange: '#f97316', red: '#dc2626' };
 
@@ -404,133 +403,6 @@ function MySupervisorsBlock({ userId, restrictToIds }) {
   );
 }
 
-// ---------- My Tasks (approval queue) ----------
-function MyTasksBlock({ reviewerId }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [actioning, setActioning] = useState({});  // key: insp:idx -> bool
-  const [remarksMap, setRemarksMap] = useState({});
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await approvalsAPI.pending(reviewerId);
-      setData(r.data);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }, [reviewerId]);
-  useEffect(() => { load(); }, [load]);
-
-  const act = async (insp, idx, approve) => {
-    const key = `${insp.inspection_id}:${idx}`;
-    setActioning((s) => ({ ...s, [key]: true }));
-    try {
-      const remarks = remarksMap[key] || null;
-      if (approve) await approvalsAPI.approve(insp.inspection_id, idx, reviewerId, remarks);
-      else         await approvalsAPI.reject(insp.inspection_id, idx, reviewerId, remarks);
-      toast.success(approve ? 'Item approved' : 'Item rejected');
-      await load();
-    } catch (e) {
-      toast.error(errString(e, 'Action failed'));
-    } finally {
-      setActioning((s) => ({ ...s, [key]: false }));
-    }
-  };
-
-  if (loading) return <div className="h-40 bg-muted/50 animate-pulse rounded-xl" />;
-  if (!data || data.total_items === 0) {
-    return (
-      <Card><CardContent className="p-12 text-center">
-        <CheckCircle2 className="h-10 w-10 text-emerald-500/60 mx-auto mb-3" />
-        <p className="text-sm font-medium">No pending approvals</p>
-        <p className="text-xs text-muted-foreground mt-1">All inspection items have been reviewed.</p>
-      </CardContent></Card>
-    );
-  }
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        {data.total_items} item(s) across {data.inspections.length} inspection(s) awaiting your review.
-      </p>
-      {data.inspections.map((insp) => (
-        <Card key={insp.inspection_id} className="overflow-hidden">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center justify-between">
-              <span>{insp.station_name} · {insp.inspection_type === 'sig' ? 'SIG' : 'Individual'} inspection</span>
-              <Badge variant="secondary" className="text-[10px]">{insp.pending_items.length} pending</Badge>
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Submitted by {insp.inspector_name} · {new Date(insp.submitted_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            </p>
-            {insp.overall_remarks && (
-              <p className="text-xs italic text-muted-foreground">"{insp.overall_remarks}"</p>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-3 pt-0">
-            {insp.pending_items.map((it) => {
-              const key = `${insp.inspection_id}:${it.item_index}`;
-              const busy = actioning[key];
-              const statusLabel = it.status === 'ok' ? 'Reported OK' : it.status === 'not_ok' ? 'Reported NOT OK' : 'Needs Repair';
-              return (
-                <div key={key} className="rounded-lg border bg-muted/20 p-3 space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{it.asset_number || it.asset_id}</p>
-                      <p className="text-xs text-muted-foreground">{it.asset_type_name}</p>
-                    </div>
-                    <Badge className={
-                      it.status === 'ok' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]' :
-                      'bg-red-50 text-red-700 border-red-200 text-[10px]'
-                    }>{statusLabel}</Badge>
-                  </div>
-                  {it.remarks && (
-                    <p className="text-xs">{it.remarks_by ? <span className="text-muted-foreground">{it.remarks_by}: </span> : null}{it.remarks}</p>
-                  )}
-                  {it.photo_urls && it.photo_urls.length > 0 && (
-                    <div className="flex gap-2 flex-wrap">
-                      {it.photo_urls.slice(0, 4).map((u, i) => (
-                        <img key={i} src={u} alt="" className="h-12 w-12 rounded object-cover border" />
-                      ))}
-                    </div>
-                  )}
-                  <Textarea
-                    placeholder="Optional review remarks…"
-                    value={remarksMap[key] || ''}
-                    onChange={(e) => setRemarksMap((s) => ({ ...s, [key]: e.target.value }))}
-                    className="text-xs h-16"
-                    data-testid={`approval-remarks-${key}`}
-                  />
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => act(insp, it.item_index, true)}
-                      disabled={busy}
-                      data-testid={`approve-button-${key}`}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                    >
-                      <CheckCircle2 className="h-4 w-4 mr-1" /> Pass
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => act(insp, it.item_index, false)}
-                      disabled={busy}
-                      data-testid={`reject-button-${key}`}
-                      className="border-red-200 text-red-700 hover:bg-red-50"
-                    >
-                      <XCircle className="h-4 w-4 mr-1" /> Fail
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
 // ---------- Main exported component ----------
 /**
  * @param mode - 'asup' | 'ro'
@@ -613,7 +485,10 @@ export default function OversightDashboard({ mode = 'asup', targetUser = null })
         <TabsList>
           <TabsTrigger value="overview" data-testid="tab-overview"><BarChart3 className="h-4 w-4 mr-2" /> Overview</TabsTrigger>
           <TabsTrigger value="my-supervisors" data-testid="tab-my-supervisors"><Users className="h-4 w-4 mr-2" /> My Supervisors</TabsTrigger>
-          <TabsTrigger value="my-tasks" data-testid="tab-my-tasks"><ListChecks className="h-4 w-4 mr-2" /> My Tasks</TabsTrigger>
+          <TabsTrigger value="defects" data-testid="tab-defects">
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            {mode === 'asup' ? 'Yellow List' : 'Dept Defects'}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
@@ -625,7 +500,9 @@ export default function OversightDashboard({ mode = 'asup', targetUser = null })
             : <MySupervisorsBlock userId={user._id} restrictToIds={data.my_supervisors_ids || []} />
           }
         </TabsContent>
-        <TabsContent value="my-tasks" className="mt-4"><MyTasksBlock reviewerId={user._id} /></TabsContent>
+        <TabsContent value="defects" className="mt-4">
+          <OrangeListPanel userId={user._id} mode={mode === 'asup' ? 'asup' : 'ro'} />
+        </TabsContent>
       </Tabs>
     </div>
   );
