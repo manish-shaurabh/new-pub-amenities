@@ -62,11 +62,16 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 - Added `rejectWorking` API method in api.js
 - All tested: 16/16 backend tests pass, 100% frontend flows verified (iteration_8.json)
 
-### Phase 3 — Orange List Panel in Role Dashboards (P1)
-- Reusable OrangeListPanel component
-- Supervisor: new "Defects" tab with Mark Working
-- ASUP: "My Tasks" tab → Yellow List with Approve/Reject
-- RO: new "Dept Defects" tab (read-only + add remarks)
+### Phase 3 — Orange List Panel in Role Dashboards (DONE — May 2026)
+- Created reusable `OrangeListPanel` component (`/app/frontend/src/components/OrangeListPanel.js`)
+  - mode='sup': Orange + Red tabs, Mark Working action (with date/time picker dialog)
+  - mode='asup': Yellow List only, Approve + Reject actions
+  - mode='ro': Orange + Red + Yellow tabs, read-only
+- Removed "My Tasks" tab from SUP, ASUP, and RO dashboards
+- SUP dashboard: replaced with "Defects" tab using OrangeListPanel mode='sup'
+- ASUP dashboard: replaced with "Yellow List" tab using OrangeListPanel mode='asup'
+- RO dashboard: replaced with "Dept Defects" tab using OrangeListPanel mode='ro'
+- All tested: 32/32 frontend checks pass (iteration_9.json), zero regressions
 
 ### Phase 4 — Rectification Performance Analytics (P1)
 - Defect period = defective_since → marked_working_at (user-entered)
