@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { assetsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
@@ -37,6 +37,11 @@ export default function AssetsPage() {
   const [assetHistory, setAssetHistory] = useState(null);
   const [supervisorHistory, setSupervisorHistory] = useState(null);
   const [markingAsset, setMarkingAsset] = useState(null);
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const searchDebounce = useRef(null);
   const [formData, setFormData] = useState({
     asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', assigned_supervisor_id: ''
   });
@@ -455,6 +460,18 @@ export default function AssetsPage() {
           })
         )}
       </div>
+
+      {/* Pagination */}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        pageSize={PAGE_SIZE}
+        totalItems={total}
+        loadedCount={assets.length}
+        onPageChange={setPage}
+        loading={loading}
+        testIdPrefix="assets-pagination"
+      />
 
       {/* Edit Dialog */}
       <Dialog open={showEdit} onOpenChange={(open) => { setShowEdit(open); if (!open) { setEditingAsset(null); resetForm(); } }}>
