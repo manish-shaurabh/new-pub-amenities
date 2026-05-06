@@ -247,6 +247,12 @@ class OrangeListCreate(BaseModel):
 class MarkWorkingRequest(BaseModel):
     marked_by: str
     remarks: Optional[str] = None
+    marked_working_at: Optional[datetime] = None  # user-entered; defaults to now in endpoint
+
+
+class RejectWorkingRequest(BaseModel):
+    rejected_by: str
+    remarks: str  # required — ASUP must explain why rejected
 
 
 class ApproveWorkingRequest(BaseModel):

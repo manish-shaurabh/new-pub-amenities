@@ -19,7 +19,7 @@ from models import (
     DepartmentCreate, StationCreate, LocationCreate,
     AssetTypeCreate, AssetCreate, UserCreate, UserLogin,
     InspectionCreate, InspectionItemStatus,
-    OrangeListCreate, MarkWorkingRequest, ApproveWorkingRequest,
+    OrangeListCreate, MarkWorkingRequest, ApproveWorkingRequest, RejectWorkingRequest,
     NotificationCreate, ScheduleCreate, ScheduleFrequency,
     UserRole, AssetStatus, OrangeListStatus,
 )
@@ -240,34 +240,128 @@ async def mark_working(item_id: str, request: MarkWorkingRequest):
     item = await orange_list_collection.find_one({"_id": ObjectId(item_id)})
     if not item:
         raise HTTPException(status_code=404, detail="Orange list item not found")
-    
+
     if item["status"] != OrangeListStatus.DEFECTIVE.value:
         raise HTTPException(status_code=400, detail="Item is not in defective status")
-    
+
+    # Use user-entered timestamp if provided, otherwise now
+    marked_working_dt = request.marked_working_at or datetime.utcnow()
+
     await orange_list_collection.update_one(
         {"_id": ObjectId(item_id)},
         {"$set": {
             "status": OrangeListStatus.PENDING_APPROVAL.value,
             "marked_working_by": request.marked_by,
-            "marked_working_at": datetime.utcnow(),
+            "marked_working_at": marked_working_dt,
             "working_remarks": request.remarks
         }}
     )
-    
+
     await assets_collection.update_one(
         {"_id": ObjectId(item["asset_id"])},
         {"$set": {"status": AssetStatus.PENDING_APPROVAL.value}}
     )
-    
+
+    # Notify ASUP at that station to verify in field
+    asset_doc = await assets_collection.find_one({"_id": ObjectId(item["asset_id"])})
+    marker = await users_collection.find_one({"_id": ObjectId(request.marked_by)})
+    marker_name = marker.get("name", "Supervisor") if marker else "Supervisor"
+    if asset_doc:
+        station_id = asset_doc.get("station_id")
+        if station_id:
+            async for asup in users_collection.find({
+                "role": UserRole.APPROVING_SUPERVISOR.value,
+                "assigned_stations": station_id,
+                "is_active": True,
+            }, {"_id": 1}):
+                await notifications_collection.insert_one({
+                    "user_id": str(asup["_id"]),
+                    "title": "Asset Reported Rectified",
+                    "message": f"Asset {asset_doc.get('asset_number', 'Unknown')} has been marked working by {marker_name}. Please verify in field.",
+                    "notification_type": "info",
+                    "related_entity_type": "orange_list",
+                    "related_entity_id": item_id,
+                    "is_read": False,
+                    "created_at": datetime.utcnow()
+                })
+
     await audit_log_collection.insert_one({
         "entity_type": "orange_list",
         "entity_id": item_id,
         "action": "marked_working",
         "performed_by": request.marked_by,
-        "details": {"remarks": request.remarks},
+        "details": {"remarks": request.remarks, "marked_working_at": marked_working_dt.isoformat()},
         "created_at": datetime.utcnow()
     })
-    
+
+    updated = await orange_list_collection.find_one({"_id": ObjectId(item_id)})
+    return serialize_doc(updated)
+
+
+@router.post("/api/orange-list/{item_id}/reject-working")
+async def reject_working(item_id: str, request: RejectWorkingRequest):
+    """ASUP rejects a rectification claim — asset goes back to Defective, defect clock continues."""
+    item = await orange_list_collection.find_one({"_id": ObjectId(item_id)})
+    if not item:
+        raise HTTPException(status_code=404, detail="Orange list item not found")
+
+    if item["status"] != OrangeListStatus.PENDING_APPROVAL.value:
+        raise HTTPException(status_code=400, detail="Item is not pending approval")
+
+    rejector = await users_collection.find_one({"_id": ObjectId(request.rejected_by)})
+    if not rejector:
+        raise HTTPException(status_code=404, detail="Rejector not found")
+    if rejector["role"] not in [UserRole.APPROVING_SUPERVISOR.value, UserRole.ADMIN.value, UserRole.SUPERADMIN.value]:
+        raise HTTPException(status_code=403, detail="Only approving supervisors or admins can reject")
+    if rejector["role"] == UserRole.APPROVING_SUPERVISOR.value:
+        asset_doc_check = await assets_collection.find_one({"_id": ObjectId(item["asset_id"])})
+        if asset_doc_check:
+            asup_stations = list(rejector.get("assigned_stations") or [])
+            if asset_doc_check.get("station_id") not in asup_stations:
+                raise HTTPException(status_code=403, detail="This station is not under your jurisdiction")
+
+    now = datetime.utcnow()
+    await orange_list_collection.update_one(
+        {"_id": ObjectId(item_id)},
+        {"$set": {
+            "status": OrangeListStatus.DEFECTIVE.value,
+            "marked_working_by": None,
+            "marked_working_at": None,
+            "working_remarks": None,
+            "rejection_remarks": request.remarks,
+            "rejected_by": request.rejected_by,
+            "rejected_at": now,
+        }}
+    )
+
+    await assets_collection.update_one(
+        {"_id": ObjectId(item["asset_id"])},
+        {"$set": {"status": AssetStatus.DEFECTIVE.value}}
+    )
+
+    # Notify the person who marked it working
+    if item.get("marked_working_by"):
+        asset_doc = await assets_collection.find_one({"_id": ObjectId(item["asset_id"])})
+        await notifications_collection.insert_one({
+            "user_id": item["marked_working_by"],
+            "title": "Rectification Rejected",
+            "message": f"Your rectification claim for asset {asset_doc.get('asset_number','Unknown') if asset_doc else 'Unknown'} was rejected by {rejector['name']}. Reason: {request.remarks}. Please re-inspect.",
+            "notification_type": "alert",
+            "related_entity_type": "orange_list",
+            "related_entity_id": item_id,
+            "is_read": False,
+            "created_at": now
+        })
+
+    await audit_log_collection.insert_one({
+        "entity_type": "orange_list",
+        "entity_id": item_id,
+        "action": "rejected_working",
+        "performed_by": request.rejected_by,
+        "details": {"remarks": request.remarks},
+        "created_at": now
+    })
+
     updated = await orange_list_collection.find_one({"_id": ObjectId(item_id)})
     return serialize_doc(updated)
 

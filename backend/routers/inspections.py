@@ -31,9 +31,8 @@ from helpers import _normalize_freq_days
 # ============ INSPECTIONS ============
 @router.post("/api/inspections")
 async def create_inspection(inspection: InspectionCreate):
-    """Submit an inspection. Each item is stored with approval_status='pending_approval';
-    no asset state changes are applied until an Approving Supervisor (or Superadmin) marks
-    each item Pass or Fail."""
+    """Submit an inspection. Effects (defect creation, yellow-list trigger) are applied
+    immediately on submission — no ASUP approval gate on individual items."""
     inspector = await users_collection.find_one({"_id": ObjectId(inspection.inspector_id)})
     if not inspector:
         raise HTTPException(status_code=404, detail="Inspector not found")
@@ -41,7 +40,7 @@ async def create_inspection(inspection: InspectionCreate):
     items_data = []
     for item in inspection.items:
         item_dict = item.model_dump()
-        item_dict["approval_status"] = "pending_approval"
+        item_dict["approval_status"] = "auto_applied"
         item_dict["reviewed_by"] = None
         item_dict["reviewed_at"] = None
         item_dict["reviewer_remarks"] = None
@@ -74,16 +73,24 @@ async def create_inspection(inspection: InspectionCreate):
     }
     result = await inspections_collection.insert_one(doc)
     inspection_id = str(result.inserted_id)
+    doc["_id"] = result.inserted_id
 
-    # Notify approvers (Approving Supervisor for the station + Admins/Superadmins) that
-    # there are inspection items awaiting their review.
+    # Apply effects immediately for all items
+    for item in items_data:
+        await _apply_inspection_item_effects(doc, item, inspection.inspector_id)
+
+    # Notify ASUP and Admins that a new inspection was submitted (informational)
     station_doc = await stations_collection.find_one({"_id": ObjectId(inspection.station_id)})
     station_name = station_doc.get("name") if station_doc else "Unknown station"
-    asup_id = station_doc.get("approving_supervisor_id") if station_doc else None
 
     notify_user_ids = set()
-    if asup_id:
-        notify_user_ids.add(asup_id)
+    # ASUPs whose assigned_stations includes this station
+    async for asup in users_collection.find({
+        "role": UserRole.APPROVING_SUPERVISOR.value,
+        "assigned_stations": inspection.station_id,
+        "is_active": True,
+    }, {"_id": 1}):
+        notify_user_ids.add(str(asup["_id"]))
     admins = await users_collection.find({
         "role": {"$in": [UserRole.ADMIN.value, UserRole.SUPERADMIN.value]},
         "is_active": True,
@@ -92,11 +99,19 @@ async def create_inspection(inspection: InspectionCreate):
         notify_user_ids.add(str(a["_id"]))
     notify_user_ids.discard(inspection.inspector_id)
 
+    not_ok_count = sum(
+        1 for it in items_data
+        if it.get("status") in (InspectionItemStatus.NOT_OK.value, InspectionItemStatus.NEEDS_REPAIR.value)
+    )
+
     for uid in notify_user_ids:
+        msg = f"{inspector['name']} submitted an inspection at {station_name}."
+        if not_ok_count:
+            msg += f" {not_ok_count} defect(s) recorded."
         await notifications_collection.insert_one({
             "user_id": uid,
-            "title": "Inspection Awaiting Approval",
-            "message": f"{len(items_data)} item(s) submitted by {inspector['name']} at {station_name} require Pass/Fail review.",
+            "title": "Inspection Submitted",
+            "message": msg,
             "notification_type": "info",
             "related_entity_type": "inspection",
             "related_entity_id": inspection_id,
@@ -110,25 +125,28 @@ async def create_inspection(inspection: InspectionCreate):
         "entity_id": inspection_id,
         "action": "submitted",
         "performed_by": inspection.inspector_id,
-        "details": {"item_count": len(items_data), "station_id": inspection.station_id},
+        "details": {"item_count": len(items_data), "station_id": inspection.station_id, "defects": not_ok_count},
         "created_at": datetime.utcnow()
     })
 
-    doc["_id"] = result.inserted_id
     return serialize_doc(doc)
 
 
 # ===== Approval helpers =====
 async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, reviewer_id: str):
-    """Apply the asset/orange-list state changes that the inspection item represents.
-    Called when an item is approved (Pass)."""
+    """Apply asset / orange-list state changes immediately when an inspection is submitted.
+
+    • NOT_OK / NEEDS_REPAIR  → asset defective + open orange-list entry
+    • OK (asset was defective) → move orange-list entry to pending_approval (Yellow List)
+    • OK (asset was working)  → only update last_inspected / next_due
+    """
     asset_id = item["asset_id"]
     inspection_id = str(inspection_doc["_id"])
     inspector_id = inspection_doc["inspector_id"]
     item_status = item.get("status")
 
     if item_status in (InspectionItemStatus.NOT_OK.value, InspectionItemStatus.NEEDS_REPAIR.value):
-        # Mark asset defective and add to orange list (if not already)
+        # ── Defective path ──────────────────────────────────────────────────────
         defective_since = item.get("defective_since")
         if defective_since:
             try:
@@ -153,13 +171,14 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
             "status": {"$ne": OrangeListStatus.RESOLVED.value}
         })
         if not existing:
+            remarks_text = item.get("remarks") or "Marked defective during inspection"
             await orange_list_collection.insert_one({
                 "asset_id": asset_id,
                 "inspection_id": inspection_id,
                 "reported_by": inspector_id,
                 "status": OrangeListStatus.DEFECTIVE.value,
                 "defective_since": defective_since_dt,
-                "remarks": "Marked defective during inspection (approved)",
+                "remarks": remarks_text,
                 "marked_working_by": None,
                 "marked_working_at": None,
                 "approved_by": None,
@@ -167,7 +186,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                 "created_at": datetime.utcnow()
             })
 
-        # Notify supervisors / ROs / ASUPs (existing behavior)
+        # Notify supervisors / ROs / ASUPs
         asset = await assets_collection.find_one({"_id": ObjectId(asset_id)})
         if asset:
             asset_type = await asset_types_collection.find_one({"_id": ObjectId(asset["asset_type_id"])})
@@ -198,12 +217,73 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                     "created_at": datetime.utcnow()
                 })
 
-    # Update last_inspected and next_due (only on Pass)
+    elif item_status == InspectionItemStatus.OK.value:
+        # ── OK path — check if asset was previously defective ──────────────────
+        asset_doc = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+        if asset_doc and asset_doc.get("status") == AssetStatus.DEFECTIVE.value:
+            # Supervisor rectified a defective asset → move orange list entry to Yellow List
+            rectified_on = item.get("rectified_on")
+            if rectified_on:
+                try:
+                    rectified_dt = datetime.fromisoformat(
+                        rectified_on.replace('Z', '+00:00').replace('+00:00', '')
+                    )
+                except (ValueError, AttributeError):
+                    rectified_dt = datetime.utcnow()
+            else:
+                rectified_dt = datetime.utcnow()
+
+            open_entry = await orange_list_collection.find_one({
+                "asset_id": asset_id,
+                "status": OrangeListStatus.DEFECTIVE.value
+            })
+            if open_entry:
+                await orange_list_collection.update_one(
+                    {"_id": open_entry["_id"]},
+                    {"$set": {
+                        "status": OrangeListStatus.PENDING_APPROVAL.value,
+                        "marked_working_by": inspector_id,
+                        "marked_working_at": rectified_dt,
+                        "working_remarks": item.get("remarks") or "Marked working during inspection",
+                        "inspection_id_rectified": inspection_id,
+                    }}
+                )
+
+            await assets_collection.update_one(
+                {"_id": ObjectId(asset_id)},
+                {"$set": {"status": AssetStatus.PENDING_APPROVAL.value}}
+            )
+
+            # Notify ASUP at that station to verify in field
+            station_id = asset_doc.get("station_id")
+            if station_id:
+                asup_notified = set()
+                async for asup in users_collection.find({
+                    "role": UserRole.APPROVING_SUPERVISOR.value,
+                    "assigned_stations": station_id,
+                    "is_active": True,
+                }, {"_id": 1, "name": 1}):
+                    asup_id_str = str(asup["_id"])
+                    if asup_id_str in asup_notified:
+                        continue
+                    asup_notified.add(asup_id_str)
+                    await notifications_collection.insert_one({
+                        "user_id": asup_id_str,
+                        "title": "Asset Reported Rectified",
+                        "message": f"Asset {asset_doc.get('asset_number','Unknown')} at station has been reported working by {inspection_doc.get('inspector_name','Inspector')}. Please verify in field.",
+                        "notification_type": "info",
+                        "related_entity_type": "orange_list",
+                        "related_entity_id": asset_id,
+                        "is_read": False,
+                        "created_at": datetime.utcnow()
+                    })
+
+    # Update last_inspected and next_due for all items
     now_ts = datetime.utcnow()
     update_fields = {"last_inspected": now_ts}
-    asset_doc = await assets_collection.find_one({"_id": ObjectId(asset_id)})
-    if asset_doc:
-        freq_days = _normalize_freq_days(asset_doc.get("schedule_frequency"))
+    asset_doc2 = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    if asset_doc2:
+        freq_days = _normalize_freq_days(asset_doc2.get("schedule_frequency"))
         if freq_days and freq_days > 0:
             update_fields["next_due"] = now_ts + timedelta(days=freq_days)
     await assets_collection.update_one({"_id": ObjectId(asset_id)}, {"$set": update_fields})
@@ -211,7 +291,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
     await audit_log_collection.insert_one({
         "entity_type": "inspection_item",
         "entity_id": f"{inspection_id}:{asset_id}",
-        "action": "approved",
+        "action": "auto_applied",
         "performed_by": reviewer_id,
         "details": {"inspection_id": inspection_id, "asset_id": asset_id, "item_status": item_status},
         "created_at": datetime.utcnow()
