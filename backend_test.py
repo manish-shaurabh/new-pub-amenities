@@ -486,6 +486,261 @@ class RailwayAPITester:
         
         return success
 
+    # ========== PHASE 7 TESTS ==========
+    
+    def test_superadmin_dashboard(self):
+        """Test GET /api/dashboard/superadmin (Phase 7)"""
+        success, response = self.run_test(
+            "Superadmin Dashboard (Full)",
+            "GET",
+            "dashboard/superadmin",
+            200
+        )
+        if success:
+            print(f"   Total Assets: {response.get('totals', {}).get('assets')}")
+            print(f"   Asset Categories: {len(response.get('asset_categories', []))}")
+            print(f"   Stations: {len(response.get('stations', []))}")
+            print(f"   Departments: {len(response.get('departments', []))}")
+            print(f"   Supervisors: {len(response.get('supervisors', []))}")
+            print(f"   Reporting Officers: {len(response.get('reporting_officers', []))}")
+            print(f"   Approving Supervisors: {len(response.get('approving_supervisors', []))}")
+        return success
+
+    def test_superadmin_dashboard_station_filter(self):
+        """Test GET /api/dashboard/superadmin with station_ids filter (Phase 7)"""
+        if not self.station_id:
+            print("   ⚠️  No station ID available for filter test")
+            return False
+        
+        success, response = self.run_test(
+            "Superadmin Dashboard (Station Filter)",
+            "GET",
+            f"dashboard/superadmin?station_ids={self.station_id}",
+            200
+        )
+        if success:
+            print(f"   Filtered Assets: {response.get('totals', {}).get('assets')}")
+            print(f"   Filters Applied: {response.get('filters_applied', {})}")
+        return success
+
+    def test_oversight_category_assets_by_type(self):
+        """Test GET /api/dashboard/oversight/{user_id}/category-assets?asset_type_id=X (Phase 7)"""
+        # Get asset type ID first
+        success_types, types = self.run_test(
+            "Get Asset Types for Oversight Test",
+            "GET",
+            "asset-types",
+            200
+        )
+        if not success_types or len(types) == 0:
+            print("   ⚠️  No asset types available")
+            return False
+        
+        asset_type_id = types[0].get('_id')
+        success, response = self.run_test(
+            "Oversight Category Assets (by asset_type_id)",
+            "GET",
+            f"dashboard/oversight/{self.user.get('_id')}/category-assets",
+            200,
+            params={"asset_type_id": asset_type_id}
+        )
+        if success:
+            print(f"   Priority Assets: {len(response.get('priority', []))}")
+            print(f"   Working Assets: {len(response.get('working', []))}")
+        return success
+
+    def test_oversight_category_assets_by_department(self):
+        """Test GET /api/dashboard/oversight/{user_id}/category-assets?department_id=X (Phase 7)"""
+        # Get department ID first
+        success_depts, depts = self.run_test(
+            "Get Departments for Oversight Test",
+            "GET",
+            "departments",
+            200
+        )
+        if not success_depts or len(depts) == 0:
+            print("   ⚠️  No departments available")
+            return False
+        
+        dept_id = depts[0].get('_id')
+        success, response = self.run_test(
+            "Oversight Category Assets (by department_id)",
+            "GET",
+            f"dashboard/oversight/{self.user.get('_id')}/category-assets",
+            200,
+            params={"department_id": dept_id}
+        )
+        if success:
+            print(f"   Priority Assets: {len(response.get('priority', []))}")
+            print(f"   Working Assets: {len(response.get('working', []))}")
+        return success
+
+    def test_oversight_category_assets_by_station(self):
+        """Test GET /api/dashboard/oversight/{user_id}/category-assets?station_id=X (Phase 7)"""
+        if not self.station_id:
+            print("   ⚠️  No station ID available")
+            return False
+        
+        success, response = self.run_test(
+            "Oversight Category Assets (by station_id)",
+            "GET",
+            f"dashboard/oversight/{self.user.get('_id')}/category-assets",
+            200,
+            params={"station_id": self.station_id}
+        )
+        if success:
+            print(f"   Priority Assets: {len(response.get('priority', []))}")
+            print(f"   Working Assets: {len(response.get('working', []))}")
+        return success
+
+    def test_oversight_category_assets_no_params(self):
+        """Test GET /api/dashboard/oversight/{user_id}/category-assets with no params (should fail - Phase 7)"""
+        success, response = self.run_test(
+            "Oversight Category Assets (no params - should fail)",
+            "GET",
+            f"dashboard/oversight/{self.user.get('_id')}/category-assets",
+            400  # Expecting 400 Bad Request
+        )
+        if success:
+            print("   ✅ Correctly returned 400 for missing params")
+        return success
+
+    def test_assign_bulk_to_supervisor(self):
+        """Test POST /api/admin/assets/assign-bulk (assign to supervisor - Phase 7)"""
+        # Get a supervisor user
+        success_users, users = self.run_test(
+            "Get Users for Bulk Assign Test",
+            "GET",
+            "users",
+            200
+        )
+        if not success_users:
+            print("   ⚠️  Failed to get users")
+            return False
+        
+        supervisor = None
+        for user in users:
+            if user.get('role') == 'supervisor':
+                supervisor = user
+                break
+        
+        if not supervisor:
+            print("   ⚠️  No supervisor found for bulk assign test")
+            return False
+        
+        # Get some assets
+        success_assets, assets = self.run_test(
+            "Get Assets for Bulk Assign Test",
+            "GET",
+            "assets",
+            200
+        )
+        if not success_assets or len(assets) == 0:
+            print("   ⚠️  No assets available")
+            return False
+        
+        # Take first 2 assets
+        asset_ids = [assets[0].get('_id')]
+        if len(assets) > 1:
+            asset_ids.append(assets[1].get('_id'))
+        
+        success, response = self.run_test(
+            "Bulk Assign Assets to Supervisor",
+            "POST",
+            "admin/assets/assign-bulk",
+            200,
+            data={
+                "asset_ids": asset_ids,
+                "to_supervisor_id": supervisor.get('_id'),
+                "performed_by": self.user.get('_id')
+            }
+        )
+        if success:
+            print(f"   Assets Updated: {response.get('assets_updated')}")
+            print(f"   From Breakdown: {response.get('from_breakdown')}")
+        return success
+
+    def test_assign_bulk_unassign(self):
+        """Test POST /api/admin/assets/assign-bulk (unassign - Phase 7)"""
+        # Get some assets
+        success_assets, assets = self.run_test(
+            "Get Assets for Bulk Unassign Test",
+            "GET",
+            "assets",
+            200
+        )
+        if not success_assets or len(assets) == 0:
+            print("   ⚠️  No assets available")
+            return False
+        
+        asset_ids = [assets[0].get('_id')]
+        
+        success, response = self.run_test(
+            "Bulk Unassign Assets",
+            "POST",
+            "admin/assets/assign-bulk",
+            200,
+            data={
+                "asset_ids": asset_ids,
+                "to_supervisor_id": None,
+                "performed_by": self.user.get('_id')
+            }
+        )
+        if success:
+            print(f"   Assets Updated: {response.get('assets_updated')}")
+        return success
+
+    def test_assign_bulk_non_supervisor(self):
+        """Test POST /api/admin/assets/assign-bulk with non-supervisor (should fail - Phase 7)"""
+        # Get a non-supervisor user
+        success_users, users = self.run_test(
+            "Get Users for Non-Supervisor Test",
+            "GET",
+            "users",
+            200
+        )
+        if not success_users:
+            print("   ⚠️  Failed to get users")
+            return False
+        
+        non_supervisor = None
+        for user in users:
+            if user.get('role') != 'supervisor':
+                non_supervisor = user
+                break
+        
+        if not non_supervisor:
+            print("   ⚠️  No non-supervisor found")
+            return False
+        
+        # Get some assets
+        success_assets, assets = self.run_test(
+            "Get Assets for Non-Supervisor Test",
+            "GET",
+            "assets",
+            200
+        )
+        if not success_assets or len(assets) == 0:
+            print("   ⚠️  No assets available")
+            return False
+        
+        asset_ids = [assets[0].get('_id')]
+        
+        success, response = self.run_test(
+            "Bulk Assign to Non-Supervisor (should fail)",
+            "POST",
+            "admin/assets/assign-bulk",
+            400,  # Expecting 400 Bad Request
+            data={
+                "asset_ids": asset_ids,
+                "to_supervisor_id": non_supervisor.get('_id'),
+                "performed_by": self.user.get('_id')
+            }
+        )
+        if success:
+            print("   ✅ Correctly returned 400 for non-supervisor target")
+        return success
+
     def run_all_tests(self):
         """Run all tests in sequence"""
         print("=" * 60)
@@ -530,6 +785,20 @@ class RailwayAPITester:
         # Authorization and update tests (Change 5)
         self.test_grant_admin_authorization()
         self.test_asset_update()
+        
+        # Phase 7 tests
+        print("\n" + "=" * 60)
+        print("PHASE 7 TESTS - Superadmin Dashboard & Bulk Assignment")
+        print("=" * 60)
+        self.test_superadmin_dashboard()
+        self.test_superadmin_dashboard_station_filter()
+        self.test_oversight_category_assets_by_type()
+        self.test_oversight_category_assets_by_department()
+        self.test_oversight_category_assets_by_station()
+        self.test_oversight_category_assets_no_params()
+        self.test_assign_bulk_to_supervisor()
+        self.test_assign_bulk_unassign()
+        self.test_assign_bulk_non_supervisor()
         
         # Print summary
         print("\n" + "=" * 60)

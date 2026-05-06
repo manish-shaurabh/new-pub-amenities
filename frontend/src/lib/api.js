@@ -183,12 +183,22 @@ export const adminAPI = {
     from_supervisor_id: fromSupervisorId,
     to_supervisor_id: toSupervisorId,
   }),
+  assignAssetsBulk: (assetIds, toSupervisorId, performedBy) => api.post('/admin/assets/assign-bulk', {
+    asset_ids: assetIds,
+    to_supervisor_id: toSupervisorId || null,
+    performed_by: performedBy || null,
+  }),
 };
 
 // Dashboard
 export const dashboardAPI = {
   superadmin: () => api.get('/dashboard'),
-  superadminFull: () => api.get('/dashboard/superadmin'),
+  superadminFull: (filters) => {
+    const p = new URLSearchParams();
+    (filters?.station_ids || []).forEach((v) => p.append('station_ids', v));
+    const qs = p.toString();
+    return api.get(`/dashboard/superadmin${qs ? `?${qs}` : ''}`);
+  },
   stats: () => api.get('/dashboard/stats'),
   recentInspections: (limit) => api.get('/dashboard/recent-inspections', { params: { limit } }),
   supervisor: (userId, stationId) => api.get(`/dashboard/supervisor/${userId}`, {

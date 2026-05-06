@@ -533,9 +533,11 @@ function MyTasksBlock({ reviewerId }) {
 // ---------- Main exported component ----------
 /**
  * @param mode - 'asup' | 'ro'
+ * @param targetUser - optional override (used by Superadmin "view as" mode)
  */
-export default function OversightDashboard({ mode = 'asup' }) {
-  const { user } = useAuth();
+export default function OversightDashboard({ mode = 'asup', targetUser = null }) {
+  const { user: authUser } = useAuth();
+  const user = targetUser || authUser;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stationFilter, setStationFilter] = useState('all');

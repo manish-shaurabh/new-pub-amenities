@@ -1,38 +1,34 @@
 [
   {
-    "content": "Backend: Extend GET /api/notifications with pagination, search, type filter; add bulk delete-read endpoint",
+    "content": "Backend: Extend GET /api/dashboard/superadmin with station_ids filter + per-department health + supervisors list",
     "status": "completed"
   },
   {
-    "content": "Frontend: Create NotificationsPage.js with pagination, filters, search, bulk actions",
+    "content": "Backend: Add POST /api/admin/assets/assign-bulk endpoint for bulk asset (re)assignment",
     "status": "completed"
   },
   {
-    "content": "Frontend: Add /notifications route in App.js + sidebar nav + 'View All' link in bell dropdown",
+    "content": "Frontend: Update api.js with new endpoints (superadmin filters, assignBulk, oversightCategoryAssets w/ department_id)",
     "status": "completed"
   },
   {
-    "content": "Frontend: Implement ?inspection_id= deep-link focus on InspectionHistoryPage",
+    "content": "Frontend: Build new SuperadminDashboard.js (move out of DashboardPage) with redesigned overview",
     "status": "completed"
   },
   {
-    "content": "Backend: Split server.py into routers",
+    "content": "Frontend: Implement 'View as' mode in DashboardPage.js + targetUser prop in dashboards",
     "status": "completed"
   },
   {
-    "content": "Backend: Verify all routes work after refactor (curl smoke tests)",
+    "content": "Frontend: Build 'Allocate Assets' tab — single + bulk allocation/reassignment",
     "status": "completed"
   },
   {
-    "content": "UI sanity check via screenshot",
-    "status": "completed"
+    "content": "Test (backend + frontend) via testing_agent",
+    "status": "in_progress"
   },
   {
-    "content": "Run automated testing (backend + frontend) via testing_agent",
-    "status": "completed"
-  },
-  {
-    "content": "Update plan.md Phase 6 to COMPLETED",
-    "status": "completed"
+    "content": "Update plan.md Phase 7 to COMPLETED",
+    "status": "pending"
   }
 ]

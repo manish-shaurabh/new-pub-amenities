@@ -103,8 +103,9 @@ function HealthRow({ row, onClick }) {
   );
 }
 
-export default function AdminDashboard() {
-  const { user } = useAuth();
+export default function AdminDashboard({ targetUser = null }) {
+  const { user: authUser } = useAuth();
+  const user = targetUser || authUser;
   const [stations, setStations] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [reportingOfficers, setReportingOfficers] = useState([]);
