@@ -330,7 +330,7 @@ export default function AdminDashboard({ targetUser = null }) {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold">Overall Health</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">{data.total_assets} asset(s) in current filters</p>
+                <p className="text-xs text-muted-foreground mt-1">{data.total_assets ?? data.totals?.assets ?? 0} asset(s) in current filters</p>
               </CardHeader>
               <CardContent>
                 {pieData.length > 0 ? (
@@ -355,7 +355,7 @@ export default function AdminDashboard({ targetUser = null }) {
               </CardHeader>
               <CardContent className="space-y-2">
                 {data.stations.length === 0 && <p className="text-xs text-muted-foreground py-6 text-center">No stations</p>}
-                {data.stations.slice(0, 6).map((s) => <HealthRow key={s.station_id} row={s} />)}
+                {data.stations.slice(0, 6).map((s) => <HealthRow key={s.station_id || s._id} row={s} />)}
                 {data.stations.length > 6 && (
                   <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setTab('stations')}>
                     View all {data.stations.length} stations →
@@ -367,26 +367,26 @@ export default function AdminDashboard({ targetUser = null }) {
         </TabsContent>
 
         <TabsContent value="categories" className="mt-4 space-y-2">
-          {data.categories.length === 0 ? (
+          {(data.asset_categories || data.categories || []).length === 0 ? (
             <Card><CardContent className="p-12 text-center">
               <Box className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
               <p className="text-sm font-medium">No categories in current filters</p>
             </CardContent></Card>
-          ) : data.categories.map((c) => (
+          ) : (data.asset_categories || data.categories || []).map((c) => (
             <HealthRow key={c.asset_type_id} row={{ ...c, name: c.asset_type_name }} />
           ))}
         </TabsContent>
 
         <TabsContent value="stations" className="mt-4 space-y-3">
           {data.stations.map((s) => (
-            <Card key={s.station_id} className="overflow-hidden">
+            <Card key={s.station_id || s._id} className="overflow-hidden">
               <Collapsible>
                 <CollapsibleTrigger asChild>
                   <button className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors">
                     <div className="flex items-center gap-3 min-w-0">
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
                       <Building2 className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium text-sm">{s.station_name}</span>
+                      <span className="font-medium text-sm">{s.station_name || s.name}</span>
                       <Badge variant="secondary" className="text-[10px]">{s.asset_count}</Badge>
                     </div>
                     <div className="flex items-center gap-2">
@@ -399,7 +399,10 @@ export default function AdminDashboard({ targetUser = null }) {
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="border-t">
-                    {s.categories.map((c) => (
+                    {(s.categories || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground px-4 py-3">No category breakdown available</p>
+                    )}
+                    {(s.categories || []).map((c) => (
                       <div key={c.asset_type_id} className="flex items-center justify-between px-4 py-2.5 border-b last:border-0">
                         <div className="flex items-center gap-3 min-w-0">
                           <Box className="h-3.5 w-3.5 text-muted-foreground" />

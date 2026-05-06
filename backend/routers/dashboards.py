@@ -764,6 +764,165 @@ async def superadmin_full_dashboard(
     }
 
 
+@router.get("/api/dashboard/admin")
+async def admin_full_dashboard(
+    station_ids: Optional[List[str]] = Query(None),
+    department_ids: Optional[List[str]] = Query(None),
+    reporting_officer_ids: Optional[List[str]] = Query(None),
+):
+    """Admin dashboard — same structure as superadmin but with dept + RO filters."""
+    now = datetime.utcnow()
+
+    # Build asset query with optional station + department filters
+    asset_query: dict = {}
+    if station_ids:
+        asset_query["station_id"] = {"$in": station_ids}
+    if department_ids:
+        type_docs_for_dept = await asset_types_collection.find(
+            {"department_id": {"$in": department_ids}}, {"_id": 1}
+        ).to_list(2000)
+        dept_type_ids = [str(t["_id"]) for t in type_docs_for_dept]
+        if not dept_type_ids:
+            dept_type_ids = ["__no_match__"]
+        asset_query["asset_type_id"] = {"$in": dept_type_ids}
+
+    all_assets = await assets_collection.find(asset_query).to_list(50000)
+    types_docs = await asset_types_collection.find({}).to_list(2000)
+    stations_docs = await stations_collection.find({}).to_list(2000)
+    departments_docs = await departments_collection.find({}).to_list(2000)
+    users_docs = await users_collection.find({"is_active": True}).to_list(5000)
+
+    types_map = {str(t["_id"]): t for t in types_docs}
+    stations_map = {str(s["_id"]): s for s in stations_docs}
+    departments_map = {str(d["_id"]): d for d in departments_docs}
+
+    asset_id_strs = [str(a["_id"]) for a in all_assets]
+    history_docs = []
+    if asset_id_strs:
+        history_docs = await orange_list_collection.find(
+            {"asset_id": {"$in": asset_id_strs}}
+        ).to_list(50000)
+    history_by_asset: dict = {}
+    for rec in history_docs:
+        history_by_asset.setdefault(rec["asset_id"], []).append(rec)
+
+    classed = []
+    for a in all_assets:
+        cls = _classify_health(a, now)
+        m = _compute_asset_metrics(a, history_by_asset.get(str(a["_id"]), []), now)
+        classed.append((a, cls, m))
+
+    # Asset categories
+    cat_acc: dict = {}
+    for (a, cls, m) in classed:
+        type_id = a.get("asset_type_id") or "unknown"
+        type_info = types_map.get(type_id, {})
+        type_name = type_info.get("name", "Unknown")
+        c = cat_acc.setdefault(type_id, {
+            "_id": type_id, "name": type_name,
+            "asset_type_id": type_id, "asset_type_name": type_name,
+            "department_id": type_info.get("department_id"),
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "_pct_sum": 0.0,
+        })
+        c["asset_count"] += 1
+        c[cls] += 1
+        c["_pct_sum"] += m["pct_functional"]
+    for c in cat_acc.values():
+        c["pct_functional"] = round(c["_pct_sum"] / c["asset_count"], 2) if c["asset_count"] else 100.0
+        c.pop("_pct_sum", None)
+    asset_categories = sorted(cat_acc.values(), key=lambda x: x["name"] or "")
+
+    # Stations
+    station_acc: dict = {}
+    for (a, cls, m) in classed:
+        sid = a.get("station_id") or "unknown"
+        s_info = stations_map.get(sid, {})
+        s = station_acc.setdefault(sid, {
+            "_id": sid, "name": s_info.get("name", "Unknown"),
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "_pct_sum": 0.0,
+        })
+        s["asset_count"] += 1
+        s[cls] += 1
+        s["_pct_sum"] += m["pct_functional"]
+    stations_out = []
+    for s in station_acc.values():
+        s["pct_functional"] = round(s["_pct_sum"] / s["asset_count"], 2) if s["asset_count"] else 100.0
+        s.pop("_pct_sum", None)
+        stations_out.append(s)
+    stations_out.sort(key=lambda x: x["name"] or "")
+
+    # Departments
+    dept_acc: dict = {}
+    for (a, cls, m) in classed:
+        type_id = a.get("asset_type_id")
+        type_info = types_map.get(type_id or "", {})
+        did = type_info.get("department_id") or "unknown"
+        dept_info = departments_map.get(did, {})
+        d = dept_acc.setdefault(did, {
+            "_id": did, "name": dept_info.get("name", "Unknown"),
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "_pct_sum": 0.0,
+        })
+        d["asset_count"] += 1
+        d[cls] += 1
+        d["_pct_sum"] += m["pct_functional"]
+    departments_out = []
+    for d in dept_acc.values():
+        d["pct_functional"] = round(d["_pct_sum"] / d["asset_count"], 2) if d["asset_count"] else 100.0
+        d.pop("_pct_sum", None)
+        departments_out.append(d)
+    departments_out.sort(key=lambda x: x["name"] or "")
+
+    # Reporting officers (filtered if reporting_officer_ids provided)
+    reporting_officers = []
+    for u in users_docs:
+        if u.get("role") != UserRole.REPORTING_OFFICER.value:
+            continue
+        uid = str(u["_id"])
+        if reporting_officer_ids and uid not in reporting_officer_ids:
+            continue
+        dept_name = departments_map.get(u.get("department_id"), {}).get("name") if u.get("department_id") else None
+        reporting_officers.append({
+            "_id": uid, "name": u.get("name"),
+            "employee_id": u.get("employee_id"),
+            "department_name": dept_name,
+            "assigned_stations": u.get("assigned_stations") or [],
+        })
+    reporting_officers.sort(key=lambda x: x["name"] or "")
+
+    health = {
+        "working": sum(1 for (_, c, _) in classed if c == "working"),
+        "orange":  sum(1 for (_, c, _) in classed if c == "orange"),
+        "red":     sum(1 for (_, c, _) in classed if c == "red"),
+    }
+
+    available_stations = [{"_id": str(s["_id"]), "name": s.get("name")} for s in stations_docs]
+    available_stations.sort(key=lambda x: x["name"] or "")
+
+    return {
+        "totals": {
+            "assets": len(all_assets),
+            "stations": len(stations_docs),
+            "departments": len(departments_docs),
+            "asset_categories": len(types_docs),
+        },
+        "health": health,
+        "filters_applied": {
+            "stations": station_ids or [],
+            "departments": department_ids or [],
+            "reporting_officer_ids": reporting_officer_ids or [],
+        },
+        "available_stations": available_stations,
+        "asset_categories": asset_categories,
+        "stations": stations_out,
+        "departments": departments_out,
+        "divisions": departments_out,
+        "reporting_officers": reporting_officers,
+    }
+
+
 @router.get("/api/dashboard/oversight/{user_id}/category-assets")
 async def oversight_category_assets(
     user_id: str,
