@@ -36,6 +36,9 @@ async def list_orange_items(
     department_id: Optional[str] = None,
     list_type: Optional[str] = None,  # "orange", "red", or None for all
     for_user_id: Optional[str] = None,
+    paginated: bool = False,
+    page: int = 1,
+    page_size: int = 25,
 ):
     """List orange/red items.
 
@@ -49,6 +52,13 @@ async def list_orange_items(
         to their department.
       - ADMIN / SUPERADMIN: no scoping (see everything).
     """
+    page_n = max(1, int(page or 1))
+    size_n = max(1, min(int(page_size or 25), 200))
+
+    def _empty():
+        if not paginated:
+            return []
+        return {"items": [], "total": 0, "page": page_n, "page_size": size_n, "total_pages": 0}
     query = {}
     if status:
         query["status"] = status
@@ -78,32 +88,32 @@ async def list_orange_items(
         elif role == UserRole.APPROVING_SUPERVISOR.value:
             asup_stations = list(user.get("assigned_stations") or [])
             if not asup_stations:
-                return []
+                return _empty()
             station_assets = await assets_collection.find(
                 {"station_id": {"$in": asup_stations}}, {"_id": 1}
             ).to_list(20000)
             scope_asset_ids = {str(a["_id"]) for a in station_assets}
             if not scope_asset_ids:
-                return []
+                return _empty()
             query["asset_id"] = {"$in": list(scope_asset_ids)}
         elif role == UserRole.REPORTING_OFFICER.value:
             ro_stations = list(user.get("assigned_stations") or [])
             ro_dept = user.get("department_id")
             if not ro_stations or not ro_dept:
-                return []
+                return _empty()
             dept_types = await asset_types_collection.find(
                 {"department_id": ro_dept}, {"_id": 1}
             ).to_list(2000)
             type_ids = [str(t["_id"]) for t in dept_types]
             if not type_ids:
-                return []
+                return _empty()
             ro_assets = await assets_collection.find(
                 {"asset_type_id": {"$in": type_ids}, "station_id": {"$in": ro_stations}},
                 {"_id": 1},
             ).to_list(20000)
             scope_asset_ids = {str(a["_id"]) for a in ro_assets}
             if not scope_asset_ids:
-                return []
+                return _empty()
             query["asset_id"] = {"$in": list(scope_asset_ids)}
         # admin/superadmin: no scoping
 
@@ -197,8 +207,22 @@ async def list_orange_items(
         doc["reporter_name"] = reporter["name"] if reporter else "Unknown"
         
         enriched.append(serialize_doc(doc))
-    
-    return enriched
+
+    if not paginated:
+        return enriched
+
+    total = len(enriched)
+    start = (page_n - 1) * size_n
+    end = start + size_n
+    items = enriched[start:end]
+    total_pages = (total + size_n - 1) // size_n if size_n else 1
+    return {
+        "items": items,
+        "total": total,
+        "page": page_n,
+        "page_size": size_n,
+        "total_pages": total_pages,
+    }
 
 
 @router.post("/api/orange-list/{item_id}/mark-working")

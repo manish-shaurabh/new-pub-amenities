@@ -80,6 +80,21 @@ export const assetTypesAPI = {
 // Assets
 export const assetsAPI = {
   list: (params) => api.get('/assets', { params }),
+  listPaginated: (options = {}) => {
+    const params = {
+      paginated: true,
+      page: options.page || 1,
+      page_size: options.pageSize || 50,
+    };
+    if (options.search) params.search = options.search;
+    if (options.station_id) params.station_id = options.station_id;
+    if (options.asset_type_id) params.asset_type_id = options.asset_type_id;
+    if (options.location_id) params.location_id = options.location_id;
+    if (options.status) params.status = options.status;
+    if (options.department_id) params.department_id = options.department_id;
+    if (options.assigned_supervisor_id) params.assigned_supervisor_id = options.assigned_supervisor_id;
+    return api.get('/assets', { params });
+  },
   get: (id) => api.get(`/assets/${id}`),
   create: (data) => api.post('/assets', data),
   update: (id, data) => api.put(`/assets/${id}`, data),
@@ -109,6 +124,18 @@ export const usersAPI = {
 // Inspections
 export const inspectionsAPI = {
   list: (params) => api.get('/inspections', { params }),
+  listPaginated: (options = {}) => {
+    const params = {
+      paginated: true,
+      page: options.page || 1,
+      page_size: options.pageSize || 25,
+    };
+    if (options.station_id) params.station_id = options.station_id;
+    if (options.inspector_id) params.inspector_id = options.inspector_id;
+    if (options.inspection_type) params.inspection_type = options.inspection_type;
+    if (options.for_user_id) params.for_user_id = options.for_user_id;
+    return api.get('/inspections', { params });
+  },
   get: (id) => api.get(`/inspections/${id}`),
   create: (data) => api.post('/inspections', data),
 };
@@ -116,6 +143,18 @@ export const inspectionsAPI = {
 // Orange List
 export const orangeListAPI = {
   list: (params) => api.get('/orange-list', { params }),
+  listPaginated: (options = {}) => {
+    const params = {
+      paginated: true,
+      page: options.page || 1,
+      page_size: options.pageSize || 25,
+    };
+    if (options.list_type) params.list_type = options.list_type;
+    if (options.for_user_id) params.for_user_id = options.for_user_id;
+    if (options.station_id) params.station_id = options.station_id;
+    if (options.department_id) params.department_id = options.department_id;
+    return api.get('/orange-list', { params });
+  },
   markWorking: (id, data) => api.post(`/orange-list/${id}/mark-working`, data),
   approve: (id, data) => api.post(`/orange-list/${id}/approve`, data),
 };

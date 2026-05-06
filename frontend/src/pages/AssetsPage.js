@@ -16,6 +16,9 @@ import { Plus, Search, Box, Trash2, Pencil, ChevronDown, User, MoreVertical, Ale
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 import SupervisorHistoryDrawer from '../components/SupervisorHistoryDrawer';
 import MarkDefectiveDialog from '../components/dialogs/MarkDefectiveDialog';
+import Pagination from '../components/Pagination';
+
+const PAGE_SIZE = 50;
 
 export default function AssetsPage() {
   const { isAdmin } = useAuth();
@@ -38,24 +41,55 @@ export default function AssetsPage() {
     asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', assigned_supervisor_id: ''
   });
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadStaticData(); }, []);
 
-  const loadAll = async () => {
+  // Reload assets when search/filters/page change (debounced search)
+  useEffect(() => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => {
+      loadAssets();
+    }, search ? 300 : 0);
+    return () => searchDebounce.current && clearTimeout(searchDebounce.current);
+    // eslint-disable-next-line
+  }, [search, filterStation, filterStatus, page]);
+
+  // Reset to page 1 when filters/search change
+  useEffect(() => { setPage(1); /* eslint-disable-next-line */ }, [search, filterStation, filterStatus]);
+
+  const loadStaticData = async () => {
     try {
-      const [assetsRes, stationsRes, typesRes] = await Promise.all([
-        assetsAPI.list({}),
+      const [stationsRes, typesRes] = await Promise.all([
         stationsAPI.list(),
         assetTypesAPI.list()
       ]);
-      setAssets(assetsRes.data);
       setStations(stationsRes.data);
       setAssetTypes(typesRes.data);
+      // Initial assets load happens via the other effect
+    } catch (e) {
+      console.error('Failed to load reference data', e);
+    }
+  };
+
+  const loadAssets = async () => {
+    setLoading(true);
+    try {
+      const opts = { page, pageSize: PAGE_SIZE };
+      if (search) opts.search = search;
+      if (filterStation && filterStation !== 'all') opts.station_id = filterStation;
+      if (filterStatus && filterStatus !== 'all') opts.status = filterStatus;
+      const res = await assetsAPI.listPaginated(opts);
+      setAssets(res.data.items || []);
+      setTotal(res.data.total || 0);
+      setTotalPages(res.data.total_pages || 1);
     } catch (e) {
       console.error('Failed to load assets', e);
     } finally {
       setLoading(false);
     }
   };
+
+  // Convenience for child components that mutate (create/edit/delete/mark-defective)
+  const loadAll = () => loadAssets();
 
   const loadLocations = async (stationId) => {
     if (stationId) {

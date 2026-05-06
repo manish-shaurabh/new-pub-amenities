@@ -12,6 +12,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { ClipboardCheck, Users, Calendar, ChevronDown, User, FileText, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
+import Pagination from '../components/Pagination';
+
+const PAGE_SIZE = 25;
 
 export default function InspectionHistoryPage() {
   const { user } = useAuth();
@@ -27,23 +30,31 @@ export default function InspectionHistoryPage() {
   const [selectedInspection, setSelectedInspection] = useState(null);
   const [assetHistory, setAssetHistory] = useState(null);
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
   // Scope determination: only Superadmin/Admin see everything; other roles
   // are scoped server-side via for_user_id.
   const isScoped = user && !['superadmin', 'admin'].includes(user.role);
 
-  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [user?._id]);
+  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [user?._id, page]);
 
   const loadAll = async () => {
     if (!user) return;
     try {
-      const params = { limit: 200 };
-      if (isScoped) params.for_user_id = user._id;
+      setLoading(true);
+      const opts = { page, pageSize: PAGE_SIZE };
+      if (isScoped) opts.for_user_id = user._id;
       const [inspRes, assetsRes, typesRes] = await Promise.all([
-        inspectionsAPI.list(params),
+        inspectionsAPI.listPaginated(opts),
         assetsAPI.list({}),
         assetTypesAPI.list()
       ]);
-      setInspections(inspRes.data);
+      setInspections(inspRes.data.items || []);
+      setTotal(inspRes.data.total || 0);
+      setTotalPages(inspRes.data.total_pages || 1);
       setAssets(assetsRes.data);
       setAssetTypes(typesRes.data);
 
@@ -60,7 +71,7 @@ export default function InspectionHistoryPage() {
       // (so it works even if it's not in the first 200 listed) but still
       // respect server-side scoping.
       if (focusedInspectionId) {
-        let inspDoc = (inspRes.data || []).find((i) => i._id === focusedInspectionId);
+        let inspDoc = (inspRes.data.items || []).find((i) => i._id === focusedInspectionId);
         if (!inspDoc) {
           try {
             const r = await inspectionsAPI.get(focusedInspectionId);
@@ -322,6 +333,18 @@ export default function InspectionHistoryPage() {
           ))
         )}
       </div>
+
+      {/* Pagination — server-side; tabs and type filters apply on top of the page */}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        pageSize={PAGE_SIZE}
+        totalItems={total}
+        loadedCount={inspections.length}
+        loading={loading}
+        onPageChange={setPage}
+        testIdPrefix="inspection-pagination"
+      />
 
       {/* Inspection Detail Modal */}
       <Dialog open={!!selectedInspection} onOpenChange={(open) => !open && setSelectedInspection(null)}>

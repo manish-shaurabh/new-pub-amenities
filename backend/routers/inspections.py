@@ -457,8 +457,26 @@ async def list_inspections(
     inspector_id: Optional[str] = None,
     inspection_type: Optional[str] = None,
     for_user_id: Optional[str] = None,
-    limit: int = 50
+    limit: int = 50,
+    paginated: bool = False,
+    page: int = 1,
+    page_size: int = 25,
 ):
+    """List inspections, optionally paginated.
+
+    Backwards-compatible: when `paginated=False` (default) returns a flat list
+    capped by `limit`. When `paginated=True`, returns
+    `{items, total, page, page_size, total_pages}` after applying the same
+    role-based scoping.
+    """
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 25), 200))
+
+    def _empty():
+        if not paginated:
+            return []
+        return {"items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 0}
+
     query: dict = {}
     if station_id:
         query["station_id"] = station_id
@@ -504,20 +522,20 @@ async def list_inspections(
         elif role == UserRole.APPROVING_SUPERVISOR.value:
             asup_stations = list(user.get("assigned_stations") or [])
             if not asup_stations:
-                return []
+                return _empty()
             if "station_id" in query:
                 if query["station_id"] not in asup_stations:
-                    return []
+                    return _empty()
             else:
                 query["station_id"] = {"$in": asup_stations}
         elif role == UserRole.REPORTING_OFFICER.value:
             ro_stations = list(user.get("assigned_stations") or [])
             ro_dept = user.get("department_id")
             if not ro_stations or not ro_dept:
-                return []
+                return _empty()
             if "station_id" in query:
                 if query["station_id"] not in ro_stations:
-                    return []
+                    return _empty()
             else:
                 query["station_id"] = {"$in": ro_stations}
             # Build set of asset ids in this RO's department
@@ -526,16 +544,25 @@ async def list_inspections(
             ).to_list(2000)
             type_ids = [str(t["_id"]) for t in dept_types]
             if not type_ids:
-                return []
+                return _empty()
             dept_assets = await assets_collection.find(
                 {"asset_type_id": {"$in": type_ids}}, {"_id": 1}
             ).to_list(20000)
             asset_id_filter = {str(a["_id"]) for a in dept_assets}
             if not asset_id_filter:
-                return []
+                return _empty()
             query["items.asset_id"] = {"$in": list(asset_id_filter)}
 
-    docs = await inspections_collection.find(query).sort("created_at", -1).to_list(limit)
+    # Pagination — count after scoping is applied (which is reflected in `query`)
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 25), 200))
+
+    if not paginated:
+        docs = await inspections_collection.find(query).sort("created_at", -1).to_list(limit)
+    else:
+        skip = (page - 1) * page_size
+        cursor = inspections_collection.find(query).sort("created_at", -1).skip(skip).limit(page_size)
+        docs = await cursor.to_list(page_size)
 
     # When asset_id_filter is set, also strip items not relevant to the user
     # so they only see "their" assets per inspection — UNLESS the user was
@@ -556,7 +583,20 @@ async def list_inspections(
     for doc in docs:
         doc["station_name"] = stations_map.get(doc["station_id"], "Unknown")
 
-    return [serialize_doc(d) for d in docs]
+    items_serialized = [serialize_doc(d) for d in docs]
+
+    if not paginated:
+        return items_serialized
+
+    total = await inspections_collection.count_documents(query)
+    total_pages = (total + page_size - 1) // page_size if page_size else 1
+    return {
+        "items": items_serialized,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 @router.get("/api/inspections/{inspection_id}")

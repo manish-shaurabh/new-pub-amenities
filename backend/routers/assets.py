@@ -240,8 +240,23 @@ async def list_assets(
     location_id: Optional[str] = None,
     asset_type_id: Optional[str] = None,
     status: Optional[str] = None,
-    department_id: Optional[str] = None
+    department_id: Optional[str] = None,
+    assigned_supervisor_id: Optional[str] = None,
+    search: Optional[str] = None,
+    paginated: bool = False,
+    page: int = 1,
+    page_size: int = 50,
 ):
+    """List assets with optional pagination + server-side filters/search.
+
+    Backwards-compatible: when `paginated=False` (default) returns a flat list
+    capped at 5000 docs. When `paginated=True`, returns
+    `{items, total, page, page_size, total_pages}`.
+
+    Filters (all optional):
+      - station_id, location_id, asset_type_id, status, department_id, assigned_supervisor_id
+      - search: case-insensitive substring of asset_number
+    """
     query = {}
     if station_id:
         query["station_id"] = station_id
@@ -251,12 +266,30 @@ async def list_assets(
         query["asset_type_id"] = asset_type_id
     if status:
         query["status"] = status
+    if assigned_supervisor_id:
+        query["assigned_supervisor_id"] = assigned_supervisor_id
     if department_id:
         dept_asset_types = await asset_types_collection.find({"department_id": department_id}).to_list(1000)
         type_ids = [str(at["_id"]) for at in dept_asset_types]
-        query["asset_type_id"] = {"$in": type_ids}
-    
-    docs = await assets_collection.find(query).to_list(5000)
+        if not type_ids:
+            return ([] if not paginated
+                    else {"items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 0})
+        # Don't clobber an explicit asset_type_id filter
+        if "asset_type_id" in query:
+            query["asset_type_id"] = {"$and": [query["asset_type_id"], {"$in": type_ids}]}
+        else:
+            query["asset_type_id"] = {"$in": type_ids}
+    if search:
+        query["asset_number"] = {"$regex": search.strip(), "$options": "i"}
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 50), 500))
+
+    if not paginated:
+        docs = await assets_collection.find(query).to_list(5000)
+    else:
+        skip = (page - 1) * page_size
+        docs = await assets_collection.find(query).sort("asset_number", 1).skip(skip).limit(page_size).to_list(page_size)
     
     # Batch fetch related data
     type_ids = list(set(d["asset_type_id"] for d in docs if d.get("asset_type_id")))
@@ -293,8 +326,19 @@ async def list_assets(
         doc["assigned_supervisor_name"] = supervisors_map.get(doc.get("assigned_supervisor_id", ""), None)
         doc["department_id"] = types_dept_map.get(doc["asset_type_id"])
         doc["schedule_frequency"] = _normalize_freq_days(doc.get("schedule_frequency"))
-    
-    return [serialize_doc(d) for d in docs]
+
+    items_serialized = [serialize_doc(d) for d in docs]
+    if not paginated:
+        return items_serialized
+    total = await assets_collection.count_documents(query)
+    total_pages = (total + page_size - 1) // page_size if page_size else 1
+    return {
+        "items": items_serialized,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 @router.get("/api/assets/{asset_id}")

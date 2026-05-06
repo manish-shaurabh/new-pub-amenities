@@ -11,10 +11,16 @@ import { Textarea } from '../components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle, Clock, Download, FileText, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import Pagination from '../components/Pagination';
+
+const PAGE_SIZE = 25;
 
 export default function OrangeListPage() {
   const { user, canApprove } = useAuth();
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('orange');
@@ -28,10 +34,12 @@ export default function OrangeListPage() {
   const loadItems = useCallback(async () => {
     if (!user?._id) return;
     try {
-      const params = {};
-      if (isScoped) params.for_user_id = user._id;
-      const res = await orangeListAPI.list(params);
-      setItems(res.data || []);
+      const opts = { page, pageSize: PAGE_SIZE };
+      if (isScoped) opts.for_user_id = user._id;
+      const res = await orangeListAPI.listPaginated(opts);
+      setItems(res.data.items || []);
+      setTotal(res.data.total || 0);
+      setTotalPages(res.data.total_pages || 1);
     } catch (e) {
       console.error('Failed to load orange list', e);
       toast.error(errString(e, 'Failed to load orange list'));
@@ -39,9 +47,12 @@ export default function OrangeListPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?._id, isScoped]);
+  }, [user?._id, isScoped, page]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
+
+  // Reset page when tab changes (tab is a client-side filter on top of the page)
+  useEffect(() => { setPage(1); }, [activeTab]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -260,6 +271,18 @@ export default function OrangeListPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Pagination — controls the underlying page; tabs filter client-side within it */}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        pageSize={PAGE_SIZE}
+        totalItems={total}
+        loadedCount={items.length}
+        loading={loading || refreshing}
+        onPageChange={setPage}
+        testIdPrefix="orange-list-pagination"
+      />
 
       {/* Action Dialog */}
       <Dialog open={!!actionDialog} onOpenChange={(open) => !open && setActionDialog(null)}>

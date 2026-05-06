@@ -1,38 +1,38 @@
 [
   {
-    "content": "Trace + fix the React runtime error",
+    "content": "Backend: paginate GET /api/inspections",
     "status": "completed"
   },
   {
-    "content": "Investigate Orange List 'not updating properly for users' issue",
+    "content": "Backend: paginate GET /api/assets with search",
     "status": "completed"
   },
   {
-    "content": "Departments: super-admin only role gate + S&T seed",
+    "content": "Backend: paginate GET /api/orange-list",
     "status": "completed"
   },
   {
-    "content": "Build broadcast_asset_defect_notifications helper",
-    "status": "completed"
+    "content": "Frontend: shared <Pagination> + paginated API client methods",
+    "status": "in_progress"
   },
   {
-    "content": "Backend: POST /api/assets/{asset_id}/mark-defective endpoint",
-    "status": "completed"
+    "content": "Frontend: pagination on InspectionHistoryPage",
+    "status": "pending"
   },
   {
-    "content": "Backend: scope GET /api/orange-list by for_user_id",
-    "status": "completed"
+    "content": "Frontend: pagination on AssetsPage with server-side search",
+    "status": "pending"
   },
   {
-    "content": "Frontend: row action menu + Mark-Defective modal",
-    "status": "completed"
+    "content": "Frontend: pagination on OrangeListPage",
+    "status": "pending"
   },
   {
     "content": "Test end-to-end (backend + frontend agent)",
-    "status": "completed"
+    "status": "pending"
   },
   {
-    "content": "Update plan.md Phase 8 to COMPLETED",
-    "status": "completed"
+    "content": "Update plan.md Phase 9",
+    "status": "pending"
   }
 ]
