@@ -339,7 +339,7 @@ async def reject_working(item_id: str, request: RejectWorkingRequest):
         {"$set": {"status": AssetStatus.DEFECTIVE.value}}
     )
 
-    # Notify the person who marked it working
+    # Notify the person who marked it working (SUP)
     if item.get("marked_working_by"):
         asset_doc = await assets_collection.find_one({"_id": ObjectId(item["asset_id"])})
         await notifications_collection.insert_one({
@@ -352,6 +352,44 @@ async def reject_working(item_id: str, request: RejectWorkingRequest):
             "is_read": False,
             "created_at": now
         })
+    else:
+        asset_doc = await assets_collection.find_one({"_id": ObjectId(item["asset_id"])})
+
+    # Notify ROs scoped to this asset (dept + station)
+    if asset_doc:
+        station_id = asset_doc.get("station_id")
+        asset_type = None
+        if asset_doc.get("asset_type_id"):
+            asset_type = await asset_types_collection.find_one(
+                {"_id": ObjectId(asset_doc["asset_type_id"])}
+            )
+        dept_id = asset_type.get("department_id") if asset_type else None
+        if dept_id and station_id:
+            seen_ids = {request.rejected_by, item.get("marked_working_by")} - {None}
+            async for ro in users_collection.find({
+                "role": UserRole.REPORTING_OFFICER.value,
+                "department_id": dept_id,
+                "assigned_stations": station_id,
+                "is_active": True,
+            }, {"_id": 1}):
+                ro_id = str(ro["_id"])
+                if ro_id in seen_ids:
+                    continue
+                seen_ids.add(ro_id)
+                await notifications_collection.insert_one({
+                    "user_id": ro_id,
+                    "title": "Rectification Rejected",
+                    "message": (
+                        f"Rectification of asset {asset_doc.get('asset_number','Unknown')} "
+                        f"in your department was rejected by {rejector['name']}. "
+                        f"Asset remains defective. Reason: {request.remarks}."
+                    ),
+                    "notification_type": "alert",
+                    "related_entity_type": "orange_list",
+                    "related_entity_id": item_id,
+                    "is_read": False,
+                    "created_at": now
+                })
 
     await audit_log_collection.insert_one({
         "entity_type": "orange_list",
@@ -412,6 +450,61 @@ async def approve_working(item_id: str, request: ApproveWorkingRequest):
         "details": {"remarks": request.remarks},
         "created_at": datetime.utcnow()
     })
+
+    # ── Notifications ──────────────────────────────────────────────────────────
+    asset_doc = await assets_collection.find_one({"_id": ObjectId(item["asset_id"])})
+    asset_num = asset_doc.get("asset_number", "Unknown") if asset_doc else "Unknown"
+
+    # 1) Notify the supervisor who marked it working
+    if item.get("marked_working_by"):
+        await notifications_collection.insert_one({
+            "user_id": item["marked_working_by"],
+            "title": "Rectification Approved",
+            "message": (
+                f"Your rectification of asset {asset_num} has been approved by "
+                f"{approver['name']}. Asset is now marked Working."
+            ),
+            "notification_type": "info",
+            "related_entity_type": "orange_list",
+            "related_entity_id": item_id,
+            "is_read": False,
+            "created_at": datetime.utcnow()
+        })
+
+    # 2) Notify ROs scoped to this asset (dept + station)
+    if asset_doc:
+        station_id = asset_doc.get("station_id")
+        asset_type = None
+        if asset_doc.get("asset_type_id"):
+            asset_type = await asset_types_collection.find_one(
+                {"_id": ObjectId(asset_doc["asset_type_id"])}
+            )
+        dept_id = asset_type.get("department_id") if asset_type else None
+        if dept_id and station_id:
+            seen_ids = {request.approved_by, item.get("marked_working_by")} - {None}
+            async for ro in users_collection.find({
+                "role": UserRole.REPORTING_OFFICER.value,
+                "department_id": dept_id,
+                "assigned_stations": station_id,
+                "is_active": True,
+            }, {"_id": 1}):
+                ro_id = str(ro["_id"])
+                if ro_id in seen_ids:
+                    continue
+                seen_ids.add(ro_id)
+                await notifications_collection.insert_one({
+                    "user_id": ro_id,
+                    "title": "Asset Rectification Approved",
+                    "message": (
+                        f"Asset {asset_num} in your department has been approved as "
+                        f"Working by {approver['name']}."
+                    ),
+                    "notification_type": "info",
+                    "related_entity_type": "orange_list",
+                    "related_entity_id": item_id,
+                    "is_read": False,
+                    "created_at": datetime.utcnow()
+                })
     
     updated = await orange_list_collection.find_one({"_id": ObjectId(item_id)})
     return serialize_doc(updated)

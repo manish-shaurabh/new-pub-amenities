@@ -145,9 +145,36 @@ async def get_supervisor_schedule(
     if range_end < range_start:
         raise HTTPException(status_code=400, detail="to_date must be on or after from_date")
 
-    # Find all assets assigned to this supervisor with a frequency set
+    # Find all assets scoped to this supervisor via station + department (Phase 1 implicit scoping)
+    sup_stations = list(user.get("assigned_stations") or [])
+    sup_dept = user.get("department_id")
+    if not sup_stations or not sup_dept:
+        return {
+            "user_id": user_id,
+            "user_name": user.get("name"),
+            "department_id": sup_dept,
+            "from_date": range_start.date().isoformat(),
+            "to_date": range_end.date().isoformat(),
+            "total_tasks": 0,
+            "groups": [],
+        }
+    dept_type_docs = await asset_types_collection.find(
+        {"department_id": sup_dept}, {"_id": 1}
+    ).to_list(2000)
+    sup_type_ids = [str(t["_id"]) for t in dept_type_docs]
+    if not sup_type_ids:
+        return {
+            "user_id": user_id,
+            "user_name": user.get("name"),
+            "department_id": sup_dept,
+            "from_date": range_start.date().isoformat(),
+            "to_date": range_end.date().isoformat(),
+            "total_tasks": 0,
+            "groups": [],
+        }
     asset_query = {
-        "assigned_supervisor_id": user_id,
+        "station_id": {"$in": sup_stations},
+        "asset_type_id": {"$in": sup_type_ids},
         "schedule_frequency": {"$ne": None}
     }
     assets = await assets_collection.find(asset_query).to_list(2000)
@@ -426,12 +453,25 @@ async def get_supervisors_under_approving(user_id: str):
     # For each supervisor, count assigned assets (with frequency set) for context
     results = []
     for s in sup_docs:
-        sid = str(s["_id"])
-        assigned_count = await assets_collection.count_documents({"assigned_supervisor_id": sid})
-        scheduled_count = await assets_collection.count_documents({
-            "assigned_supervisor_id": sid,
-            "schedule_frequency": {"$ne": None}
-        })
+        # Count assets via implicit scoping (station + department)
+        s_stations = list(s.get("assigned_stations") or [])
+        s_dept = s.get("department_id")
+        assigned_count = 0
+        scheduled_count = 0
+        if s_stations and s_dept:
+            s_type_docs = await asset_types_collection.find(
+                {"department_id": s_dept}, {"_id": 1}
+            ).to_list(500)
+            s_type_ids = [str(t["_id"]) for t in s_type_docs]
+            if s_type_ids:
+                base_q = {
+                    "station_id": {"$in": s_stations},
+                    "asset_type_id": {"$in": s_type_ids},
+                }
+                assigned_count = await assets_collection.count_documents(base_q)
+                scheduled_count = await assets_collection.count_documents(
+                    {**base_q, "schedule_frequency": {"$ne": None}}
+                )
         # Department name
         dept_name = None
         if s.get("department_id"):
@@ -440,7 +480,7 @@ async def get_supervisors_under_approving(user_id: str):
         # Stations overlap (only the ones shared with the approving sup)
         shared_stations = [st for st in (s.get("assigned_stations") or []) if st in asup_stations]
         results.append({
-            "_id": sid,
+            "_id": str(s["_id"]),
             "employee_id": s.get("employee_id"),
             "name": s.get("name"),
             "department_id": s.get("department_id"),
