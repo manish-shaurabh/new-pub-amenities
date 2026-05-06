@@ -1,38 +1,30 @@
 [
   {
-    "content": "Backend: paginate GET /api/inspections",
+    "content": "Explore AdminPage.js, models.py, and err.js to understand current code",
     "status": "completed"
   },
   {
-    "content": "Backend: paginate GET /api/assets with search",
+    "content": "Update backend DepartmentCreate model with validators (code 1-8, pattern, uppercase)",
     "status": "completed"
   },
   {
-    "content": "Backend: paginate GET /api/orange-list",
+    "content": "Add unique indexes on departments.name and departments.code + handle 409 duplicates",
     "status": "completed"
   },
   {
-    "content": "Frontend: shared <Pagination> + paginated API client methods",
-    "status": "in_progress"
+    "content": "Patch AdminPage.js Departments dialog: required asterisks, client validation, errString wiring, auto-uppercase code",
+    "status": "completed"
   },
   {
-    "content": "Frontend: pagination on InspectionHistoryPage",
-    "status": "pending"
+    "content": "Apply errString defense across other Admin dialogs (Stations, Locations, Asset Types, Users)",
+    "status": "completed"
   },
   {
-    "content": "Frontend: pagination on AssetsPage with server-side search",
-    "status": "pending"
+    "content": "Clean up duplicate S&T department entry in DB",
+    "status": "completed"
   },
   {
-    "content": "Frontend: pagination on OrangeListPage",
-    "status": "pending"
-  },
-  {
-    "content": "Test end-to-end (backend + frontend agent)",
-    "status": "pending"
-  },
-  {
-    "content": "Update plan.md Phase 9",
-    "status": "pending"
+    "content": "Screenshot verify + lint frontend + backend stderr check",
+    "status": "completed"
   }
 ]

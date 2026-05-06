@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
+import re
 
 
 # Enums
@@ -45,9 +46,29 @@ class OrangeListStatus(str, Enum):
 
 # Department
 class DepartmentCreate(BaseModel):
-    name: str
-    code: str
+    name: str = Field(..., min_length=1, max_length=120)
+    code: str = Field(..., min_length=1, max_length=8)
     description: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Name is required")
+        return v
+
+    @field_validator("code")
+    @classmethod
+    def _clean_code(cls, v: str) -> str:
+        v = (v or "").strip().upper()
+        if not v:
+            raise ValueError("Code is required")
+        if len(v) > 8:
+            raise ValueError("Code must be 1-8 characters")
+        if not re.fullmatch(r"[A-Z0-9]+", v):
+            raise ValueError("Code may contain only letters and numbers")
+        return v
 
 
 class DepartmentResponse(BaseModel):

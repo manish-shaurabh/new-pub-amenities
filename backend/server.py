@@ -40,6 +40,24 @@ from routers import (
 
 app = FastAPI(title="Railway Asset Inspection Management System")
 
+
+@app.on_event("startup")
+async def _ensure_indexes():
+    """Ensure unique constraints on department code.
+    Name uniqueness is enforced at the application layer (case-insensitive) inside
+    the create/update handlers because Mongo collation indexes can fail on certain
+    legacy data. Non-fatal: logs and continues if an index cannot be created.
+    """
+    from database import departments_collection
+    try:
+        await departments_collection.create_index(
+            "code", unique=True, name="uniq_dept_code",
+            partialFilterExpression={"code": {"$exists": True, "$type": "string"}},
+        )
+    except Exception as e:
+        print(f"[startup] could not create dept code index: {e}")
+
+
 # CORS
 app.add_middleware(
     CORSMiddleware,

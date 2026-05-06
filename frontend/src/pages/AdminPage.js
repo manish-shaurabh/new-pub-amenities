@@ -56,7 +56,8 @@ export default function AdminPage() {
   const [stationForm, setStationForm] = useState({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
   const [locationForm, setLocationForm] = useState({ name: '', station_id: '', description: '' });
   const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [] });
-  const [departmentForm, setDepartmentForm] = useState({ name: '', description: '' });
+  const [departmentForm, setDepartmentForm] = useState({ name: '', code: '', description: '' });
+  const [deptFieldErrors, setDeptFieldErrors] = useState({});
   const [userForm, setUserForm] = useState({
     employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], 
     password: '', email: '', phone: '', reports_to_id: ''
@@ -149,14 +150,29 @@ export default function AdminPage() {
   }, [activeTab]);
 
   // ========== Department CRUD ==========
+  const validateDepartmentForm = () => {
+    const errs = {};
+    const name = (departmentForm.name || '').trim();
+    const code = (departmentForm.code || '').trim();
+    if (!name) errs.name = 'Name is required';
+    else if (name.length > 120) errs.name = 'Name is too long (max 120 chars)';
+    if (!code) errs.code = 'Code is required';
+    else if (code.length > 8) errs.code = 'Code must be 1-8 characters';
+    else if (!/^[A-Z0-9]+$/.test(code)) errs.code = 'Only letters and numbers allowed';
+    setDeptFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleCreateDepartment = async () => {
-    if (!departmentForm.name) {
-      toast.error('Name is required');
-      return;
-    }
+    if (!validateDepartmentForm()) return;
     try {
-      await departmentsAPI.create(departmentForm, user?._id);
-      toast.success('Department created');
+      await departmentsAPI.create({
+        name: departmentForm.name.trim(),
+        code: departmentForm.code.trim().toUpperCase(),
+        description: (departmentForm.description || '').trim() || null,
+      }, user?._id);
+      toast.success(`Department "${departmentForm.name.trim()}" created`);
+      setDeptFieldErrors({});
       setDialogOpen(false);
       loadAll();
     } catch (e) {
@@ -165,9 +181,15 @@ export default function AdminPage() {
   };
 
   const handleUpdateDepartment = async () => {
+    if (!validateDepartmentForm()) return;
     try {
-      await departmentsAPI.update(editingItem._id, departmentForm, user?._id);
+      await departmentsAPI.update(editingItem._id, {
+        name: departmentForm.name.trim(),
+        code: departmentForm.code.trim().toUpperCase(),
+        description: (departmentForm.description || '').trim() || null,
+      }, user?._id);
       toast.success('Department updated');
+      setDeptFieldErrors({});
       setDialogOpen(false);
       loadAll();
     } catch (e) {
@@ -368,8 +390,9 @@ export default function AdminPage() {
     setDialogType(type);
     setDialogMode('create');
     setEditingItem(null);
+    setDeptFieldErrors({});
     // Reset forms based on type
-    if (type === 'department') setDepartmentForm({ name: '', description: '' });
+    if (type === 'department') setDepartmentForm({ name: '', code: '', description: '' });
     else if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
     else if (type === 'location') setLocationForm({ name: '', station_id: '', description: '' });
     else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [] });
@@ -382,7 +405,8 @@ export default function AdminPage() {
     setDialogMode('edit');
     setEditingItem(item);
     if (type === 'department') {
-      setDepartmentForm({ name: item.name, description: item.description || '' });
+      setDeptFieldErrors({});
+      setDepartmentForm({ name: item.name, code: item.code || '', description: item.description || '' });
     } else if (type === 'station') {
       setStationForm({ name: item.name, code: item.code, zone: item.zone || '', division: item.division || '', approving_supervisor_id: item.approving_supervisor_id || '' });
     } else if (type === 'location') {
@@ -513,10 +537,17 @@ export default function AdminPage() {
               </p>
             )}
             {departments.map(dept => (
-              <Card key={dept._id}>
+              <Card key={dept._id} data-testid={`department-row-${dept._id}`}>
                 <CardContent className="p-4 flex items-center justify-between">
                   <div>
-                    <p className="font-medium" data-testid={`department-name-${dept._id}`}>{dept.name}</p>
+                    <p className="font-medium" data-testid={`department-name-${dept._id}`}>
+                      {dept.name}
+                      {dept.code && (
+                        <span className="ml-2 inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-mono uppercase text-muted-foreground">
+                          {dept.code}
+                        </span>
+                      )}
+                    </p>
                     {dept.description && (
                       <p className="text-xs text-muted-foreground mt-0.5">{dept.description}</p>
                     )}
@@ -1054,20 +1085,64 @@ export default function AdminPage() {
           {dialogType === 'department' && (
             <div className="space-y-3">
               <div>
-                <Label>Name *</Label>
+                <Label htmlFor="dept-name-input">
+                  Name <span className="text-destructive">*</span>
+                </Label>
                 <Input
+                  id="dept-name-input"
                   value={departmentForm.name}
-                  onChange={(e) => setDepartmentForm({ ...departmentForm, name: e.target.value })}
-                  placeholder="e.g. S&T"
+                  onChange={(e) => {
+                    setDepartmentForm({ ...departmentForm, name: e.target.value });
+                    if (deptFieldErrors.name) setDeptFieldErrors({ ...deptFieldErrors, name: undefined });
+                  }}
+                  placeholder="e.g. Signal & Telecommunication"
+                  aria-invalid={!!deptFieldErrors.name}
+                  className={deptFieldErrors.name ? 'border-destructive focus-visible:ring-destructive' : ''}
                   data-testid="department-name-input"
                 />
+                {deptFieldErrors.name && (
+                  <p className="text-xs text-destructive mt-1" data-testid="department-name-error">
+                    {deptFieldErrors.name}
+                  </p>
+                )}
               </div>
               <div>
-                <Label>Description</Label>
+                <Label htmlFor="dept-code-input">
+                  Code <span className="text-destructive">*</span>
+                </Label>
                 <Input
+                  id="dept-code-input"
+                  value={departmentForm.code}
+                  onChange={(e) => {
+                    // auto-uppercase, strip invalid chars, then cap to 8 valid chars
+                    const cleaned = (e.target.value || '')
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9]/g, '')
+                      .slice(0, 8);
+                    setDepartmentForm({ ...departmentForm, code: cleaned });
+                    if (deptFieldErrors.code) setDeptFieldErrors({ ...deptFieldErrors, code: undefined });
+                  }}
+                  placeholder="e.g. SNT"
+                  aria-invalid={!!deptFieldErrors.code}
+                  className={deptFieldErrors.code ? 'border-destructive focus-visible:ring-destructive' : ''}
+                  data-testid="department-code-input"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Short unique identifier, 1-8 characters (letters/numbers), auto-uppercased.
+                </p>
+                {deptFieldErrors.code && (
+                  <p className="text-xs text-destructive mt-1" data-testid="department-code-error">
+                    {deptFieldErrors.code}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="dept-desc-input">Description</Label>
+                <Input
+                  id="dept-desc-input"
                   value={departmentForm.description}
                   onChange={(e) => setDepartmentForm({ ...departmentForm, description: e.target.value })}
-                  placeholder="Signal & Telecommunications"
+                  placeholder="Brief purpose of this department"
                   data-testid="department-description-input"
                 />
               </div>

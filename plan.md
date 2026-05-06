@@ -35,6 +35,7 @@
     - Auto-create audit trail + inspection history entry + orange list + notifications to full chain
   - **Department Governance:**
     - Only **Superadmin** can create/update/delete departments (Admin and below are read-only)
+    - **Post-fix UX:** Department creation requires **Name + Code (1–8 chars)** with inline validation, and safe error rendering
 
 - Ensure the core workflow is proven end-to-end:
   - inspection submit → items pending approval → Pass applies effects → defect aging continues correctly
@@ -44,9 +45,11 @@
 - Reduce recurring UI regressions by:
   - Standardizing Shadcn `<Select>` placeholder handling (**never use empty string values**)
   - Standardizing error rendering (avoid React crash on structured validation errors)
+  - Prefer inline field-level validation for required form fields (Departments first; extend where needed)
 
 - Improve maintainability and scalability:
   - **Backend refactored by splitting `server.py` into routers** while preserving route paths, `/api` prefix behavior, CORS, static mounts, and helper semantics (done).
+  - Ensure large list endpoints support **server-side pagination** for performance.
 
 ---
 
@@ -334,9 +337,9 @@ Delivered:
 #### Phase 6.3 — Refactor backend by splitting `/app/backend/server.py` into routers ✅ COMPLETE
 Delivered:
 - Refactored backend from a ~3084-line `server.py` into:
-  - `server.py` (entry point, ~82 lines)
+  - `server.py` (entry point, slim)
   - `helpers.py` (shared helper functions)
-  - `routers/*.py` (16 router modules)
+  - `routers/*.py` (router modules)
 - Preserved:
   - Exact `/api/...` paths and methods
   - CORS settings
@@ -346,7 +349,6 @@ Delivered:
 #### Phase 6.4 — Testing & verification for Phase 6 ✅ COMPLETE
 Testing approach (per instruction: **use both**):
 - Backend: 34/35 tests passed (**97.1%**)
-  - One noted 422 is expected: `GET /api/dashboard/oversight/{user_id}/category-assets` requires `asset_type_id`
 - Frontend: **100%** pass rate, no regressions observed
 
 ---
@@ -366,9 +368,7 @@ Delivered:
   - **Asset category-wise health** (working/orange/red + % functional)
   - **Station-wise health** (working/orange/red + % functional)
   - **Department-wise health** (working/orange/red + % functional)
-- Added **multi-station filter** (popover multi-select with search):
-  - Default: all stations
-  - Select 1+ stations to scope all overview totals/health
+- Added **multi-station filter** (popover multi-select with search)
 
 Backend support:
 - `GET /api/dashboard/superadmin` accepts `station_ids` (multi) and returns:
@@ -382,16 +382,11 @@ Delivered:
 - Every overview card is clickable and opens a **drill-down view** with:
   - Priority list (orange/red) + Working list
   - Back button
-- Drill-down sources:
-  - Category → uses asset_type_id
-  - Department → uses department_id (includes asset_type_name per row)
-  - Station → uses station_id
 
 Backend support:
 - Extended `GET /api/dashboard/oversight/{user_id}/category-assets`:
-  - Accepts `department_id` (admin/superadmin/RO)
-  - Accepts `station_id` without requiring asset_type_id/department_id (admin/superadmin/ASUP/RO)
-  - Returns 400 if none of `asset_type_id/department_id/station_id` provided
+  - Accepts `department_id`
+  - Accepts `station_id` without requiring asset_type_id/department_id
 
 #### Phase 7.3 — “View as” navigation from Superadmin dashboard ✅ COMPLETE
 Delivered:
@@ -400,110 +395,118 @@ Delivered:
   - Approving Supervisors
   - Supervisors
 - Clicking any row navigates to `/?as=<user_id>` and renders that user’s dashboard.
-- View-As banner:
-  - Shows “Viewing as <name>” + role badge
-  - “Back to my dashboard” button clears `as` and returns to Superadmin
-
-Implementation details:
-- `DashboardPage.js` enhanced with View-As mode for **superadmin/admin**.
-- `OversightDashboard` and `AdminDashboard` updated to accept `targetUser`.
-- `SupervisorDashboard` updated to accept `targetUser`.
 
 #### Phase 7.4 — Allocate Assets tab (single + bulk) ✅ COMPLETE
 Delivered:
 - New Superadmin dashboard tab: **Allocate Assets**
-  - **Quick Assign (single)**: choose asset + supervisor → assign/unassign
-  - **Bulk Allocate / Reassign**:
-    - Filters: station, asset type, current supervisor (including unassigned), search
-    - Multi-select assets + “select all visible”
-    - Assign to supervisor or unassign
+  - Quick Assign (single)
+  - Bulk Allocate / Reassign
 
 Backend support:
-- New endpoint: `POST /api/admin/assets/assign-bulk`
-  - Body: `{ asset_ids: [...], to_supervisor_id: str|null, performed_by: str|null }`
-  - Validates target is a supervisor
-  - Audit logs operation with from_breakdown
+- `POST /api/admin/assets/assign-bulk`
 
 #### Phase 7.5 — Testing & verification for Phase 7 ✅ COMPLETE
-Testing approach (per instruction: **use both**):
-- Backend: **100%** (43/43) pass rate including Phase 7 endpoints
-- Frontend: **100%** pass rate, no regressions or critical bugs
+- Backend: **100%**
+- Frontend: **100%**
 
 ---
 
 ### Phase 8 — Bug Fixes + Manual Mark-Defective + Orange List Scoping ✅ COMPLETE
-**Goal:** Stabilize admin UX, enforce department governance, fix orange list role visibility, and add a manual defect entry path that notifies the full chain.
+**Goal:** Stabilize admin UX, enforce department governance, fix orange list role visibility, and add a manual defect entry path.
 
 #### Phase 8.1 — Fix React runtime error on structured validation errors ✅ COMPLETE
 Delivered:
-- Added `frontend/src/lib/err.js`:
-  - `errString()` converts FastAPI/Pydantic v2 validation `detail` arrays into readable strings.
-- Patched error handling across 6 pages/components to prevent:
-  - **“Objects are not valid as a React child”** runtime crashes.
+- Added `frontend/src/lib/err.js` with `errString()`.
+- Patched error handling across pages/components to prevent React crashes on Pydantic arrays.
 
 #### Phase 8.2 — Departments governance: Superadmin-only manage ✅ COMPLETE
 Delivered:
-- Backend:
-  - `POST/PUT/DELETE /api/departments` now require `current_user_id` query param and enforce role == `superadmin`.
-  - Deletion safety: blocks deletion when asset types still reference a department (`409`).
-- Frontend:
-  - Admin Panel **Depts** tab:
-    - Superadmin sees Add/Edit/Delete controls.
-    - Non-superadmin users see a read-only list and a note: “Read-only — only Super Admin can manage departments”.
-- Seed:
-  - Seeded **S&T** department (Signal & Telecommunications) and added idempotent seeds in `seed.py`.
+- Backend enforces superadmin-only for POST/PUT/DELETE.
+- Frontend shows Depts tab controls only for superadmin; read-only for others.
 
 #### Phase 8.3 — Manual Mark-Defective (Admin/Superadmin) ✅ COMPLETE
 Delivered:
-- Backend:
-  - New endpoint: `POST /api/assets/{asset_id}/mark-defective`
-    - Accepts: `status`, `remarks` (≥10 chars), `defective_at` (ISO, not future), `performed_by`, optional `photo_urls`.
-    - Creates a synthetic inspection: `inspection_type='manual_marking'`.
-    - Creates an orange-list entry and audit log entry `action='manual_mark_defective'`.
-    - Clock rule enforced: **does not reset defective_since** if asset is already defective.
-  - New helper: `broadcast_asset_defect_notifications()` in `helpers.py`.
-    - Recipients: asset supervisor + station ASUP + dept RO + umbrella RO Commercial + all admins + all superadmins.
-    - Deduplicated; performer excluded.
-
-- Frontend:
-  - Asset Registry updated with a clean per-row **3-dot action menu**:
-    - View history
-    - Edit asset (admin/SA)
-    - **Mark defective** (admin/SA)
-    - Delete
-  - New modal: `MarkDefectiveDialog`:
-    - Status radio: Not OK / Needs Repair
-    - **Date+time of failure** (default now; backdating allowed; future blocked)
-    - Remarks min-length validation
-    - Optional photos
-    - Recipient preview
+- Backend endpoint: `POST /api/assets/{asset_id}/mark-defective`.
+- Synthetic inspection + orange list + audit + notifications.
 
 #### Phase 8.4 — Orange List scoping + refresh ✅ COMPLETE
 Delivered:
-- Backend:
-  - `GET /api/orange-list` accepts `for_user_id`:
-    - Supervisor: assets assigned to them OR items they reported
-    - ASUP: assets at their stations
-    - RO: assets in their department AND assigned stations
-    - Admin/Superadmin: global list
-- Frontend:
-  - Orange List page sends `for_user_id` for non-admin/SA roles.
-  - Added a **Refresh** button.
+- Backend role-based scoping for Orange List via `for_user_id`.
+- Frontend uses scoped calls and has Refresh.
 
 #### Phase 8.5 — Testing & verification for Phase 8 ✅ COMPLETE
-Testing approach (per instruction: **use both**):
-- Backend: **100%** (24/24)
+- Backend: **100%**
 - Frontend: **100%**
-- No regressions detected.
+
+---
+
+### Phase 9 — Server-side Pagination for Large Lists + Validation ✅ COMPLETE
+**Goal:** Improve performance and UI stability for large datasets.
+
+Delivered:
+- Backend:
+  - Added/standardized pagination params on:
+    - `GET /api/assets`
+    - `GET /api/inspections`
+    - `GET /api/orange-list`
+  - Response envelope validated by testing agent:
+    - `{ items, total, page, page_size, total_pages }`
+- Frontend:
+  - Integrated shared `<Pagination />` component into:
+    - `AssetsPage.js`
+    - `InspectionHistoryPage.js`
+    - `OrangeListPage.js`
+- Testing & evidence:
+  - Comprehensive test run (iteration_6) validated pagination + drill-down behavior and captured screenshots.
+
+---
+
+### Phase 10 — Department Creation UX Fix (Superadmin) ✅ COMPLETE
+**Goal:** Fix the user-reported issue “department creation not working” by improving validation UX and backend rules.
+
+Root cause:
+- Backend required `code`, but UI dialog didn’t collect it; validation surfaced only via a brief toast and could be missed.
+
+Delivered:
+- Backend:
+  - `DepartmentCreate` validators:
+    - `code` required, **1–8 chars**, `A-Z0-9` only, auto-uppercase
+    - friendly errors
+  - Duplicate handling:
+    - Pre-check for duplicate name (case-insensitive) and code
+    - Returns **409** with user-friendly message
+  - Unique index:
+    - Unique index on `departments.code` (`uniq_dept_code`)
+- Frontend (`AdminPage.js` Depts dialog):
+  - Added **Code*** field with:
+    - auto-uppercase
+    - invalid character stripping
+    - inline red validation errors (no more “silent failure”)
+  - Required-field asterisks on Name/Code
+  - Success toast includes department name
+  - Departments list shows a **code badge** next to the name
+- Data hygiene (preview environment):
+  - Merged duplicate `S&T` department entries and normalized legacy codes to comply with new rules.
+- Testing:
+  - API smoke tests confirm expected 422/409/200 behavior
+  - Screenshot verification confirms inline validation is visible and stable.
+
+**User action required:** Superadmin to verify the improved department creation UX in the UI.
 
 ---
 
 ## Next Actions (Optional / Future)
-1. **Integrate real SMS/WhatsApp provider** (adapter infrastructure exists; pending API keys).
-2. Add pagination for other large datasets (inspections, assets, orange list) if performance requires.
+1. **P2 — Fix ASUP approval scoping** (OPEN):
+   - Current deficiency from iteration_6: Approving Supervisor cannot approve inspections unless `station.approving_supervisor_id` is set.
+   - Proposed fix:
+     - Allow approval if ASUP is either:
+       - station.approving_supervisor_id **OR**
+       - station_id is in ASUP `assigned_stations`
+   - Also ensure defect notification fan-out includes ASUP via the correct station mapping.
+2. Integrate real SMS/WhatsApp provider (adapter infrastructure exists; pending API keys).
 3. Add automated unit tests for approval edge cases and schedule computations.
-4. Optional: Add notification retention policies (auto-delete older than N days) and indexes in MongoDB for notifications.
-5. Optional: Add “permission-aware view-as” constraints (e.g., admin can view-as only within scope) if required.
+4. Optional: Add notification retention policies and MongoDB indexes for notifications.
+5. Optional: Add permission-aware view-as constraints (admin can view-as only within scope) if required.
 6. Optional: Add an admin UI to configure umbrella notification recipients instead of hard-coded “Commercial”.
 
 ---
@@ -524,9 +527,12 @@ Testing approach (per instruction: **use both**):
 - Approval:
   - Every inspection item requires Pass/Fail approval.
   - Fail preserves defect aging and audit logs gap time.
+  - **ASUP approval works for assigned stations** (P2 open item).
 - Scoping:
   - Stakeholders see only assigned stations/departments/assets.
   - Orange list is role-scoped when `for_user_id` is provided.
+- Pagination:
+  - Assets, Inspections, Orange List lists are server-side paginated and stable at scale.
 - Notifications:
   - Dropdown remains functional.
   - Full Notifications page supports pagination/filters/search/bulk actions.
@@ -545,3 +551,4 @@ Testing approach (per instruction: **use both**):
 - Stability:
   - No Shadcn Select empty-string regressions (`value=""` not used).
   - No React runtime crashes on structured error payloads.
+  - Department creation UX is self-explanatory (Name + Code required, inline errors).

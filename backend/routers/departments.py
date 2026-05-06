@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 import io
 import os
 import uuid
@@ -44,13 +45,29 @@ async def _require_superadmin(current_user_id: Optional[str]):
 @router.post("/api/departments")
 async def create_department(dept: DepartmentCreate, current_user_id: Optional[str] = Query(None)):
     await _require_superadmin(current_user_id)
+    # Pydantic validators already uppercased code & trimmed name.
+    existing = await departments_collection.find_one({
+        "$or": [
+            {"name": {"$regex": f"^{dept.name}$", "$options": "i"}},
+            {"code": dept.code},
+        ]
+    })
+    if existing:
+        which = "name" if (existing.get("name", "").strip().lower() == dept.name.strip().lower()) else "code"
+        raise HTTPException(
+            status_code=409,
+            detail=f"A department with this {which} already exists"
+        )
     doc = {
         "name": dept.name,
         "code": dept.code,
         "description": dept.description,
         "created_at": datetime.utcnow()
     }
-    result = await departments_collection.insert_one(doc)
+    try:
+        result = await departments_collection.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(status_code=409, detail="Department already exists")
     doc["_id"] = result.inserted_id
     return serialize_doc(doc)
 
@@ -72,6 +89,17 @@ async def get_department(dept_id: str):
 @router.put("/api/departments/{dept_id}")
 async def update_department(dept_id: str, dept: DepartmentCreate, current_user_id: Optional[str] = Query(None)):
     await _require_superadmin(current_user_id)
+    # Block collisions with a *different* department
+    collision = await departments_collection.find_one({
+        "_id": {"$ne": ObjectId(dept_id)},
+        "$or": [
+            {"name": {"$regex": f"^{dept.name}$", "$options": "i"}},
+            {"code": dept.code},
+        ]
+    })
+    if collision:
+        which = "name" if (collision.get("name", "").strip().lower() == dept.name.strip().lower()) else "code"
+        raise HTTPException(status_code=409, detail=f"Another department with this {which} already exists")
     result = await departments_collection.update_one(
         {"_id": ObjectId(dept_id)},
         {"$set": {"name": dept.name, "code": dept.code, "description": dept.description}}
