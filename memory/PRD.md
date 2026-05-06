@@ -73,7 +73,12 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 - RO dashboard: replaced with "Dept Defects" tab using OrangeListPanel mode='ro'
 - All tested: 32/32 frontend checks pass (iteration_9.json), zero regressions
 
-### Phase 4 — Rectification Performance Analytics (P1)
+### Backend Scoping & Notification Fixes (DONE — May 2026)
+- Fix 1: `GET /api/schedules/supervisor/{user_id}` — replaced dead `assigned_supervisor_id` query with implicit station+department scoping
+- Fix 2: `GET /api/schedules/approving-supervisor/{id}/supervisors` — asset counts now use implicit scoping
+- Fix 3: `approve_working` — SUP who marked asset working now notified when ASUP approves
+- Fix 4: `approve_working` + `reject_working` — ROs scoped to asset's dept+station now notified on both approve and reject
+- All tested: 26/26 backend tests pass (iteration_10.json, test_phase4_fixes.py)
 - Defect period = defective_since → marked_working_at (user-entered)
 - Per-incident breakdown for Supervisor
 - Supervisor comparison by date range for RO
