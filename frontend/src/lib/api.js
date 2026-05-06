@@ -157,6 +157,7 @@ export const orangeListAPI = {
   },
   markWorking: (id, data) => api.post(`/orange-list/${id}/mark-working`, data),
   approve: (id, data) => api.post(`/orange-list/${id}/approve`, data),
+  rejectWorking: (id, data) => api.post(`/orange-list/${id}/reject-working`, data),
 };
 
 // Notifications

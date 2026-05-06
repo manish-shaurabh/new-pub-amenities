@@ -8,9 +8,13 @@ import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
+import { Input } from '../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { Calendar } from '../components/ui/calendar';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle, Clock, Download, FileText, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, FileText, FileSpreadsheet, RefreshCw, CalendarIcon, XCircle } from 'lucide-react';
+import { format } from 'date-fns';
 import Pagination from '../components/Pagination';
 
 const PAGE_SIZE = 25;
@@ -27,6 +31,8 @@ export default function OrangeListPage() {
   const [actionDialog, setActionDialog] = useState(null);
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [markedWorkingDate, setMarkedWorkingDate] = useState(null);
+  const [markedWorkingTime, setMarkedWorkingTime] = useState('');
 
   // Role-scoped fetch: only superadmin/admin see global; everyone else scopes to their role.
   const isScoped = user && !['superadmin', 'admin'].includes(user.role);
@@ -51,7 +57,7 @@ export default function OrangeListPage() {
 
   useEffect(() => { loadItems(); }, [loadItems]);
 
-  // Reset page when tab changes (tab is a client-side filter on top of the page)
+  // Reset page when tab changes
   useEffect(() => { setPage(1); }, [activeTab]);
 
   const handleRefresh = () => {
@@ -59,17 +65,41 @@ export default function OrangeListPage() {
     loadItems();
   };
 
+  const resetDialog = () => {
+    setActionDialog(null);
+    setRemarks('');
+    setMarkedWorkingDate(null);
+    setMarkedWorkingTime('');
+  };
+
+  const openMarkWorkingDialog = (item) => {
+    // Default to current date/time
+    setMarkedWorkingDate(new Date());
+    setMarkedWorkingTime(format(new Date(), 'HH:mm'));
+    setRemarks('');
+    setActionDialog({ type: 'mark_working', item });
+  };
+
   const handleMarkWorking = async () => {
     if (!actionDialog?.item) return;
     setSubmitting(true);
     try {
+      let marked_working_at = null;
+      if (markedWorkingDate) {
+        const date = new Date(markedWorkingDate);
+        if (markedWorkingTime) {
+          const [h, m] = markedWorkingTime.split(':');
+          date.setHours(parseInt(h), parseInt(m));
+        }
+        marked_working_at = date.toISOString();
+      }
       await orangeListAPI.markWorking(actionDialog.item._id, {
         marked_by: user._id,
-        remarks: remarks
+        remarks,
+        marked_working_at,
       });
-      toast.success('Asset marked as working - pending approval');
-      setActionDialog(null);
-      setRemarks('');
+      toast.success('Asset marked as working — pending ASUP approval');
+      resetDialog();
       loadItems();
     } catch (e) {
       toast.error(errString(e, 'Failed to mark working'));
@@ -84,11 +114,10 @@ export default function OrangeListPage() {
     try {
       await orangeListAPI.approve(actionDialog.item._id, {
         approved_by: user._id,
-        remarks: remarks
+        remarks,
       });
-      toast.success('Asset approved as working - removed from list');
-      setActionDialog(null);
-      setRemarks('');
+      toast.success('Asset approved as working — removed from list');
+      resetDialog();
       loadItems();
     } catch (e) {
       toast.error(errString(e, 'Failed to approve'));
@@ -97,7 +126,24 @@ export default function OrangeListPage() {
     }
   };
 
-  // Change 4: Export functions
+  const handleReject = async () => {
+    if (!actionDialog?.item) return;
+    setSubmitting(true);
+    try {
+      await orangeListAPI.rejectWorking(actionDialog.item._id, {
+        rejected_by: user._id,
+        remarks,
+      });
+      toast.success('Rectification rejected — asset returned to defective');
+      resetDialog();
+      loadItems();
+    } catch (e) {
+      toast.error(errString(e, 'Failed to reject rectification'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleExportExcel = (listType) => {
     const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
     window.open(`${backendUrl}/api/orange-list/export/excel?list_type=${listType || ''}`, '_blank');
@@ -108,10 +154,9 @@ export default function OrangeListPage() {
     window.open(`${backendUrl}/api/orange-list/export/pdf?list_type=${listType || ''}`, '_blank');
   };
 
-  // Change 4: Split into orange (< 24hrs) and red (> 24hrs)
   const orangeItems = items.filter(i => i.list_type === 'orange' && i.status !== 'pending_approval');
   const redItems = items.filter(i => i.list_type === 'red' && i.status !== 'pending_approval');
-  const pendingItems = items.filter(i => i.status === 'pending_approval');
+  const yellowItems = items.filter(i => i.status === 'pending_approval');
 
   if (loading) {
     return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-20 bg-muted animate-pulse rounded-xl" />)}</div>;
@@ -120,12 +165,12 @@ export default function OrangeListPage() {
   const ItemCard = ({ item }) => (
     <Card className={`border-l-4 ${
       item.list_type === 'red' ? 'border-l-red-600' :
-      item.status === 'pending_approval' ? 'border-l-[hsl(var(--pending))]' : 'border-l-[hsl(var(--orange-list))]'
+      item.status === 'pending_approval' ? 'border-l-yellow-500' : 'border-l-[hsl(var(--orange-list))]'
     }`}>
       <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
               <p className="font-medium text-sm">{item.asset_info?.asset_number || 'Unknown Asset'}</p>
               {item.list_type === 'red' && (
                 <Badge className="bg-red-600 text-white border-0 text-[10px]">RED LIST</Badge>
@@ -134,13 +179,13 @@ export default function OrangeListPage() {
                 <Badge className="status-defective text-[10px]">ORANGE LIST</Badge>
               )}
               {item.status === 'pending_approval' && (
-                <Badge className="status-pending text-[10px]">Pending Approval</Badge>
+                <Badge className="bg-yellow-500 text-white border-0 text-[10px]">YELLOW LIST</Badge>
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {item.asset_info?.asset_type_name} &middot; {item.asset_info?.station_name} &middot; {item.asset_info?.location_name}
             </p>
-            <div className="flex items-center gap-3 mt-1">
+            <div className="flex items-center gap-3 mt-1 flex-wrap">
               <p className="text-xs text-muted-foreground">
                 Reported by: {item.reporter_name}
               </p>
@@ -151,7 +196,7 @@ export default function OrangeListPage() {
               )}
               {item.hours_defective !== undefined && (
                 <Badge variant="outline" className="text-[10px]">
-                  {item.hours_defective > 24 
+                  {item.hours_defective > 24
                     ? `${Math.floor(item.hours_defective / 24)}d ${Math.round(item.hours_defective % 24)}h`
                     : `${Math.round(item.hours_defective)}h`
                   }
@@ -159,25 +204,35 @@ export default function OrangeListPage() {
               )}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-shrink-0">
             {item.status === 'defective' && (
               <Button
                 size="sm"
-                onClick={() => setActionDialog({ type: 'mark_working', item })}
+                onClick={() => openMarkWorkingDialog(item)}
                 data-testid="orange-list-mark-working-button"
               >
                 Mark Working
               </Button>
             )}
             {item.status === 'pending_approval' && canApprove() && (
-              <Button
-                size="sm"
-                variant="default"
-                onClick={() => setActionDialog({ type: 'approve', item })}
-                data-testid="orange-list-approve-button"
-              >
-                <CheckCircle className="h-4 w-4 mr-1" /> Approve
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => { setRemarks(''); setActionDialog({ type: 'approve', item }); }}
+                  data-testid="orange-list-approve-button"
+                >
+                  <CheckCircle className="h-4 w-4 mr-1" /> Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => { setRemarks(''); setActionDialog({ type: 'reject', item }); }}
+                  data-testid="orange-list-reject-button"
+                >
+                  <XCircle className="h-4 w-4 mr-1" /> Reject
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -193,9 +248,8 @@ export default function OrangeListPage() {
             <AlertTriangle className="h-6 w-6 text-[hsl(var(--orange-list))]" />
             Defective Assets
           </h1>
-          <p className="text-sm text-muted-foreground">Orange List (&lt;24hrs) &middot; Red List (&gt;24hrs)</p>
+          <p className="text-sm text-muted-foreground">Orange List (&lt;24hrs) &middot; Red List (&gt;24hrs) &middot; Yellow List (pending approval)</p>
         </div>
-        {/* Export buttons */}
         <div className="flex gap-2 flex-wrap">
           <Button
             variant="outline"
@@ -207,10 +261,10 @@ export default function OrangeListPage() {
             <RefreshCw className={`h-4 w-4 mr-1 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={() => handleExportExcel(activeTab !== 'pending' ? activeTab : null)}>
+          <Button variant="outline" size="sm" onClick={() => handleExportExcel(activeTab !== 'yellow' ? activeTab : null)}>
             <FileSpreadsheet className="h-4 w-4 mr-1" /> Excel
           </Button>
-          <Button variant="outline" size="sm" onClick={() => handleExportPDF(activeTab !== 'pending' ? activeTab : null)}>
+          <Button variant="outline" size="sm" onClick={() => handleExportPDF(activeTab !== 'yellow' ? activeTab : null)}>
             <FileText className="h-4 w-4 mr-1" /> PDF
           </Button>
         </div>
@@ -218,17 +272,17 @@ export default function OrangeListPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="orange">
+          <TabsTrigger value="orange" data-testid="tab-orange">
             <AlertTriangle className="h-4 w-4 mr-1 text-orange-500" />
             Orange ({orangeItems.length})
           </TabsTrigger>
-          <TabsTrigger value="red">
+          <TabsTrigger value="red" data-testid="tab-red">
             <AlertTriangle className="h-4 w-4 mr-1 text-red-600" />
             Red ({redItems.length})
           </TabsTrigger>
-          <TabsTrigger value="pending">
-            <Clock className="h-4 w-4 mr-1" />
-            Pending ({pendingItems.length})
+          <TabsTrigger value="yellow" data-testid="tab-yellow-list">
+            <Clock className="h-4 w-4 mr-1 text-yellow-500" />
+            Yellow List ({yellowItems.length})
           </TabsTrigger>
         </TabsList>
 
@@ -258,21 +312,21 @@ export default function OrangeListPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="pending" className="space-y-3 mt-4">
-          {pendingItems.length === 0 ? (
+        <TabsContent value="yellow" className="space-y-3 mt-4" data-testid="yellow-list-tab-content">
+          {yellowItems.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
                 <Clock className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">No pending approvals</p>
+                <p className="text-sm text-muted-foreground">No items awaiting approval</p>
               </CardContent>
             </Card>
           ) : (
-            pendingItems.map(item => <ItemCard key={item._id} item={item} />)
+            yellowItems.map(item => <ItemCard key={item._id} item={item} />)
           )}
         </TabsContent>
       </Tabs>
 
-      {/* Pagination — controls the underlying page; tabs filter client-side within it */}
+      {/* Pagination */}
       <Pagination
         page={page}
         totalPages={totalPages}
@@ -285,11 +339,13 @@ export default function OrangeListPage() {
       />
 
       {/* Action Dialog */}
-      <Dialog open={!!actionDialog} onOpenChange={(open) => !open && setActionDialog(null)}>
+      <Dialog open={!!actionDialog} onOpenChange={(open) => !open && resetDialog()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {actionDialog?.type === 'mark_working' ? 'Mark Asset as Working' : 'Approve Working Status'}
+              {actionDialog?.type === 'mark_working' ? 'Mark Asset as Working' :
+               actionDialog?.type === 'approve' ? 'Approve Working Status' :
+               'Reject Rectification'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -304,21 +360,71 @@ export default function OrangeListPage() {
                 </p>
               )}
             </div>
+
+            {/* Date/Time picker — only for Mark Working */}
+            {actionDialog?.type === 'mark_working' && (
+              <div>
+                <Label className="text-sm font-medium">Marked Working At</Label>
+                <p className="text-[11px] text-muted-foreground mb-2">When was this asset fixed? (defaults to now)</p>
+                <div className="flex gap-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="flex-1 justify-start text-left font-normal" data-testid="marked-working-date-btn">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {markedWorkingDate ? format(new Date(markedWorkingDate), 'dd MMM yyyy') : 'Pick date'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={markedWorkingDate ? new Date(markedWorkingDate) : undefined}
+                        onSelect={(date) => setMarkedWorkingDate(date || new Date())}
+                        disabled={(date) => date > new Date()}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Input
+                    type="time"
+                    value={markedWorkingTime}
+                    onChange={(e) => setMarkedWorkingTime(e.target.value)}
+                    className="w-[130px]"
+                    data-testid="marked-working-time-input"
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
-              <Label>Remarks</Label>
+              <Label>Remarks{actionDialog?.type === 'reject' ? ' *' : ''}</Label>
               <Textarea
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
-                placeholder={actionDialog?.type === 'mark_working' ? 'Describe repairs done...' : 'Field verification notes...'}
+                placeholder={
+                  actionDialog?.type === 'mark_working' ? 'Describe repairs done...' :
+                  actionDialog?.type === 'approve' ? 'Field verification notes...' :
+                  'Reason for rejection...'
+                }
                 className="mt-1"
+                data-testid="action-dialog-remarks"
               />
             </div>
+
             <Button
-              onClick={actionDialog?.type === 'mark_working' ? handleMarkWorking : handleApprove}
-              disabled={submitting}
+              onClick={
+                actionDialog?.type === 'mark_working' ? handleMarkWorking :
+                actionDialog?.type === 'approve' ? handleApprove :
+                handleReject
+              }
+              disabled={submitting || (actionDialog?.type === 'reject' && !remarks.trim())}
+              variant={actionDialog?.type === 'reject' ? 'destructive' : 'default'}
               className="w-full"
+              data-testid="action-dialog-confirm-button"
             >
-              {submitting ? 'Processing...' : (actionDialog?.type === 'mark_working' ? 'Confirm Mark Working' : 'Confirm Approval')}
+              {submitting ? 'Processing...' :
+               actionDialog?.type === 'mark_working' ? 'Confirm Mark Working' :
+               actionDialog?.type === 'approve' ? 'Confirm Approval' :
+               'Confirm Reject'}
             </Button>
           </div>
         </DialogContent>
