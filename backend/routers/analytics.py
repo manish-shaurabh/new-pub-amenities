@@ -672,6 +672,7 @@ async def asset_analytics(asset_id: str):
 async def admin_rollup_matrix(
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
+    current_user_id: Optional[str] = Query(None),
 ):
     """Station-row × Department-column performance rollup matrix.
 
@@ -679,6 +680,17 @@ async def admin_rollup_matrix(
     intersection. A cell with `sup_count = 0` indicates an orphaned slot
     (no active supervisor assigned).
     """
+    # Optional admin/superadmin guard (consistent with other admin endpoints
+    # that pass current_user_id; non-admin requests get a 403 if a user_id is
+    # supplied for a non-admin account).
+    if current_user_id:
+        try:
+            cu = await users_collection.find_one({"_id": ObjectId(current_user_id)})
+        except Exception:
+            cu = None
+        if cu and cu.get("role") not in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value):
+            raise HTTPException(status_code=403, detail="Admin/superadmin only")
+
     now = datetime.utcnow()
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
@@ -783,7 +795,7 @@ async def admin_rollup_matrix(
 
 
 @router.get("/api/analytics/admin/coverage-gaps")
-async def admin_coverage_gaps():
+async def admin_coverage_gaps(current_user_id: Optional[str] = Query(None)):
     """Detect orphaned (Station × Department) combinations missing role coverage.
 
     Returns three lists:
@@ -791,6 +803,14 @@ async def admin_coverage_gaps():
       missing_asup : station_id lacks an active ASUP             — AMBER severity
       missing_ro   : (station_id, dept_id) lacks an active RO    — AMBER severity
     """
+    if current_user_id:
+        try:
+            cu = await users_collection.find_one({"_id": ObjectId(current_user_id)})
+        except Exception:
+            cu = None
+        if cu and cu.get("role") not in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value):
+            raise HTTPException(status_code=403, detail="Admin/superadmin only")
+
     stations = await stations_collection.find({}).to_list(2000)
     departments = await departments_collection.find({}).to_list(500)
     stn_name = {str(s["_id"]): s.get("name", "") for s in stations}

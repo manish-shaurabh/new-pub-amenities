@@ -233,9 +233,13 @@ export const analyticsAPI = {
     const p = new URLSearchParams();
     if (params.fromDate) p.set('from_date', params.fromDate);
     if (params.toDate) p.set('to_date', params.toDate);
+    if (params.currentUserId) p.set('current_user_id', params.currentUserId);
     return api.get(`/analytics/admin/rollup?${p.toString()}`);
   },
-  adminCoverageGaps: () => api.get('/analytics/admin/coverage-gaps'),
+  adminCoverageGaps: (currentUserId) =>
+    api.get('/analytics/admin/coverage-gaps', {
+      params: currentUserId ? { current_user_id: currentUserId } : {},
+    }),
 };
 
 export const approvalsAPI = {

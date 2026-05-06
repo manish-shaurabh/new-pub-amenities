@@ -20,6 +20,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { analyticsAPI, usersAPI } from '../lib/api';
 import { errString } from '../lib/err';
+import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -54,6 +55,7 @@ const toDateInput = (d) => d.toISOString().slice(0, 10);
 // Coverage Gaps Banner
 // ─────────────────────────────────────────────────────────────────────────────
 function CoverageGapsBanner() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,7 @@ function CoverageGapsBanner() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await analyticsAPI.adminCoverageGaps();
+        const res = await analyticsAPI.adminCoverageGaps(user?._id);
         setData(res.data);
       } catch (e) {
         // soft-fail; banner is optional
@@ -70,7 +72,7 @@ function CoverageGapsBanner() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [user?._id]);
 
   if (loading || !data) return null;
   const { totals } = data;
@@ -245,6 +247,7 @@ function SupComparisonInline({ supIds, fromDate, toDate, onPick }) {
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 export default function AdminPerformanceMatrix({ onClose }) {
+  const { user } = useAuth();
   const now = new Date();
   const [fromDate, setFromDate] = useState(toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)));
   const [toDate, setToDate] = useState(toDateInput(now));
@@ -258,14 +261,16 @@ export default function AdminPerformanceMatrix({ onClose }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await analyticsAPI.adminRollup({ fromDate, toDate });
+      const res = await analyticsAPI.adminRollup({
+        fromDate, toDate, currentUserId: user?._id,
+      });
       setData(res.data);
     } catch (e) {
       toast.error(errString(e, 'Failed to load admin rollup'));
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, user?._id]);
 
   useEffect(() => { load(); }, [load]);
 

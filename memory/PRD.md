@@ -116,7 +116,29 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
   - `AdminPage.js` — new "Tags" tab
 - Tested via `testing_agent_v3_fork` (iteration_13.json): 18/18 backend, 100% on critical UI flows
 
-### Future
+### Phase 4 Extensions — Hierarchical Analytics (DONE — May 2026)
+- New `GET /api/analytics/admin/rollup` — Stations × Departments performance matrix with:
+  - Per-cell aggregates (sup_count, asset_count, total_defects, avg_repair, pct_functional, rejection_count, zero_defect, is_orphan, sup_ids)
+  - Per-department FY benchmark (Indian financial year Apr 1–Mar 31)
+  - Date-range filter (from/to)
+  - Admin/superadmin guard via `current_user_id` query param
+- New `GET /api/analytics/admin/coverage-gaps` — orphan SUP/ASUP/RO detection
+  - Missing SUP entries severity=red (per Station × Dept)
+  - Missing ASUP entries severity=amber (per Station)
+  - Missing RO entries severity=amber (per Station × Dept)
+  - Same admin guard
+- Existing ASUP/RO `/performance-summary` endpoints now return per-row `benchmark` (FY label + fy_avg_repair_hours) and `summary.zero_defect` flag; row sort behaviour unchanged
+- New `_fy_window` / `_fy_label` / `_dept_fy_avg_repair_seconds` helpers in analytics.py
+- Frontend:
+  - `AdminPerformanceMatrix.js` (new) — coverage-gaps banner + Stations × Departments matrix + Tier 2 inline expand (cell/row/col → SUP comparison list) + Tier 3 drill (full SupervisorAnalyticsView)
+  - `OversightDashboard` PerformanceComparisonTab — added "Dept FY ★" column with delta arrow (▲ red / ▼ green) and ★ icon for zero-defect rows (emerald-tinted background)
+  - `SupervisorAnalyticsView` — added "By Type | By Station" toggle when SUP has >1 station; ★ + "Zero defects in this period" label in header when applicable
+  - `SuperadminDashboard` — new "Performance" tab using AdminPerformanceMatrix
+  - `AdminDashboard` — "Performance Analytics" button now opens AdminPerformanceMatrix
+- Tested via `testing_agent_v3_fork` (iteration_14.json): 20/20 backend, 100% on critical UI flows. No bugs.
+
+### Future / Backlog
 - SMS/WhatsApp notification integration (infrastructure present, needs API keys)
 - Profile page: Schedule Summary tab
-- Phase 4 Extensions — Hierarchical Analytics (3-tier drilldown, FY benchmarks, zero-defect celebration, orphan detection)
+- Optimize `_dept_fy_avg_repair_seconds` via Mongo `$match` aggregation (currently filters in Python)
+- Performance matrix: documented caveat that SUPs assigned to N stations have asset_count summed across all N rows
