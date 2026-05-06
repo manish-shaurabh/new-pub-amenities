@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { assetsAPI, stationsAPI, locationsAPI, inspectionsAPI, usersAPI, uploadAPI } from '../lib/api';
+import { openInspectionReport } from '../lib/inspection-report';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -313,8 +314,32 @@ export default function InspectionPage() {
         overall_remarks: overallRemarks
       };
 
-      await inspectionsAPI.create(payload);
+      const submitRes = await inspectionsAPI.create(payload);
+      const created = submitRes.data;
       toast.success('Inspection submitted successfully!');
+
+      // Build asset_lookup for the report
+      const lookup = {};
+      selectedAssets.forEach((a) => {
+        lookup[a._id] = {
+          asset_number: a.asset_number,
+          asset_type_name: a.asset_type_name,
+          location_name: a.location_name,
+        };
+      });
+      const station = stations.find((s) => s._id === selectedStation);
+      // Open the report in a new tab/window so user can print/save as PDF
+      try {
+        openInspectionReport({
+          inspection: created,
+          asset_lookup: lookup,
+          station_name: station?.name,
+          app_name: 'Asset Track Rail',
+        });
+      } catch (rep) {
+        console.warn('Report open failed', rep);
+      }
+
       setSelectedAssets([]);
       setInspectionItems([]);
       setParticipants([]);

@@ -2516,6 +2516,15 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
     grouped: dict = {}
     health_counts = {"working": 0, "orange": 0, "red": 0}
 
+    # Pre-fetch orange list history for asset uptime computation
+    asset_id_strs = [str(a["_id"]) for a in assets]
+    history_docs = []
+    if asset_id_strs:
+        history_docs = await orange_list_collection.find({"asset_id": {"$in": asset_id_strs}}).to_list(20000)
+    history_by_asset: dict = {}
+    for rec in history_docs:
+        history_by_asset.setdefault(rec["asset_id"], []).append(rec)
+
     for asset in assets:
         type_id = asset.get("asset_type_id") or "unknown"
         type_name = types_map.get(type_id, "Unknown")
@@ -2526,9 +2535,16 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
             "asset_type_name": type_name,
             "asset_count": 0,
             "working": 0, "orange": 0, "red": 0,
+            "_pct_sum": 0.0,
         })
         bucket["asset_count"] += 1
         bucket[cls] += 1
+        m = _compute_asset_metrics(asset, history_by_asset.get(str(asset["_id"]), []), now)
+        bucket["_pct_sum"] += m["pct_functional"]
+
+    for c in grouped.values():
+        c["pct_functional"] = round(c["_pct_sum"] / c["asset_count"], 2) if c["asset_count"] else 100.0
+        c.pop("_pct_sum", None)
 
     categories = sorted(grouped.values(), key=lambda c: c["asset_type_name"])
     return {
@@ -2700,6 +2716,15 @@ async def _build_oversight_dashboard(
     by_category: dict = {}
     by_station: dict = {}
 
+    # Pre-fetch orange list history for uptime
+    asset_id_strs = [str(a["_id"]) for a in assets]
+    history_docs = []
+    if asset_id_strs:
+        history_docs = await orange_list_collection.find({"asset_id": {"$in": asset_id_strs}}).to_list(20000)
+    history_by_asset: dict = {}
+    for rec in history_docs:
+        history_by_asset.setdefault(rec["asset_id"], []).append(rec)
+
     for a in assets:
         cls = _classify_health(a, now)
         health[cls] += 1
@@ -2708,10 +2733,12 @@ async def _build_oversight_dashboard(
         type_name = types_map.get(type_id, {}).get("name", "Unknown")
         c = by_category.setdefault(type_id, {
             "asset_type_id": type_id, "asset_type_name": type_name,
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "_pct_sum": 0.0,
         })
         c["asset_count"] += 1
         c[cls] += 1
+        m = _compute_asset_metrics(a, history_by_asset.get(str(a["_id"]), []), now)
+        c["_pct_sum"] += m["pct_functional"]
 
         sid = a.get("station_id") or "unknown"
         s_name = stations_map.get(sid, {}).get("name", "Unknown")
@@ -2748,6 +2775,11 @@ async def _build_oversight_dashboard(
         s["categories"] = sorted(s["categories"].values(), key=lambda c: c["asset_type_name"])
         stations_out.append(s)
     stations_out.sort(key=lambda s: s["station_name"] or "")
+
+    # Finalize category pct_functional
+    for c in by_category.values():
+        c["pct_functional"] = round(c["_pct_sum"] / c["asset_count"], 2) if c["asset_count"] else 100.0
+        c.pop("_pct_sum", None)
 
     categories_out = sorted(by_category.values(), key=lambda c: c["asset_type_name"])
 
@@ -2965,3 +2997,88 @@ async def superadmin_full_dashboard():
         "reporting_officers": reporting_officers,
         "approving_supervisors": approving_supervisors,
     }
+
+
+@app.get("/api/dashboard/oversight/{user_id}/category-assets")
+async def oversight_category_assets(
+    user_id: str,
+    asset_type_id: str = Query(...),
+    station_id: Optional[str] = None,
+    department_id: Optional[str] = None,
+):
+    try:
+        user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    role = user.get("role")
+    station_scope = list(user.get("assigned_stations") or [])
+    if not station_scope and role not in (UserRole.SUPERADMIN.value, UserRole.ADMIN.value):
+        return {"asset_type_id": asset_type_id, "priority": [], "working": [], "totals": {"priority": 0, "working": 0}}
+
+    q = {"asset_type_id": asset_type_id}
+    if station_id:
+        if station_scope and station_id not in station_scope:
+            raise HTTPException(status_code=403, detail="Station not in your scope")
+        q["station_id"] = station_id
+    elif station_scope:
+        q["station_id"] = {"$in": station_scope}
+
+    if role == UserRole.REPORTING_OFFICER.value:
+        ro_dept = user.get("department_id")
+        if not ro_dept:
+            return {"asset_type_id": asset_type_id, "priority": [], "working": [], "totals": {"priority": 0, "working": 0}}
+        atype = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
+        if not atype or atype.get("department_id") != ro_dept:
+            return {"asset_type_id": asset_type_id, "priority": [], "working": [], "totals": {"priority": 0, "working": 0}}
+
+    assets = await assets_collection.find(q).to_list(20000)
+
+    s_ids = list({a.get("station_id") for a in assets if a.get("station_id")})
+    l_ids = list({a.get("location_id") for a in assets if a.get("location_id")})
+    sup_ids = list({a.get("assigned_supervisor_id") for a in assets if a.get("assigned_supervisor_id")})
+    sm = {}
+    if s_ids:
+        sd = await stations_collection.find({"_id": {"$in": [ObjectId(s) for s in s_ids]}}).to_list(1000)
+        sm = {str(s["_id"]): s["name"] for s in sd}
+    lm = {}
+    if l_ids:
+        ld = await locations_collection.find({"_id": {"$in": [ObjectId(l) for l in l_ids]}}).to_list(1000)
+        lm = {str(loc["_id"]): loc["name"] for loc in ld}
+    um = {}
+    if sup_ids:
+        ud = await users_collection.find({"_id": {"$in": [ObjectId(u) for u in sup_ids]}}).to_list(1000)
+        um = {str(u["_id"]): u.get("name") for u in ud}
+
+    now = datetime.utcnow()
+    priority = []
+    working = []
+    for a in assets:
+        cls = _classify_health(a, now)
+        ds = a.get("defective_since")
+        ds_iso = ds.isoformat() if isinstance(ds, datetime) else ds
+        ds_sortable = ds if isinstance(ds, datetime) else datetime.min
+        item = {
+            "_id": str(a["_id"]),
+            "asset_number": a.get("asset_number"),
+            "status": a.get("status", "working"),
+            "health_class": cls,
+            "defective_since": ds_iso,
+            "station_name": sm.get(a.get("station_id"), "Unknown"),
+            "location_name": lm.get(a.get("location_id"), "Unknown"),
+            "supervisor_name": um.get(a.get("assigned_supervisor_id"), None),
+        }
+        if cls == "working":
+            working.append(item)
+        else:
+            item["_sk"] = ds_sortable
+            priority.append(item)
+
+    priority.sort(key=lambda x: x.get("_sk") or datetime.min, reverse=True)
+    for p in priority:
+        p.pop("_sk", None)
+    working.sort(key=lambda x: x.get("asset_number") or "")
+    return {"asset_type_id": asset_type_id, "priority": priority, "working": working,
+            "totals": {"priority": len(priority), "working": len(working)}}

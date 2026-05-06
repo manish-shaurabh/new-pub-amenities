@@ -15,7 +15,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 import { Textarea } from '../ui/textarea';
 import {
   Box, BarChart3, ListChecks, Users, ChevronDown, ArrowLeft, ArrowRight,
-  CheckCircle2, XCircle, Building2, Wrench,
+  CheckCircle2, XCircle, Building2, Wrench, AlertCircle,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -47,13 +47,38 @@ function CategoryButton({ c, onClick }) {
         {c.red > 0 && <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px]">{c.red} red</Badge>}
         {issues === 0 && c.asset_count > 0 && <span className="text-[10px] text-muted-foreground">all healthy</span>}
       </div>
+      {typeof c.pct_functional === 'number' && (
+        <p className="text-[11px] text-muted-foreground mt-2">{c.pct_functional}% functional time</p>
+      )}
     </button>
   );
 }
 
 // ---------- Overview tab ----------
-function OverviewBlock({ data }) {
+function OverviewBlock({ data, userId, mode, stationFilter, deptFilter }) {
   const [selectedStationId, setSelectedStationId] = useState(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const [categoryAssets, setCategoryAssets] = useState(null);
+  const [categoryLoading, setCategoryLoading] = useState(false);
+
+  // Load assets for the selected category
+  useEffect(() => {
+    if (!selectedCategoryId) { setCategoryAssets(null); return; }
+    let cancelled = false;
+    (async () => {
+      setCategoryLoading(true);
+      try {
+        const params = { asset_type_id: selectedCategoryId };
+        if (stationFilter && stationFilter !== 'all') params.station_id = stationFilter;
+        if (mode === 'asup' && deptFilter && deptFilter !== 'all') params.department_id = deptFilter;
+        const r = await dashboardAPI.oversightCategoryAssets(userId, params);
+        if (!cancelled) setCategoryAssets(r.data);
+      } catch (e) { console.error(e); }
+      finally { if (!cancelled) setCategoryLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedCategoryId, userId, mode, stationFilter, deptFilter]);
+
   const pieData = [
     { name: 'Working', value: data.health.working, color: HEALTH_COLORS.working },
     { name: 'Orange', value: data.health.orange, color: HEALTH_COLORS.orange },
@@ -61,7 +86,9 @@ function OverviewBlock({ data }) {
   ].filter((d) => d.value > 0);
 
   const selectedStation = selectedStationId ? data.stations.find((s) => s.station_id === selectedStationId) : null;
+  const selectedCategory = selectedCategoryId ? data.categories.find((c) => c.asset_type_id === selectedCategoryId) : null;
 
+  // ----- Station drill-down -----
   if (selectedStation) {
     return (
       <div className="space-y-4">
@@ -73,7 +100,6 @@ function OverviewBlock({ data }) {
           <Badge variant="secondary" className="text-xs">{selectedStation.asset_count} assets</Badge>
           <Badge variant="outline" className="text-xs">{selectedStation.pct_functional}% functional</Badge>
         </div>
-
         <div className="space-y-3">
           {selectedStation.categories.map((c) => (
             <Card key={c.asset_type_id} className="overflow-hidden">
@@ -125,6 +151,101 @@ function OverviewBlock({ data }) {
     );
   }
 
+  // ----- Category drill-down -----
+  if (selectedCategory) {
+    const renderAssetRow = (a, isPriority) => (
+      <div key={a._id} className="flex items-center justify-between px-4 py-2.5 border-b last:border-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`h-7 w-7 rounded-md flex items-center justify-center ${
+            a.health_class === 'red' ? 'bg-red-50 text-red-600' :
+            a.health_class === 'orange' ? 'bg-orange-50 text-orange-600' :
+            'bg-emerald-50 text-emerald-600'
+          }`}>
+            {isPriority ? <Wrench className="h-3.5 w-3.5" /> : <Box className="h-3.5 w-3.5" />}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium truncate">{a.asset_number}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {a.station_name} &middot; {a.location_name}
+              {a.supervisor_name ? <> &middot; <span>{a.supervisor_name}</span></> : null}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isPriority && a.defective_since && (
+            <span className="text-[11px] text-muted-foreground hidden sm:block">
+              since {new Date(a.defective_since).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+            </span>
+          )}
+          <Badge className={
+            a.health_class === 'red' ? 'bg-red-100 text-red-700 border-red-200 text-[10px]' :
+            a.health_class === 'orange' ? 'bg-orange-100 text-orange-700 border-orange-200 text-[10px]' :
+            'bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]'
+          }>
+            {a.status === 'needs_repair' ? 'NEEDS REPAIR' : a.status === 'not_ok' ? 'NOT OK' : a.health_class === 'working' ? 'OK' : a.health_class.toUpperCase()}
+          </Badge>
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button variant="ghost" size="sm" onClick={() => setSelectedCategoryId(null)} data-testid="back-to-categories">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back
+          </Button>
+          <h2 className="text-lg font-semibold">{selectedCategory.asset_type_name}</h2>
+          <Badge variant="secondary" className="text-xs">{selectedCategory.asset_count} total</Badge>
+          {categoryAssets && (
+            <Badge variant="outline" className="text-xs">
+              {categoryAssets.totals.priority} priority &middot; {categoryAssets.totals.working} working
+            </Badge>
+          )}
+        </div>
+
+        {categoryLoading ? (
+          <div className="space-y-2">{[1,2].map((i) => <div key={i} className="h-14 bg-muted/50 animate-pulse rounded-xl" />)}</div>
+        ) : !categoryAssets ? null : (
+          <>
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-orange-500" /> Priority — Not OK / Needs Repair
+                  <Badge className="ml-auto bg-orange-50 text-orange-700 border-orange-200 text-[10px]">
+                    {categoryAssets.priority.length}
+                  </Badge>
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Sorted by most recent defect first</p>
+              </CardHeader>
+              <CardContent className="p-0">
+                {categoryAssets.priority.length === 0
+                  ? <p className="text-xs text-muted-foreground text-center py-6">No priority items in this category 🎉</p>
+                  : categoryAssets.priority.map((a) => renderAssetRow(a, true))}
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Working
+                  <Badge className="ml-auto bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                    {categoryAssets.working.length}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {categoryAssets.working.length === 0
+                  ? <p className="text-xs text-muted-foreground text-center py-6">No working assets in this category</p>
+                  : categoryAssets.working.map((a) => renderAssetRow(a, false))}
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ----- Default Overview view -----
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -195,7 +316,9 @@ function OverviewBlock({ data }) {
           </CardContent></Card>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {data.categories.map((c) => <CategoryButton key={c.asset_type_id} c={c} />)}
+            {data.categories.map((c) => (
+              <CategoryButton key={c.asset_type_id} c={c} onClick={() => setSelectedCategoryId(c.asset_type_id)} />
+            ))}
           </div>
         )}
       </div>
@@ -490,7 +613,9 @@ export default function OversightDashboard({ mode = 'asup' }) {
           <TabsTrigger value="my-tasks" data-testid="tab-my-tasks"><ListChecks className="h-4 w-4 mr-2" /> My Tasks</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="mt-4"><OverviewBlock data={data} /></TabsContent>
+        <TabsContent value="overview" className="mt-4">
+          <OverviewBlock data={data} userId={user._id} mode={mode} stationFilter={stationFilter} deptFilter={departmentFilter} />
+        </TabsContent>
         <TabsContent value="my-supervisors" className="mt-4">
           {mode === 'asup'
             ? <MySupervisorsBlock userId={user._id} />

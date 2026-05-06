@@ -18,13 +18,15 @@
     - Station personnel mapping
     - Linking supervisors → reporting officers
     - Bulk reassignment of assets (supervisor transfer/retirement)
+  - Operational visibility:
+    - Role dashboards (Supervisor, Approving Supervisor, Reporting Officer, Admin, Superadmin)
+    - Minimal, clean UI with charts where helpful
+    - Actionable “My Tasks” and approvals queue
+  - Reporting:
+    - Print-friendly inspection report including all remarks + photos
 - Ensure the core workflow is proven end-to-end:
   - inspection submit → items pending approval → Pass applies effects → defect aging continues correctly
   - Fail keeps previous effective state and logs gap time
-- Provide operational visibility with:
-  - Role dashboards (Supervisor, Approving Supervisor, Reporting Officer, Superadmin)
-  - Minimal, clean UI with charts where helpful
-  - Actionable “My Tasks” and approvals queue
 - Reduce recurring UI regressions by standardizing Shadcn `<Select>` placeholder handling (**never use empty string values**).
 
 ---
@@ -236,6 +238,7 @@ Delivered per agreed logic:
   - **Overview:** asset health pie + asset-type clickable buttons with summary counts.
   - **My Tasks:** sub-tabs “My Assets” and “Pending Tasks”, category-wise collapsible lists.
   - **My Performance:** category-wise avg repair time + % functional, collapsible per-asset list.
+- Enhancement (done): Asset-category buttons now also show **% functional time**.
 
 ---
 
@@ -256,9 +259,13 @@ Delivered per agreed logic:
 - Overview:
   - Overall Health pie
   - Station snapshot list (click → drill-down)
-  - Asset category buttons
+  - **Clickable asset category buttons**
 - Drill-down:
   - Station → asset category → assets list with current status.
+  - Enhancement (done): clicking an **asset category card** opens a dedicated list:
+    - **Priority** (Not OK / Needs Repair / orange/red) on top, newest defects first
+    - **Working** assets separated
+  - Enhancement (done): asset-category cards show **% functional time**.
 - “My Supervisors”:
   - Supervisor-wise analytics (avg repair time, % functional by category).
 - “My Tasks”:
@@ -273,7 +280,9 @@ Delivered:
   - assigned stations
   - **locked** department (RO’s department)
   - supervisors reporting to the RO
-- Provides “My Supervisors” and “My Tasks” approvals view.
+- Enhancements (done):
+  - asset-category cards show **% functional time**
+  - clicking category cards opens priority/working split list
 
 ---
 
@@ -294,16 +303,57 @@ Delivered:
   - Reporting Officer: inspections at their stations for assets in their department (items trimmed)
   - Superadmin/Admin: unscoped
 - Frontend `InspectionHistoryPage` passes `for_user_id` for non-superadmin/admin roles.
+- Enhancement (done): Inspection History UI renders **Pass/Fail/Pending** badges per item (based on `approval_status`) and shows reviewer remarks.
+- Enhancement (done): Inspection History supports deep-linking `?asset_id=` (used by notifications).
+
+---
+
+### Phase 5 — Notifications, Admin Dashboard, and Reporting ✅ COMPLETE
+
+#### Phase 5.1 — Notifications scoping + deep links ✅ COMPLETE
+Delivered:
+- Notifications dropdown items are clickable.
+- Notifications are marked read on click.
+- Deep link behavior:
+  - `related_entity_type=orange_list|asset` → opens `/inspection-history?asset_id=...`
+  - `related_entity_type=inspection` → opens `/inspection-history?inspection_id=...` (reserved)
+- Note: server-side notification targeting already restricts notifications to relevant roles/stations/departments.
+
+---
+
+#### Phase 5.2 — Admin Dashboard (filters + RO summaries) ✅ COMPLETE
+Delivered:
+- Admin dashboard implemented (replaced placeholder).
+- Supports optional multi-filters:
+  - stations, departments, reporting officers
+- Shows:
+  - overall health pie
+  - stations snapshot with collapsible station → category breakdown
+  - categories tab
+  - reporting officers summary tab
+
+---
+
+#### Phase 5.3 — Inspection Report Generation ✅ COMPLETE
+Delivered:
+- Print-friendly HTML report builder (`/app/frontend/src/lib/inspection-report.js`).
+- Automatically opens a printable report after submitting a new inspection.
+- “Print Report” button available in Inspection History inspection details modal.
+- Report includes:
+  - inspection metadata (type, station, inspector, timestamps)
+  - per-item status + approval badge
+  - checklist responses
+  - remarks (remarks_by + text)
+  - reviewer remarks
+  - photo thumbnails
 
 ---
 
 ## Next Actions (Optional / Future)
-1. **Admin dashboard** (currently placeholder): define admin-specific widgets/logic and implement.
-2. **Notifications full-page UI** (list + filters + mark read + deep links) if desired.
-3. **Inspection History enhancements**:
-   - Render per-item `approval_status` (pending/approved/rejected) clearly in the UI.
-   - Provide per-inspection detail view with Pass/Fail markers.
-4. **Hardening**:
+1. **Full Notifications page** (separate route) for searching/filtering/pagination if desired.
+2. **Inspection History enhancements**:
+   - Implement deep-link `inspection_id` focus behavior (currently only `asset_id` is auto-focused).
+3. **Hardening**:
    - Split `server.py` into routers for maintainability.
    - Add pagination for very large datasets (inspections, assets, orange list).
    - Add unit tests for approval edge cases.
@@ -317,12 +367,15 @@ Delivered:
   - Supervisor/ASUP/Admin/Superadmin/RO can view schedules (week default + date range + filters).
   - Supervisor transfer/reassignment supported.
 - Dashboards:
-  - Supervisor / ASUP / RO / Superadmin dashboards match agreed logic and are minimalistic.
+  - Supervisor / ASUP / RO / Admin / Superadmin dashboards match agreed logic and are minimalistic.
   - Approvals are actionable (Pass/Fail per item) from dashboards.
+  - **% functional time** is visible to stakeholders per asset category (and via performance view per asset).
 - Approval:
   - Every inspection item requires Pass/Fail approval.
   - Fail preserves defect aging (no state applied) and gap is audit logged.
 - Scoping:
-  - Each stakeholder sees only assigned stations/departments/assets in dashboard and inspection history.
+  - Each stakeholder sees only assigned stations/departments/assets in dashboard, notifications, and inspection history.
+- Reporting:
+  - Printable inspection report is available after submission and from inspection history.
 - Stability:
   - No Shadcn Select empty-string regressions (`value=""` not used).

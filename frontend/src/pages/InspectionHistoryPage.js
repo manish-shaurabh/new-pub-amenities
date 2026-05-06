@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { inspectionsAPI, assetsAPI, assetTypesAPI } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
+import { openInspectionReport } from '../lib/inspection-report';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
-import { ClipboardCheck, Users, Calendar, ChevronDown, User, FileText, Image as ImageIcon } from 'lucide-react';
+import { ClipboardCheck, Users, Calendar, ChevronDown, User, FileText, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 
 export default function InspectionHistoryPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const focusedAssetId = searchParams.get('asset_id');
+  const focusedInspectionId = searchParams.get('inspection_id');
   const [inspections, setInspections] = useState([]);
   const [assets, setAssets] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
@@ -39,6 +45,14 @@ export default function InspectionHistoryPage() {
       setInspections(inspRes.data);
       setAssets(assetsRes.data);
       setAssetTypes(typesRes.data);
+
+      // If URL deep-linked to an asset, open its history drawer
+      if (focusedAssetId) {
+        const asset = (assetsRes.data || []).find((a) => a._id === focusedAssetId);
+        if (asset) {
+          setAssetHistory({ id: asset._id, number: asset.asset_number });
+        }
+      }
     } catch (e) {
       console.error('Failed to load', e);
     } finally {
@@ -208,7 +222,20 @@ export default function InspectionHistoryPage() {
                                           <span>{insp.inspector_name}</span>
                                         </div>
                                       </div>
-                                      {insp.assetItem && statusBadge(insp.assetItem.status)}
+                                      {insp.assetItem && (
+                                        <div className="flex flex-col items-end gap-1">
+                                          {statusBadge(insp.assetItem.status)}
+                                          {insp.assetItem.approval_status === 'approved' && (
+                                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">PASSED</Badge>
+                                          )}
+                                          {insp.assetItem.approval_status === 'rejected' && (
+                                            <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">FAILED</Badge>
+                                          )}
+                                          {(insp.assetItem.approval_status === 'pending_approval' || !insp.assetItem.approval_status) && insp.assetItem.approval_status !== undefined && (
+                                            <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">PENDING</Badge>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
 
                                     {insp.assetItem?.checklist_responses?.length > 0 && (
@@ -233,6 +260,17 @@ export default function InspectionHistoryPage() {
                                         <div className="flex items-start gap-1.5">
                                           <FileText className="h-3 w-3 text-muted-foreground mt-0.5" />
                                           <p className="text-xs text-muted-foreground">{insp.assetItem.remarks}</p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {insp.assetItem?.reviewer_remarks && (
+                                      <div className="mt-2 pt-2 border-t">
+                                        <div className="flex items-start gap-1.5">
+                                          <CheckCircle2 className="h-3 w-3 text-muted-foreground mt-0.5" />
+                                          <p className="text-xs text-muted-foreground">
+                                            <span className="font-medium">Reviewer: </span>{insp.assetItem.reviewer_remarks}
+                                          </p>
                                         </div>
                                       </div>
                                     )}
@@ -263,7 +301,34 @@ export default function InspectionHistoryPage() {
       <Dialog open={!!selectedInspection} onOpenChange={(open) => !open && setSelectedInspection(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Inspection Details</DialogTitle>
+            <DialogTitle className="flex items-center justify-between gap-3">
+              <span>Inspection Details</span>
+              {selectedInspection && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const lookup = {};
+                    (selectedInspection.items || []).forEach((it) => {
+                      const a = assets.find((x) => x._id === it.asset_id);
+                      if (a) lookup[it.asset_id] = {
+                        asset_number: a.asset_number,
+                        asset_type_name: a.asset_type_name,
+                        location_name: a.location_name,
+                      };
+                    });
+                    openInspectionReport({
+                      inspection: selectedInspection,
+                      asset_lookup: lookup,
+                      station_name: selectedInspection.station_name,
+                    });
+                  }}
+                  data-testid="print-report-button"
+                >
+                  <FileText className="h-4 w-4 mr-1" /> Print Report
+                </Button>
+              )}
+            </DialogTitle>
           </DialogHeader>
           {selectedInspection && (
             <div className="space-y-4">

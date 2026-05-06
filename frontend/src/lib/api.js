@@ -185,6 +185,16 @@ export const dashboardAPI = {
   reportingOfficer: (userId, params) => api.get(`/dashboard/reporting-officer/${userId}`, {
     params: params || {}
   }),
+  oversightCategoryAssets: (userId, params) => api.get(`/dashboard/oversight/${userId}/category-assets`, {
+    params: params || {}
+  }),
+  admin: (filters) => {
+    const p = new URLSearchParams();
+    (filters?.station_ids || []).forEach((v) => p.append('station_ids', v));
+    (filters?.department_ids || []).forEach((v) => p.append('department_ids', v));
+    (filters?.reporting_officer_ids || []).forEach((v) => p.append('reporting_officer_ids', v));
+    return api.get(`/dashboard/admin?${p.toString()}`);
+  },
 };
 
 // Upload

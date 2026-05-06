@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLocation, Link } from 'react-router-dom';
+import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth-context';
 import { notificationsAPI } from '../lib/api';
 import { useEffect } from 'react';
@@ -40,6 +40,7 @@ const roleLabels = {
 export default function AppLayout({ children }) {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
@@ -202,23 +203,41 @@ export default function AppLayout({ children }) {
                   {notifications.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-6">No notifications</p>
                   ) : (
-                    notifications.map((notif) => (
-                      <div
-                        key={notif._id}
-                        className={`px-3 py-2.5 border-b last:border-0 ${!notif.is_read ? 'bg-accent/30' : ''}`}
-                        data-testid="notifications-panel-item"
-                      >
-                        <div className="flex items-start gap-2">
-                          <div className={`h-2 w-2 rounded-full mt-1.5 flex-shrink-0 ${
-                            notif.notification_type === 'alert' ? 'bg-destructive' : 'bg-primary'
-                          }`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">{notif.title}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{notif.message}</p>
+                    notifications.map((notif) => {
+                      // Build deep link based on related entity
+                      let href = null;
+                      if (notif.related_entity_type === 'orange_list' || notif.related_entity_type === 'asset') {
+                        href = `/inspection-history?asset_id=${notif.related_entity_id}`;
+                      } else if (notif.related_entity_type === 'inspection') {
+                        href = `/inspection-history?inspection_id=${notif.related_entity_id}`;
+                      }
+                      const onClick = async () => {
+                        try {
+                          await notificationsAPI.markRead(notif._id);
+                          setNotifications((prev) => prev.map((n) => n._id === notif._id ? { ...n, is_read: true } : n));
+                          setUnreadCount((c) => Math.max(0, c - (!notif.is_read ? 1 : 0)));
+                        } catch {}
+                        if (href) navigate(href);
+                      };
+                      return (
+                        <button
+                          key={notif._id}
+                          onClick={onClick}
+                          className={`w-full text-left px-3 py-2.5 border-b last:border-0 hover:bg-muted/40 ${!notif.is_read ? 'bg-accent/30' : ''}`}
+                          data-testid="notifications-panel-item"
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className={`h-2 w-2 rounded-full mt-1.5 flex-shrink-0 ${
+                              notif.notification_type === 'alert' ? 'bg-destructive' : 'bg-primary'
+                            }`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{notif.title}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{notif.message}</p>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    ))
+                        </button>
+                      );
+                    })
                   )}
                 </ScrollArea>
               </DropdownMenuContent>

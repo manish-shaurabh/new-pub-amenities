@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 
 import OversightDashboard from '../components/dashboards/OversightDashboard';
+import AdminDashboard from '../components/dashboards/AdminDashboard';
 
 // Health palette (matches our orange/red list semantics)
 const HEALTH_COLORS = {
@@ -267,6 +268,9 @@ function CategoryButton({ category, onClick }) {
           <span className="text-[10px] text-muted-foreground">all healthy</span>
         )}
       </div>
+      {typeof category.pct_functional === 'number' && (
+        <p className="text-[11px] text-muted-foreground mt-2">{category.pct_functional}% functional time</p>
+      )}
     </button>
   );
 }
@@ -680,6 +684,6 @@ export default function DashboardPage() {
   if (user.role === 'supervisor') return <SupervisorDashboard />;
   if (user.role === 'approving_supervisor') return <OversightDashboard mode="asup" />;
   if (user.role === 'reporting_officer') return <OversightDashboard mode="ro" />;
-  if (user.role === 'admin') return <PlaceholderDashboard role="admin" />;
+  if (user.role === 'admin') return <AdminDashboard />;
   return <SuperadminDashboard />;
 }

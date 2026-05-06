@@ -1,22 +1,6 @@
 [
   {
-    "content": "Phase 4.2 - Single-asset deep link on /inspection",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 4.3 - Approving Supervisor Dashboard",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 4.4 - Reporting Officer Dashboard",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 4.5 - Superadmin Dashboard redesign",
-    "status": "completed"
-  },
-  {
-    "content": "Inspection History role-scoping (Supervisor / ASUP / RO scoped server-side)",
+    "content": "All P1 + P2 + P3 tasks completed",
     "status": "completed"
   }
 ]
