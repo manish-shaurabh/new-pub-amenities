@@ -92,12 +92,31 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 - Per-incident breakdown for Supervisor
 - Supervisor comparison by date range for RO
 
-### Phase 5 — Remarks Thread (P2)
-- remarks_log[] on orange list documents
-- Role-typed entries (defect_report, progress_update, instruction, etc.)
-- POST /api/orange-list/{id}/remarks endpoint
-- UI: expandable thread on each defect card
+### Phase 5 — Threaded Remarks System (DONE — May 2026)
+- New collections: `remarks`, `remark_tags`
+- New router `/app/backend/routers/remarks.py`:
+  - `GET /api/orange-list/{id}/remarks` — full thread w/ read_only + archival flags (60-day TTL after approval)
+  - `POST /api/orange-list/{id}/remarks` — immutable post; types: note / observation / escalation; 300-char limit (Pydantic)
+  - `GET /api/remarks/tags` (+ POST/PUT/DELETE — admin/superadmin only) — dynamic tag master
+- Default tags seeded on startup: spare_pending, work_order (requires_ref), escalated, under_observation, awaiting_contractor
+- Permissions per type:
+  - note → SUP/ASUP/RO/Admin/Superadmin
+  - observation → ASUP/RO/Admin/Superadmin
+  - escalation → all roles
+- Auto-remarks logged via `add_auto_remark()` hooks on:
+  - inspection submit (defect_report + rectification)
+  - orange_list mark_working (rectification)
+  - orange_list approve_working (approval)
+  - orange_list reject_working (rejection)
+- Notification fanout: note→ASUP+RO, observation→SUP+ASUP, escalation→SUP+ASUP+RO (scoped to asset's station/dept)
+- Frontend:
+  - `RemarksThread.js` — expandable thread + composer (300-char counter, type/tag select, work_order ref input, one-time confirmation dialog)
+  - `RemarkTagsManager.js` — admin Tags tab CRUD UI
+  - `OrangeListPanel.js` + `OrangeListPage.js` — "Remarks" toggle on each defect row
+  - `AdminPage.js` — new "Tags" tab
+- Tested via `testing_agent_v3_fork` (iteration_13.json): 18/18 backend, 100% on critical UI flows
 
 ### Future
 - SMS/WhatsApp notification integration (infrastructure present, needs API keys)
 - Profile page: Schedule Summary tab
+- Phase 4 Extensions — Hierarchical Analytics (3-tier drilldown, FY benchmarks, zero-defect celebration, orphan detection)
