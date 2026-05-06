@@ -9,6 +9,7 @@ import OrangeListPage from './pages/OrangeListPage';
 import AdminPage from './pages/AdminPage';
 import InspectionHistoryPage from './pages/InspectionHistoryPage';
 import SchedulesPage from './pages/SchedulesPage';
+import NotificationsPage from './pages/NotificationsPage';
 import AppLayout from './components/AppLayout';
 import './App.css';
 
@@ -71,6 +72,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <AppLayout>
             <SchedulesPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/notifications" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <NotificationsPage />
           </AppLayout>
         </ProtectedRoute>
       } />

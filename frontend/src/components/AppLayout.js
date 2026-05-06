@@ -26,6 +26,7 @@ const navItems = [
   { path: '/inspection-history', label: 'Inspection History', icon: History, roles: 'all' },
   { path: '/orange-list', label: 'Orange List', icon: AlertTriangle, roles: ['superadmin', 'admin', 'reporting_officer'] },
   { path: '/schedules', label: 'Schedules', icon: Calendar, roles: 'all' },
+  { path: '/notifications', label: 'Notifications', icon: Bell, roles: 'all' },
   { path: '/admin', label: 'Admin Panel', icon: Settings, roles: ['superadmin', 'admin'] },
 ];
 
@@ -94,7 +95,7 @@ export default function AppLayout({ children }) {
       >
         <item.icon className="h-4 w-4 flex-shrink-0" />
         <span>{item.label}</span>
-        {item.path === '/orange-list' && unreadCount > 0 && (
+        {item.path === '/notifications' && unreadCount > 0 && (
           <Badge variant="destructive" className="ml-auto text-[10px] px-1.5 py-0 h-5 animate-pulse-badge">
             {unreadCount}
           </Badge>
@@ -240,6 +241,18 @@ export default function AppLayout({ children }) {
                     })
                   )}
                 </ScrollArea>
+                <DropdownMenuSeparator />
+                <div className="p-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-center text-xs h-8"
+                    onClick={() => navigate('/notifications')}
+                    data-testid="topbar-notifications-view-all-button"
+                  >
+                    View all notifications
+                  </Button>
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
 

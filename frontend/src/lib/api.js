@@ -116,7 +116,25 @@ export const orangeListAPI = {
 // Notifications
 export const notificationsAPI = {
   list: (userId, unreadOnly) => api.get('/notifications', { params: { user_id: userId, unread_only: unreadOnly } }),
+  // Paginated list for the full Notifications page
+  listPaginated: (userId, options = {}) => {
+    const params = {
+      user_id: userId,
+      paginated: true,
+      page: options.page || 1,
+      page_size: options.pageSize || 20,
+    };
+    if (options.unreadOnly) params.unread_only = true;
+    if (options.search) params.search = options.search;
+    if (options.notificationType) params.notification_type = options.notificationType;
+    if (options.fromDate) params.from_date = options.fromDate;
+    if (options.toDate) params.to_date = options.toDate;
+    return api.get('/notifications', { params });
+  },
   markRead: (id) => api.post(`/notifications/${id}/read`),
+  markUnread: (id) => api.post(`/notifications/${id}/unread`),
+  delete: (id) => api.delete(`/notifications/${id}`),
+  deleteRead: (userId) => api.post(`/notifications/delete-read?user_id=${userId}`),
   markAllRead: (userId) => api.post(`/notifications/mark-all-read?user_id=${userId}`),
   unreadCount: (userId) => api.get(`/notifications/unread-count?user_id=${userId}`),
 };

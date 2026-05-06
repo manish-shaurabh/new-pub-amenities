@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { ClipboardCheck, Users, Calendar, ChevronDown, User, FileText, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
+import { toast } from 'sonner';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 
 export default function InspectionHistoryPage() {
@@ -51,6 +52,31 @@ export default function InspectionHistoryPage() {
         const asset = (assetsRes.data || []).find((a) => a._id === focusedAssetId);
         if (asset) {
           setAssetHistory({ id: asset._id, number: asset.asset_number });
+        }
+      }
+
+      // If URL deep-linked to a specific inspection, auto-open the
+      // inspection detail modal. We try to fetch the inspection directly
+      // (so it works even if it's not in the first 200 listed) but still
+      // respect server-side scoping.
+      if (focusedInspectionId) {
+        let inspDoc = (inspRes.data || []).find((i) => i._id === focusedInspectionId);
+        if (!inspDoc) {
+          try {
+            const r = await inspectionsAPI.get(focusedInspectionId);
+            inspDoc = r.data;
+          } catch (err) {
+            // Not found / not accessible
+            inspDoc = null;
+          }
+        }
+        if (inspDoc) {
+          // Open the inspection details modal in "all items" mode for deep links.
+          // We mark this so the dialog renders the full items list rather than
+          // a single asset-focused view.
+          setSelectedInspection({ ...inspDoc, _deepLinkAll: true });
+        } else {
+          toast.error('Inspection not found or you do not have access to it');
         }
       }
     } catch (e) {
@@ -361,6 +387,73 @@ export default function InspectionHistoryPage() {
                       <Badge key={idx} variant="outline">{p.name}</Badge>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {selectedInspection._deepLinkAll && selectedInspection.items?.length > 0 && (
+                <div className="border-t pt-4 space-y-3" data-testid="inspection-all-items-list">
+                  <p className="font-medium">All Asset Items ({selectedInspection.items.length})</p>
+                  {selectedInspection.items.map((item, idx) => {
+                    const asset = assets.find((x) => x._id === item.asset_id);
+                    return (
+                      <div key={idx} className="p-3 rounded-lg border bg-muted/20">
+                        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">
+                              {asset?.asset_number || `Asset ${idx + 1}`}
+                            </span>
+                            {asset?.asset_type_name && (
+                              <Badge variant="outline" className="text-[10px]">{asset.asset_type_name}</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {statusBadge(item.status)}
+                            {item.approval_status === 'approved' && (
+                              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">PASSED</Badge>
+                            )}
+                            {item.approval_status === 'rejected' && (
+                              <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">FAILED</Badge>
+                            )}
+                            {(item.approval_status === 'pending_approval' || (!item.approval_status && item.approval_status !== undefined)) && (
+                              <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">PENDING</Badge>
+                            )}
+                          </div>
+                        </div>
+                        {item.checklist_responses?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {item.checklist_responses.map((c, ci) => (
+                              <Badge key={ci} variant={c.status === 'pass' ? 'default' : 'destructive'} className="text-[10px]">
+                                {c.name}: {c.status}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        {item.remarks && (
+                          <p className="text-xs text-muted-foreground mb-1">
+                            <span className="font-medium">Remarks: </span>{item.remarks}
+                          </p>
+                        )}
+                        {item.reviewer_remarks && (
+                          <p className="text-xs text-muted-foreground">
+                            <span className="font-medium">Reviewer: </span>{item.reviewer_remarks}
+                          </p>
+                        )}
+                        {item.photo_urls?.length > 0 && (
+                          <div className="grid grid-cols-4 gap-1.5 mt-2">
+                            {item.photo_urls.map((url, pi) => (
+                              <div key={pi} className="aspect-square rounded overflow-hidden border">
+                                <img
+                                  src={`${process.env.REACT_APP_BACKEND_URL}${url}`}
+                                  alt={`Photo ${pi + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

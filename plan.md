@@ -24,10 +24,15 @@
     - Actionable “My Tasks” and approvals queue
   - Reporting:
     - Print-friendly inspection report including all remarks + photos
+  - Notifications:
+    - Bell dropdown (done)
+    - **Full Notifications page** with pagination + filters and deep links (planned)
 - Ensure the core workflow is proven end-to-end:
   - inspection submit → items pending approval → Pass applies effects → defect aging continues correctly
   - Fail keeps previous effective state and logs gap time
 - Reduce recurring UI regressions by standardizing Shadcn `<Select>` placeholder handling (**never use empty string values**).
+- Improve maintainability and scalability:
+  - **Refactor backend by splitting `server.py` into routers** while preserving route paths, `/api` prefix behavior, dependencies, and helper functions.
 
 ---
 
@@ -305,6 +310,7 @@ Delivered:
 - Frontend `InspectionHistoryPage` passes `for_user_id` for non-superadmin/admin roles.
 - Enhancement (done): Inspection History UI renders **Pass/Fail/Pending** badges per item (based on `approval_status`) and shows reviewer remarks.
 - Enhancement (done): Inspection History supports deep-linking `?asset_id=` (used by notifications).
+- Enhancement (planned): implement deep-link focus behavior for `?inspection_id=`.
 
 ---
 
@@ -316,7 +322,7 @@ Delivered:
 - Notifications are marked read on click.
 - Deep link behavior:
   - `related_entity_type=orange_list|asset` → opens `/inspection-history?asset_id=...`
-  - `related_entity_type=inspection` → opens `/inspection-history?inspection_id=...` (reserved)
+  - `related_entity_type=inspection` → opens `/inspection-history?inspection_id=...` (reserved; pending focus behavior)
 - Note: server-side notification targeting already restricts notifications to relevant roles/stations/departments.
 
 ---
@@ -349,14 +355,60 @@ Delivered:
 
 ---
 
+### Phase 6 — Notifications Page + Deep-Link Focus + Backend Router Refactor 🚧 IN PROGRESS
+**Goal:** Improve operational usability (notifications discoverability and deep links) and improve backend maintainability.
+
+#### Phase 6.1 — Full Notifications Page (new route) 🚧 IN PROGRESS
+Scope:
+- Add a dedicated **Notifications** page/route (e.g. `/notifications`) accessible to all authenticated roles.
+- Features:
+  - Pagination (e.g. 20/page)
+  - Filters: read/unread, type, date range
+  - Search by title/message text (if supported)
+  - Bulk actions: mark all read (and optional delete if desired)
+  - Click notification → mark read → deep link to relevant view:
+    - `asset` / `orange_list` → `/inspection-history?asset_id=...`
+    - `inspection` → `/inspection-history?inspection_id=...`
+- Backend changes expected:
+  - Extend `GET /api/notifications` to support pagination/filters (while preserving existing behavior for dropdown usage).
+  - Add safe defaults and indexes if needed for large datasets.
+
+#### Phase 6.2 — Implement `?inspection_id=` deep-link focus on Inspection History 🚧 IN PROGRESS
+Scope:
+- When landing on `/inspection-history?inspection_id=...`:
+  - Auto-open the relevant inspection detail modal (and, if needed, the containing asset collapsible section).
+  - Ensure it works with role-scoped `for_user_id` behavior (i.e., user can only open inspections they are allowed to see).
+  - Fallback behavior if inspection not found / not in scope: show a user-friendly message.
+
+#### Phase 6.3 — Refactor backend by splitting `/app/backend/server.py` into routers 🚧 IN PROGRESS
+Scope:
+- Split into multiple router modules for maintainability, while strictly preserving:
+  - All existing route paths and HTTP methods (including `/api/...` paths)
+  - Auth/dependency behavior and helper utilities (e.g., `serialize_doc` usage)
+  - CORS middleware and static uploads mounting
+- Proposed router modules:
+  - `auth.py`, `users.py`, `assets.py`, `inspections.py`, `schedules.py`, `dashboards.py`, `analytics.py`, `notifications.py`, `admin.py`, `uploads.py`, plus `meta/health.py` and `meta/audit.py` (exact split flexible).
+- Keep `server.py` as the entry point:
+  - app creation + CORS + static files + `include_router(...)` only.
+
+#### Phase 6.4 — Testing & verification for Phase 6 🚧 IN PROGRESS
+Testing approach (per latest instruction: “use both”):
+- Backend:
+  - Run existing backend script tests (e.g. `test_core.py` if applicable) and perform quick API smoke tests for key routes.
+  - Confirm that all endpoints still respond under the same paths post-refactor.
+- Frontend:
+  - UI smoke tests using the app:
+    - Notifications dropdown still works
+    - New Notifications page loads, filters/pagination work
+    - Clicking a notification deep-links correctly
+    - `?inspection_id=` opens inspection details
+
+---
+
 ## Next Actions (Optional / Future)
-1. **Full Notifications page** (separate route) for searching/filtering/pagination if desired.
-2. **Inspection History enhancements**:
-   - Implement deep-link `inspection_id` focus behavior (currently only `asset_id` is auto-focused).
-3. **Hardening**:
-   - Split `server.py` into routers for maintainability.
-   - Add pagination for very large datasets (inspections, assets, orange list).
-   - Add unit tests for approval edge cases.
+1. **Integrate real SMS/WhatsApp provider** (adapter infrastructure exists; pending API keys).
+2. **Pagination for other large datasets** (inspections, assets, orange list) if performance requires.
+3. Add unit tests for approval edge cases and schedule computations.
 
 ---
 
@@ -375,7 +427,13 @@ Delivered:
   - Fail preserves defect aging (no state applied) and gap is audit logged.
 - Scoping:
   - Each stakeholder sees only assigned stations/departments/assets in dashboard, notifications, and inspection history.
+- Notifications:
+  - Dropdown remains functional (quick view).
+  - **Full Notifications page** supports pagination/filters and deep links.
+  - `?inspection_id=` deep links open the correct inspection details when in scope.
 - Reporting:
   - Printable inspection report is available after submission and from inspection history.
+- Maintainability:
+  - Backend is modularized into routers with no route regressions.
 - Stability:
   - No Shadcn Select empty-string regressions (`value=""` not used).

@@ -1,6 +1,38 @@
 [
   {
-    "content": "All P1 + P2 + P3 tasks completed",
+    "content": "Backend: Extend GET /api/notifications with pagination, search, type filter; add bulk delete-read endpoint",
     "status": "completed"
+  },
+  {
+    "content": "Frontend: Create NotificationsPage.js with pagination, filters, search, bulk actions",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: Add /notifications route in App.js + sidebar nav + 'View All' link in bell dropdown",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: Implement ?inspection_id= deep-link focus on InspectionHistoryPage (auto-expand, highlight, scroll)",
+    "status": "completed"
+  },
+  {
+    "content": "Backend: Split server.py into routers",
+    "status": "completed"
+  },
+  {
+    "content": "Backend: Verify all routes work after refactor (curl smoke tests)",
+    "status": "completed"
+  },
+  {
+    "content": "UI sanity check via screenshot",
+    "status": "completed"
+  },
+  {
+    "content": "Run automated testing (backend + frontend) via testing_agent",
+    "status": "in_progress"
+  },
+  {
+    "content": "Update plan.md Phase 6 to COMPLETED",
+    "status": "pending"
   }
 ]
