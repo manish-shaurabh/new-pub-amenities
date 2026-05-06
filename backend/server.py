@@ -37,6 +37,7 @@ from routers import (
     dashboards,
     analytics,
     profiles,
+    remarks,
 )
 
 app = FastAPI(title="Railway Asset Inspection Management System")
@@ -57,6 +58,13 @@ async def _ensure_indexes():
         )
     except Exception as e:
         print(f"[startup] could not create dept code index: {e}")
+
+    # Seed default remark tags (idempotent)
+    try:
+        from routers.remarks import _seed_default_tags
+        await _seed_default_tags()
+    except Exception as e:
+        print(f"[startup] could not seed remark tags: {e}")
 
 
 # CORS
@@ -93,6 +101,7 @@ for r in (
     dashboards.router,
     analytics.router,
     profiles.router,
+    remarks.router,
 ):
     app.include_router(r)
 

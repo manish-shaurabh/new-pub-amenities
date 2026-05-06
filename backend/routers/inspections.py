@@ -172,7 +172,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
         })
         if not existing:
             remarks_text = item.get("remarks") or "Marked defective during inspection"
-            await orange_list_collection.insert_one({
+            ins = await orange_list_collection.insert_one({
                 "asset_id": asset_id,
                 "inspection_id": inspection_id,
                 "reported_by": inspector_id,
@@ -185,6 +185,22 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                 "approved_at": None,
                 "created_at": datetime.utcnow()
             })
+            new_orange_list_id = str(ins.inserted_id)
+            # Auto-log first remark (defect_report)
+            try:
+                from routers.remarks import add_auto_remark
+                inspector = await users_collection.find_one({"_id": ObjectId(inspector_id)}) if inspector_id else None
+                await add_auto_remark(
+                    orange_list_id=new_orange_list_id,
+                    asset_id=asset_id,
+                    type="defect_report",
+                    text=remarks_text[:300],
+                    author_id=inspector_id,
+                    author_name=(inspector.get("name") if inspector else "Inspector"),
+                    author_role=(inspector.get("role") if inspector else None),
+                )
+            except Exception as e:
+                print(f"[inspections] auto-remark (defect_report) failed: {e}")
 
         # Notify supervisors / ROs / ASUPs
         asset = await assets_collection.find_one({"_id": ObjectId(asset_id)})
@@ -248,6 +264,21 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                         "inspection_id_rectified": inspection_id,
                     }}
                 )
+                # Auto-log rectification remark
+                try:
+                    from routers.remarks import add_auto_remark
+                    inspector_doc = await users_collection.find_one({"_id": ObjectId(inspector_id)}) if inspector_id else None
+                    await add_auto_remark(
+                        orange_list_id=str(open_entry["_id"]),
+                        asset_id=asset_id,
+                        type="rectification",
+                        text=(item.get("remarks") or "Marked working during inspection")[:300],
+                        author_id=inspector_id,
+                        author_name=(inspector_doc.get("name") if inspector_doc else "Inspector"),
+                        author_role=(inspector_doc.get("role") if inspector_doc else None),
+                    )
+                except Exception as e:
+                    print(f"[inspections] auto-remark (rectification) failed: {e}")
 
             await assets_collection.update_one(
                 {"_id": ObjectId(asset_id)},

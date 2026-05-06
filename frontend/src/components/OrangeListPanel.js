@@ -20,8 +20,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle, Clock, RefreshCw, CalendarIcon, XCircle, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, RefreshCw, CalendarIcon, XCircle, Wrench, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
+import RemarksThread from './RemarksThread';
 
 export default function OrangeListPanel({ userId, mode = 'sup' }) {
   const { user } = useAuth();
@@ -34,6 +35,7 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
   const [markedWorkingDate, setMarkedWorkingDate] = useState(null);
   const [markedWorkingTime, setMarkedWorkingTime] = useState('');
   const [activeTab, setActiveTab] = useState(mode === 'asup' ? 'yellow' : 'orange');
+  const [expanded, setExpanded] = useState({}); // { [itemId]: true } for remarks thread
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -137,8 +139,10 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
   const ItemRow = ({ item }) => {
     const isDefective = item.status === 'defective';
     const isPending = item.status === 'pending_approval';
+    const isOpen = !!expanded[item._id];
     return (
-      <div className="flex items-center justify-between px-3 py-2.5 border-b last:border-0 gap-3">
+      <div className="border-b last:border-0">
+        <div className="flex items-center justify-between px-3 py-2.5 gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`h-8 w-8 rounded-md flex items-center justify-center flex-shrink-0 ${
             item.list_type === 'red' ? 'bg-red-50 text-red-600' :
@@ -179,7 +183,18 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
             )}
           </div>
         </div>
-        <div className="flex gap-1.5 flex-shrink-0">
+        <div className="flex gap-1.5 flex-shrink-0 items-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs px-2"
+            onClick={() => setExpanded(prev => ({ ...prev, [item._id]: !prev[item._id] }))}
+            data-testid={`panel-remarks-toggle-${item._id}`}
+          >
+            <MessageSquare className="h-3 w-3 mr-1" />
+            Remarks
+            {isOpen ? <ChevronUp className="h-3 w-3 ml-0.5" /> : <ChevronDown className="h-3 w-3 ml-0.5" />}
+          </Button>
           {mode === 'sup' && isDefective && (
             <Button
               size="sm"
@@ -212,6 +227,12 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
             </>
           )}
         </div>
+        </div>
+        {isOpen && (
+          <div className="px-3 pb-3 pt-1 bg-muted/20">
+            <RemarksThread orangeListId={item._id} />
+          </div>
+        )}
       </div>
     );
   };

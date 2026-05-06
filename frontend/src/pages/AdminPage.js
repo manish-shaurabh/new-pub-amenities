@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI } from '../lib/api';
+import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI, remarksAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -13,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase } from 'lucide-react';
+import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase, Tag } from 'lucide-react';
+import RemarkTagsManager from '../components/RemarkTagsManager';
 
 // Import the user management components from the old UsersPage
 const roleLabels = {
@@ -505,7 +506,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-8">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-9">
           <TabsTrigger value="departments" data-testid="tab-departments"><Briefcase className="h-4 w-4 mr-2" /> Depts</TabsTrigger>
           <TabsTrigger value="stations"><Building2 className="h-4 w-4 mr-2" /> Stations</TabsTrigger>
           <TabsTrigger value="locations"><MapPin className="h-4 w-4 mr-2" /> Locations</TabsTrigger>
@@ -514,6 +515,7 @@ export default function AdminPage() {
           <TabsTrigger value="link-supervisors"><Link className="h-4 w-4 mr-2" /> Link</TabsTrigger>
           <TabsTrigger value="personnel-map"><TableIcon className="h-4 w-4 mr-2" /> Personnel Map</TabsTrigger>
           <TabsTrigger value="transfer"><ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer</TabsTrigger>
+          <TabsTrigger value="tags" data-testid="tab-tags"><Tag className="h-4 w-4 mr-2" /> Tags</TabsTrigger>
         </TabsList>
 
         {/* DEPARTMENTS TAB */}
@@ -1064,6 +1066,11 @@ export default function AdminPage() {
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* TAGS TAB */}
+        <TabsContent value="tags" className="space-y-3">
+          <RemarkTagsManager />
         </TabsContent>
       </Tabs>
 

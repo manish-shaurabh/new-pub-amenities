@@ -13,9 +13,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { Calendar } from '../components/ui/calendar';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle, Clock, FileText, FileSpreadsheet, RefreshCw, CalendarIcon, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, FileText, FileSpreadsheet, RefreshCw, CalendarIcon, XCircle, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 import Pagination from '../components/Pagination';
+import RemarksThread from '../components/RemarksThread';
 
 const PAGE_SIZE = 25;
 
@@ -33,6 +34,7 @@ export default function OrangeListPage() {
   const [submitting, setSubmitting] = useState(false);
   const [markedWorkingDate, setMarkedWorkingDate] = useState(null);
   const [markedWorkingTime, setMarkedWorkingTime] = useState('');
+  const [expanded, setExpanded] = useState({});
 
   // Role-scoped fetch: only superadmin/admin see global; everyone else scopes to their role.
   const isScoped = user && !['superadmin', 'admin'].includes(user.role);
@@ -205,6 +207,16 @@ export default function OrangeListPage() {
             </div>
           </div>
           <div className="flex gap-2 flex-shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setExpanded(prev => ({ ...prev, [item._id]: !prev[item._id] }))}
+              data-testid={`orange-list-remarks-toggle-${item._id}`}
+            >
+              <MessageSquare className="h-4 w-4 mr-1" />
+              Remarks
+              {expanded[item._id] ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+            </Button>
             {item.status === 'defective' && (
               <Button
                 size="sm"
@@ -236,6 +248,11 @@ export default function OrangeListPage() {
             )}
           </div>
         </div>
+        {expanded[item._id] && (
+          <div className="mt-3 pt-3 border-t">
+            <RemarksThread orangeListId={item._id} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );

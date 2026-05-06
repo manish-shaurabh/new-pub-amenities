@@ -294,6 +294,21 @@ async def mark_working(item_id: str, request: MarkWorkingRequest):
         "created_at": datetime.utcnow()
     })
 
+    # Auto-log remark
+    try:
+        from routers.remarks import add_auto_remark
+        await add_auto_remark(
+            orange_list_id=item_id,
+            asset_id=item.get("asset_id"),
+            type="rectification",
+            text=(request.remarks or "Marked working").strip()[:300],
+            author_id=request.marked_by,
+            author_name=marker_name,
+            author_role=(marker.get("role") if marker else None),
+        )
+    except Exception as e:
+        print(f"[orange_list] auto-remark (mark_working) failed: {e}")
+
     updated = await orange_list_collection.find_one({"_id": ObjectId(item_id)})
     return serialize_doc(updated)
 
@@ -401,6 +416,21 @@ async def reject_working(item_id: str, request: RejectWorkingRequest):
         "created_at": now
     })
 
+    # Auto-log remark
+    try:
+        from routers.remarks import add_auto_remark
+        await add_auto_remark(
+            orange_list_id=item_id,
+            asset_id=item.get("asset_id"),
+            type="rejection",
+            text=(request.remarks or "Rectification rejected").strip()[:300],
+            author_id=request.rejected_by,
+            author_name=rejector.get("name") if rejector else "ASUP",
+            author_role=rejector.get("role") if rejector else None,
+        )
+    except Exception as e:
+        print(f"[orange_list] auto-remark (reject_working) failed: {e}")
+
     updated = await orange_list_collection.find_one({"_id": ObjectId(item_id)})
     return serialize_doc(updated)
 
@@ -507,6 +537,21 @@ async def approve_working(item_id: str, request: ApproveWorkingRequest):
                     "created_at": datetime.utcnow()
                 })
     
+    # Auto-log remark
+    try:
+        from routers.remarks import add_auto_remark
+        await add_auto_remark(
+            orange_list_id=item_id,
+            asset_id=item.get("asset_id"),
+            type="approval",
+            text=(request.remarks or "Rectification approved").strip()[:300],
+            author_id=request.approved_by,
+            author_name=approver.get("name") if approver else "ASUP",
+            author_role=approver.get("role") if approver else None,
+        )
+    except Exception as e:
+        print(f"[orange_list] auto-remark (approve_working) failed: {e}")
+
     updated = await orange_list_collection.find_one({"_id": ObjectId(item_id)})
     return serialize_doc(updated)
 

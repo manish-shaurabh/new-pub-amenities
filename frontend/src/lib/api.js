@@ -160,6 +160,24 @@ export const orangeListAPI = {
   rejectWorking: (id, data) => api.post(`/orange-list/${id}/reject-working`, data),
 };
 
+// Remarks (Phase 5 — threaded log)
+export const remarksAPI = {
+  listTags: (includeArchived = false) =>
+    api.get('/remarks/tags', { params: { include_archived: includeArchived } }),
+  createTag: (data, currentUserId) =>
+    api.post('/remarks/tags', data, { params: { current_user_id: currentUserId } }),
+  updateTag: (id, data, currentUserId) =>
+    api.put(`/remarks/tags/${id}`, data, { params: { current_user_id: currentUserId } }),
+  deleteTag: (id, currentUserId) =>
+    api.delete(`/remarks/tags/${id}`, { params: { current_user_id: currentUserId } }),
+  listThread: (orangeListId) =>
+    api.get(`/orange-list/${orangeListId}/remarks`),
+  postRemark: (orangeListId, data, currentUserId) =>
+    api.post(`/orange-list/${orangeListId}/remarks`, data, {
+      params: { current_user_id: currentUserId },
+    }),
+};
+
 // Notifications
 export const notificationsAPI = {
   list: (userId, unreadOnly) => api.get('/notifications', { params: { user_id: userId, unread_only: unreadOnly } }),
