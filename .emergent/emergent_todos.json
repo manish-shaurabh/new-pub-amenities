@@ -12,7 +12,7 @@
     "status": "completed"
   },
   {
-    "content": "Frontend: Implement ?inspection_id= deep-link focus on InspectionHistoryPage (auto-expand, highlight, scroll)",
+    "content": "Frontend: Implement ?inspection_id= deep-link focus on InspectionHistoryPage",
     "status": "completed"
   },
   {
@@ -29,10 +29,10 @@
   },
   {
     "content": "Run automated testing (backend + frontend) via testing_agent",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Update plan.md Phase 6 to COMPLETED",
-    "status": "pending"
+    "status": "completed"
   }
 ]
