@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Input } from '../components/ui/input';
@@ -347,6 +347,13 @@ export default function OrangeListPage() {
                actionDialog?.type === 'approve' ? 'Approve Working Status' :
                'Reject Rectification'}
             </DialogTitle>
+            <DialogDescription>
+              {actionDialog?.type === 'mark_working'
+                ? 'Record when the asset was fixed and submit for ASUP approval.'
+                : actionDialog?.type === 'approve'
+                ? 'Confirm field verification that the asset is working.'
+                : 'Reject this rectification claim — the asset returns to defective status.'}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="p-3 bg-muted rounded-lg">

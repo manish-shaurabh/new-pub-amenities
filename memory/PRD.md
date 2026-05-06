@@ -51,13 +51,16 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## Pending Phases (Backlog)
 
-### Phase 2 — Inspection & Approval Workflow (P0 next)
-- Remove per-item ASUP approval gate from inspections
-- Auto-apply effects on submission
+### Phase 2 — Inspection & Approval Workflow (DONE — May 2026)
+- Removed per-item ASUP approval gate from inspections; auto-applied effects on submission
 - Date/time entry (with defaults) for both mark-defective and mark-working events
-- When defective asset marked OK during inspection → auto-trigger Yellow List
-- Add Reject-Working endpoint
-- Rename "Pending" tab → "Yellow List"
+- When defective asset marked OK during inspection → auto-triggers Yellow List (pending_approval)
+- Added Reject-Working endpoint (`POST /api/orange-list/{id}/reject-working`)
+- Renamed "Pending" tab → "Yellow List" in OrangeListPage
+- Added `marked_working_at` date/time picker in Mark Working dialog
+- Added Reject button (ASUP only) in Yellow List tab
+- Added `rejectWorking` API method in api.js
+- All tested: 16/16 backend tests pass, 100% frontend flows verified (iteration_8.json)
 
 ### Phase 3 — Orange List Panel in Role Dashboards (P1)
 - Reusable OrangeListPanel component

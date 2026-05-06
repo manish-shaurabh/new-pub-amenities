@@ -655,7 +655,7 @@ export default function InspectionPage() {
                     <div className="flex gap-2">
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button variant="outline" size="sm" className="flex-1 justify-start text-left font-normal">
+                          <Button variant="outline" size="sm" className="flex-1 justify-start text-left font-normal" data-testid="rectified-on-date-btn">
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {item.rectified_on_date
                               ? format(new Date(item.rectified_on_date), 'dd MMM yyyy')
@@ -678,6 +678,7 @@ export default function InspectionPage() {
                         value={item.rectified_on_time}
                         onChange={(e) => updateInspectionItem(item.asset_id, 'rectified_on_time', e.target.value)}
                         className="w-[130px]"
+                        data-testid="rectified-on-time-input"
                       />
                     </div>
                   </div>
