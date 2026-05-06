@@ -53,6 +53,68 @@ def _coerce_dt(v) -> Optional[datetime]:
     return None
 
 
+def _fy_window(now: Optional[datetime] = None):
+    """Return (start, end) of the current Indian financial year (Apr 1 → Mar 31).
+    `end` is the *exclusive* upper bound (Apr 1 of next FY) so callers can use
+    `start <= ds < end` checks. The displayed label uses inclusive Mar 31.
+    """
+    now = now or datetime.utcnow()
+    if now.month >= 4:
+        start_year = now.year
+    else:
+        start_year = now.year - 1
+    start = datetime(start_year, 4, 1)
+    end = datetime(start_year + 1, 4, 1)
+    return start, end
+
+
+def _fy_label(start: datetime) -> str:
+    """e.g. FY 25-26 for window starting Apr 1 2025."""
+    return f"FY {start.year % 100:02d}-{(start.year + 1) % 100:02d}"
+
+
+async def _dept_fy_avg_repair_seconds(dept_id: str,
+                                       fy_start: datetime,
+                                       fy_end: datetime) -> int:
+    """Average repair time (seconds) across ALL resolved defects of all assets
+    in the given department during the FY window.
+
+    Uses Option A timing (marked_working_at − defective_since) and weights every
+    incident equally regardless of which supervisor handled it. Returns 0 when
+    no resolved defects exist in the window.
+    """
+    if not dept_id:
+        return 0
+    type_docs = await asset_types_collection.find(
+        {"department_id": dept_id}, {"_id": 1}
+    ).to_list(2000)
+    type_ids = [str(t["_id"]) for t in type_docs]
+    if not type_ids:
+        return 0
+    asset_docs = await assets_collection.find(
+        {"asset_type_id": {"$in": type_ids}}, {"_id": 1}
+    ).to_list(50000)
+    asset_ids = [str(a["_id"]) for a in asset_docs]
+    if not asset_ids:
+        return 0
+    records = await orange_list_collection.find(
+        {"asset_id": {"$in": asset_ids}}
+    ).to_list(200000)
+
+    durations = []
+    for rec in records:
+        ds = _coerce_dt(rec.get("defective_since"))
+        mw = _coerce_dt(rec.get("marked_working_at"))
+        if not ds or not mw or mw <= ds:
+            continue
+        if ds < fy_start or ds >= fy_end:
+            continue
+        durations.append(int((mw - ds).total_seconds()))
+    if not durations:
+        return 0
+    return int(sum(durations) / len(durations))
+
+
 def _asset_performance(asset_records: list, user_id: str,
                        range_start: datetime, range_end: datetime) -> dict:
     """
@@ -144,6 +206,7 @@ async def _build_comparison_summary(sup_docs: list,
     """
     Build performance summary rows for a list of supervisor documents.
     Batches asset + OL queries for efficiency.
+    Each row also carries the supervisor's department FY avg-repair benchmark.
     """
     if not sup_docs:
         return []
@@ -156,6 +219,13 @@ async def _build_comparison_summary(sup_docs: list,
             {"_id": {"$in": [ObjectId(x) for x in dept_ids]}}, {"_id": 1, "name": 1}
         ).to_list(200):
             dept_name_map[str(d["_id"])] = d.get("name", "")
+
+    # Compute FY benchmark once per department (used by every row)
+    fy_start, fy_end = _fy_window()
+    fy_label = _fy_label(fy_start)
+    dept_fy_benchmark: dict = {}
+    for did in dept_ids:
+        dept_fy_benchmark[did] = await _dept_fy_avg_repair_seconds(did, fy_start, fy_end)
 
     # Per-supervisor: get assets
     sup_to_assets: dict = {}
@@ -199,11 +269,14 @@ async def _build_comparison_summary(sup_docs: list,
         total_possible = period_secs * max(1, len(assets))
         pct_f = max(0.0, min(100.0, (1 - total_defective_secs / total_possible) * 100))
 
+        dept_id = s.get("department_id") or ""
+        bench_secs = dept_fy_benchmark.get(dept_id, 0)
         result.append({
             "_id": sid,
             "name": s.get("name"),
             "employee_id": s.get("employee_id"),
-            "department_name": dept_name_map.get(s.get("department_id", ""), ""),
+            "department_name": dept_name_map.get(dept_id, ""),
+            "department_id": dept_id,
             "summary": {
                 "total_assets": len(assets),
                 "total_defects": total_defects,
@@ -211,6 +284,13 @@ async def _build_comparison_summary(sup_docs: list,
                 "avg_repair_hours": round(avg_repair / 3600, 2),
                 "pct_functional": round(pct_f, 2),
                 "rejection_count": total_rejections,
+                "zero_defect": total_defects == 0,
+            },
+            "benchmark": {
+                "scope": "department",
+                "fy_label": fy_label,
+                "fy_avg_repair_seconds": bench_secs,
+                "fy_avg_repair_hours": round(bench_secs / 3600, 2),
             },
         })
 
@@ -582,3 +662,197 @@ async def asset_analytics(asset_id: str):
         raise HTTPException(status_code=404, detail="Asset not found")
     history = await orange_list_collection.find({"asset_id": asset_id}).to_list(10000)
     return _compute_asset_metrics(asset, history, datetime.utcnow())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 4 Extensions — Admin rollup + coverage gaps
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/api/analytics/admin/rollup")
+async def admin_rollup_matrix(
+    from_date: Optional[str] = Query(None),
+    to_date: Optional[str] = Query(None),
+):
+    """Station-row × Department-column performance rollup matrix.
+
+    Each cell aggregates across every active SUP at that (station, department)
+    intersection. A cell with `sup_count = 0` indicates an orphaned slot
+    (no active supervisor assigned).
+    """
+    now = datetime.utcnow()
+    range_end = _parse_dt_param(to_date, now)
+    range_start = _parse_dt_param(from_date, now - timedelta(days=30))
+
+    # Load all stations & departments (axes)
+    stations = await stations_collection.find({}).to_list(2000)
+    departments = await departments_collection.find({}).to_list(500)
+    stations.sort(key=lambda s: (s.get("name") or "").lower())
+    departments.sort(key=lambda d: (d.get("name") or "").lower())
+
+    station_axis = [{"_id": str(s["_id"]), "name": s.get("name", "")} for s in stations]
+    dept_axis = [{"_id": str(d["_id"]), "name": d.get("name", "")} for d in departments]
+
+    # Active SUPs grouped by (station, dept)
+    sup_docs = await users_collection.find({
+        "role": UserRole.SUPERVISOR.value, "is_active": True,
+    }).to_list(5000)
+
+    by_cell: dict = {}  # (station_id, dept_id) -> [sup_ids]
+    for s in sup_docs:
+        dept_id = s.get("department_id")
+        for st_id in (s.get("assigned_stations") or []):
+            by_cell.setdefault((st_id, dept_id), []).append(str(s["_id"]))
+
+    # Build the comparison summary once for ALL SUPs to amortise cost
+    all_sup_summary = await _build_comparison_summary(sup_docs, range_start, range_end)
+    sup_by_id = {row["_id"]: row for row in all_sup_summary}
+
+    # FY benchmark per dept (only computed where it's needed)
+    fy_start, fy_end = _fy_window(now)
+    fy_label = _fy_label(fy_start)
+
+    matrix = []
+    for st in station_axis:
+        row = {"station_id": st["_id"], "station_name": st["name"], "cells": []}
+        for dept in dept_axis:
+            sup_ids = by_cell.get((st["_id"], dept["_id"]), [])
+            sup_count = len(sup_ids)
+            if sup_count == 0:
+                row["cells"].append({
+                    "station_id": st["_id"],
+                    "department_id": dept["_id"],
+                    "sup_count": 0,
+                    "asset_count": 0,
+                    "total_defects": 0,
+                    "avg_repair_seconds": 0,
+                    "avg_repair_hours": 0.0,
+                    "pct_functional": None,
+                    "rejection_count": 0,
+                    "zero_defect": False,
+                    "is_orphan": True,
+                })
+                continue
+
+            # Aggregate per-cell (we only need station-scoped slice of each SUP, but
+            # for simplicity we use the SUP's own summary row — it already accounts
+            # for all the SUP's stations. Where a SUP serves multiple stations we
+            # split assets evenly only for the asset_count display; metric averages
+            # are still meaningful because the SUP is the same person on both rows.)
+            total_assets = sum(sup_by_id.get(sid, {}).get("summary", {}).get("total_assets", 0) for sid in sup_ids)
+            total_defects = sum(sup_by_id.get(sid, {}).get("summary", {}).get("total_defects", 0) for sid in sup_ids)
+            rejections = sum(sup_by_id.get(sid, {}).get("summary", {}).get("rejection_count", 0) for sid in sup_ids)
+            avg_h_list = [sup_by_id.get(sid, {}).get("summary", {}).get("avg_repair_hours", 0) for sid in sup_ids if sup_by_id.get(sid, {}).get("summary", {}).get("avg_repair_hours", 0) > 0]
+            avg_h = round(sum(avg_h_list) / len(avg_h_list), 2) if avg_h_list else 0.0
+            pct_list = [sup_by_id.get(sid, {}).get("summary", {}).get("pct_functional", 100.0) for sid in sup_ids]
+            pct_f = round(sum(pct_list) / len(pct_list), 2) if pct_list else 100.0
+
+            row["cells"].append({
+                "station_id": st["_id"],
+                "department_id": dept["_id"],
+                "sup_count": sup_count,
+                "sup_ids": sup_ids,
+                "asset_count": total_assets,
+                "total_defects": total_defects,
+                "avg_repair_seconds": int(avg_h * 3600),
+                "avg_repair_hours": avg_h,
+                "pct_functional": pct_f,
+                "rejection_count": rejections,
+                "zero_defect": total_defects == 0 and total_assets > 0,
+                "is_orphan": False,
+            })
+        matrix.append(row)
+
+    # Department FY benchmarks (computed once per dept regardless of station)
+    dept_benchmarks = {}
+    for dept in dept_axis:
+        secs = await _dept_fy_avg_repair_seconds(dept["_id"], fy_start, fy_end)
+        dept_benchmarks[dept["_id"]] = {
+            "fy_label": fy_label,
+            "fy_avg_repair_seconds": secs,
+            "fy_avg_repair_hours": round(secs / 3600, 2),
+        }
+
+    return {
+        "period": {"from": range_start.isoformat(), "to": range_end.isoformat()},
+        "fy": {"label": fy_label, "from": fy_start.isoformat(), "to": fy_end.isoformat()},
+        "stations": station_axis,
+        "departments": dept_axis,
+        "matrix": matrix,
+        "dept_benchmarks": dept_benchmarks,
+    }
+
+
+@router.get("/api/analytics/admin/coverage-gaps")
+async def admin_coverage_gaps():
+    """Detect orphaned (Station × Department) combinations missing role coverage.
+
+    Returns three lists:
+      missing_sup  : (station_id, dept_id) lacks an active SUP   — RED severity
+      missing_asup : station_id lacks an active ASUP             — AMBER severity
+      missing_ro   : (station_id, dept_id) lacks an active RO    — AMBER severity
+    """
+    stations = await stations_collection.find({}).to_list(2000)
+    departments = await departments_collection.find({}).to_list(500)
+    stn_name = {str(s["_id"]): s.get("name", "") for s in stations}
+    dept_name = {str(d["_id"]): d.get("name", "") for d in departments}
+
+    sups = await users_collection.find(
+        {"role": UserRole.SUPERVISOR.value, "is_active": True},
+        {"assigned_stations": 1, "department_id": 1},
+    ).to_list(5000)
+    sup_keys = set()
+    for s in sups:
+        for st in (s.get("assigned_stations") or []):
+            sup_keys.add((st, s.get("department_id")))
+
+    asups = await users_collection.find(
+        {"role": UserRole.APPROVING_SUPERVISOR.value, "is_active": True},
+        {"assigned_stations": 1},
+    ).to_list(2000)
+    asup_stations = set()
+    for a in asups:
+        for st in (a.get("assigned_stations") or []):
+            asup_stations.add(st)
+
+    ros = await users_collection.find(
+        {"role": UserRole.REPORTING_OFFICER.value, "is_active": True},
+        {"assigned_stations": 1, "department_id": 1},
+    ).to_list(2000)
+    ro_keys = set()
+    for r in ros:
+        for st in (r.get("assigned_stations") or []):
+            ro_keys.add((st, r.get("department_id")))
+
+    missing_sup = []
+    missing_ro = []
+    for st_id in stn_name:
+        for d_id in dept_name:
+            if (st_id, d_id) not in sup_keys:
+                missing_sup.append({
+                    "station_id": st_id, "station_name": stn_name[st_id],
+                    "department_id": d_id, "department_name": dept_name[d_id],
+                    "severity": "red",
+                })
+            if (st_id, d_id) not in ro_keys:
+                missing_ro.append({
+                    "station_id": st_id, "station_name": stn_name[st_id],
+                    "department_id": d_id, "department_name": dept_name[d_id],
+                    "severity": "amber",
+                })
+
+    missing_asup = [
+        {"station_id": st_id, "station_name": stn_name[st_id], "severity": "amber"}
+        for st_id in stn_name if st_id not in asup_stations
+    ]
+
+    return {
+        "missing_sup": missing_sup,
+        "missing_asup": missing_asup,
+        "missing_ro": missing_ro,
+        "totals": {
+            "missing_sup": len(missing_sup),
+            "missing_asup": len(missing_asup),
+            "missing_ro": len(missing_ro),
+        },
+    }
+

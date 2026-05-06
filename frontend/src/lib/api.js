@@ -229,6 +229,13 @@ export const analyticsAPI = {
   },
   approvingSupervisorList: (userId) => api.get(`/analytics/approving-supervisor/${userId}/supervisors`),
   asset: (assetId) => api.get(`/analytics/asset/${assetId}`),
+  adminRollup: (params = {}) => {
+    const p = new URLSearchParams();
+    if (params.fromDate) p.set('from_date', params.fromDate);
+    if (params.toDate) p.set('to_date', params.toDate);
+    return api.get(`/analytics/admin/rollup?${p.toString()}`);
+  },
+  adminCoverageGaps: () => api.get('/analytics/admin/coverage-gaps'),
 };
 
 export const approvalsAPI = {

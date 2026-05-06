@@ -5,7 +5,7 @@
  *   - ASUP/RO drill-down from comparison table
  *   - Admin "Performance Analytics" inline panel
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { analyticsAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { Card, CardContent } from './ui/card';
@@ -16,7 +16,7 @@ import { Label } from './ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { toast } from 'sonner';
-import { BarChart3, ChevronDown, RefreshCw, AlertTriangle, CheckCircle, Wrench } from 'lucide-react';
+import { BarChart3, ChevronDown, RefreshCw, AlertTriangle, CheckCircle, Wrench, Star, Layers, Building2 } from 'lucide-react';
 
 const fmt = (h) => {
   if (h === 0) return '—';
@@ -35,6 +35,7 @@ export default function SupervisorAnalyticsView({ supervisorId, compact = false 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [groupBy, setGroupBy] = useState('type'); // 'type' | 'station'
 
   const load = useCallback(async (isRefresh = false) => {
     if (!supervisorId) return;
@@ -58,6 +59,46 @@ export default function SupervisorAnalyticsView({ supervisorId, compact = false 
 
   const handleApply = () => load(true);
 
+  // Compute derived data BEFORE early returns to satisfy rules of hooks
+  const rawCategories = data?.categories || [];
+  const availableStations = data?.available_stations || [];
+  const availableLocations = data?.available_locations || [];
+  const showGroupToggle = availableStations.length > 1;
+
+  // Optionally re-group: by station → contains the original type-categories filtered to that station
+  const categories = useMemo(() => {
+    if (groupBy !== 'station' || !showGroupToggle) return rawCategories;
+    const byStation = {};
+    for (const cat of rawCategories) {
+      for (const asset of cat.assets) {
+        const sName = asset.station_name || 'Unknown station';
+        if (!byStation[sName]) {
+          byStation[sName] = { asset_type_id: `station-${sName}`, asset_type_name: sName, assets: [], _types: {} };
+        }
+        byStation[sName].assets.push(asset);
+        const tBucket = byStation[sName]._types[cat.asset_type_id] || (byStation[sName]._types[cat.asset_type_id] = []);
+        tBucket.push(asset);
+      }
+    }
+    return Object.values(byStation).map(grp => {
+      const a = grp.assets;
+      const repairs = a.map(x => x.avg_repair_seconds).filter(v => v > 0);
+      const avg = repairs.length ? Math.round(repairs.reduce((s, v) => s + v, 0) / repairs.length) : 0;
+      const pct = a.length ? +(a.reduce((s, x) => s + x.pct_functional, 0) / a.length).toFixed(2) : 100;
+      return {
+        asset_type_id: grp.asset_type_id,
+        asset_type_name: grp.asset_type_name,
+        asset_count: a.length,
+        defect_count: a.reduce((s, x) => s + x.defect_count, 0),
+        avg_repair_seconds: avg,
+        avg_repair_hours: +(avg / 3600).toFixed(2),
+        pct_functional: pct,
+        rejection_count: a.reduce((s, x) => s + x.rejection_count, 0),
+        assets: a,
+      };
+    }).sort((x, y) => x.asset_type_name.localeCompare(y.asset_type_name));
+  }, [rawCategories, groupBy, showGroupToggle]);
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -68,9 +109,8 @@ export default function SupervisorAnalyticsView({ supervisorId, compact = false 
 
   if (!data) return null;
 
-  const { summary, categories } = data;
-  const availableStations = data.available_stations || [];
-  const availableLocations = data.available_locations || [];
+  const summary = data.summary;
+  const overallZeroDefect = summary.total_defects === 0 && summary.total_assets > 0;
 
   return (
     <div className="space-y-4">
@@ -78,9 +118,13 @@ export default function SupervisorAnalyticsView({ supervisorId, compact = false 
       {!compact && (
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <p className="text-sm font-semibold">{data.user_name}</p>
+            <div className="flex items-center gap-1.5">
+              {overallZeroDefect && <Star className="h-4 w-4 text-amber-500 fill-amber-400" />}
+              <p className="text-sm font-semibold">{data.user_name}</p>
+            </div>
             <p className="text-xs text-muted-foreground">
               {data.employee_id} &middot; {data.department_name || 'Unknown dept'}
+              {overallZeroDefect && <span className="ml-2 text-emerald-600">· Zero defects in this period</span>}
             </p>
           </div>
           <Button
@@ -155,6 +199,24 @@ export default function SupervisorAnalyticsView({ supervisorId, compact = false 
         <Button size="sm" className="h-8 text-xs" onClick={handleApply} disabled={refreshing} data-testid="analytics-apply">
           Apply
         </Button>
+        {showGroupToggle && (
+          <div className="ml-auto flex items-center gap-1 bg-background rounded-md border p-0.5">
+            <button
+              onClick={() => setGroupBy('type')}
+              className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${groupBy === 'type' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
+              data-testid="analytics-group-type"
+            >
+              <Layers className="h-3 w-3" /> By Type
+            </button>
+            <button
+              onClick={() => setGroupBy('station')}
+              className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${groupBy === 'station' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
+              data-testid="analytics-group-station"
+            >
+              <Building2 className="h-3 w-3" /> By Station
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Summary stat cards */}

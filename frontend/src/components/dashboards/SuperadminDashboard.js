@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import {
   Box, Building2, Layers, Users, ShieldAlert, Wrench, BarChart3, ArrowRight,
   ArrowLeft, ChevronDown, AlertCircle, CheckCircle2, ChevronsUpDown, Check,
-  Filter, X, Search, ClipboardList, UserPlus, Boxes,
+  Filter, X, Search, ClipboardList, UserPlus, Boxes, TrendingUp,
 } from 'lucide-react';
 
 import { useAuth } from '../../lib/auth-context';
@@ -34,6 +34,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import { ScrollArea } from '../ui/scroll-area';
+import AdminPerformanceMatrix from '../AdminPerformanceMatrix';
 
 const HEALTH_COLORS = { working: '#0e7c6b', orange: '#f97316', red: '#dc2626' };
 
@@ -824,6 +825,7 @@ export default function SuperadminDashboard() {
           <TabsTrigger value="reporting-officers" data-testid="tab-reporting-officers">Reporting Officers</TabsTrigger>
           <TabsTrigger value="approving-supervisors" data-testid="tab-approving-supervisors">Approving Sup.</TabsTrigger>
           <TabsTrigger value="supervisors" data-testid="tab-supervisors">Supervisors</TabsTrigger>
+          <TabsTrigger value="performance" data-testid="tab-performance"><TrendingUp className="h-4 w-4 mr-2" /> Performance</TabsTrigger>
         </TabsList>
 
         {/* OVERVIEW */}
@@ -993,6 +995,10 @@ export default function SuperadminDashboard() {
                   onClick={() => viewAs(u._id)}
                 />
               ))}
+        </TabsContent>
+
+        <TabsContent value="performance" className="mt-4">
+          <AdminPerformanceMatrix />
         </TabsContent>
       </Tabs>
     </div>

@@ -15,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import {
   Box, BarChart3, Users, ChevronDown, ArrowLeft, ArrowRight,
-  CheckCircle2, Building2, Wrench, AlertCircle, AlertTriangle, TrendingUp,
+  CheckCircle2, Building2, Wrench, AlertCircle, AlertTriangle, TrendingUp, Star,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -469,6 +469,9 @@ function PerformanceComparisonTab({ userId, mode }) {
     </button>
   );
 
+  // Pull FY label from first row's benchmark (if any). All rows share the same FY window.
+  const fyLabel = supervisors[0]?.benchmark?.fy_label || '';
+
   if (drillSup) {
     return (
       <div className="space-y-4">
@@ -509,6 +512,11 @@ function PerformanceComparisonTab({ userId, mode }) {
           />
         </div>
         <Button size="sm" className="h-8 text-xs" onClick={load} disabled={loading}>Apply</Button>
+        {fyLabel && (
+          <p className="text-[11px] text-muted-foreground ml-auto">
+            Benchmark: <span className="font-medium">{fyLabel}</span> dept avg
+          </p>
+        )}
       </div>
 
       {loading ? (
@@ -521,9 +529,10 @@ function PerformanceComparisonTab({ userId, mode }) {
       ) : (
         <Card className="overflow-hidden">
           {/* Table header */}
-          <div className="grid grid-cols-[1fr_80px_80px_70px_60px_36px] gap-2 px-4 py-2.5 bg-muted/50 border-b text-xs text-muted-foreground font-medium">
+          <div className="grid grid-cols-[1fr_80px_80px_80px_70px_60px_36px] gap-2 px-4 py-2.5 bg-muted/50 border-b text-xs text-muted-foreground font-medium">
             <SortBtn col="name" label="Supervisor" />
             <SortBtn col="repair" label="Avg Repair" />
+            <span className="text-xs whitespace-nowrap">Dept FY ★</span>
             <SortBtn col="pct" label="% Up" />
             <SortBtn col="defects" label="Defects" />
             <SortBtn col="rej" label="Rej." />
@@ -531,18 +540,33 @@ function PerformanceComparisonTab({ userId, mode }) {
           </div>
           {sorted.map(s => {
             const sum = s.summary;
+            const bench = s.benchmark || {};
+            const benchH = bench.fy_avg_repair_hours || 0;
+            const delta = (sum.avg_repair_hours && benchH) ? sum.avg_repair_hours - benchH : 0;
+            const zero = sum.zero_defect || (sum.total_defects === 0 && sum.total_assets > 0);
             return (
               <div
                 key={s._id}
-                className="grid grid-cols-[1fr_80px_80px_70px_60px_36px] gap-2 items-center px-4 py-3 border-b last:border-0 hover:bg-muted/20 cursor-pointer"
+                className={`grid grid-cols-[1fr_80px_80px_80px_70px_60px_36px] gap-2 items-center px-4 py-3 border-b last:border-0 hover:bg-muted/20 cursor-pointer ${zero ? 'bg-emerald-50/40' : ''}`}
                 onClick={() => setDrillSup(s)}
                 data-testid={`compare-row-${s._id}`}
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{s.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    {zero && <Star className="h-3 w-3 text-amber-500 fill-amber-400 flex-shrink-0" />}
+                    <p className="text-sm font-medium truncate">{s.name}</p>
+                  </div>
                   <p className="text-[10px] text-muted-foreground">{s.employee_id} &middot; {s.department_name}</p>
                 </div>
                 <p className="text-sm tabular-nums font-medium">{fmt(sum.avg_repair_hours)}</p>
+                <p className="text-sm tabular-nums text-muted-foreground">
+                  {fmt(benchH)}
+                  {benchH > 0 && sum.avg_repair_hours > 0 && (
+                    <span className={`ml-1 text-[10px] ${delta > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {delta > 0 ? '▲' : '▼'}
+                    </span>
+                  )}
+                </p>
                 <p className={`text-sm tabular-nums font-semibold ${
                   sum.pct_functional >= 95 ? 'text-emerald-600' :
                   sum.pct_functional >= 85 ? 'text-orange-500' : 'text-red-600'

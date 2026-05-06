@@ -1,0 +1,38 @@
+{
+  "summary": "Phase 4 Extensions (Admin rollup matrix + coverage-gaps + FY benchmarks + zero_defect enrichment) tested end-to-end. Backend: 20/20 pytest cases passed covering /api/analytics/admin/rollup (shape, FY label FY 26-27 for Jan 2026, FY window Apr-Apr, matrix dims, orphan cells with is_orphan=true & pct_functional=null, sup_ids presence, dept_benchmarks keyed by dept, date filter, 400 on bad dates), /api/analytics/admin/coverage-gaps (shape, severity=red for missing_sup, severity=amber for missing_asup & missing_ro, station-only for missing_asup, cartesian consistency with orphan cells in rollup), ASUP & RO performance-summary benchmark+zero_defect enrichment, and regression of /api/analytics/supervisor/{id}/performance + /api/orange-list scoping. Frontend: Superadmin /dashboard > 'Performance' tab renders Personnel coverage gaps banner with 335 SUP red badge + 30 ASUP amber + 335 RO amber, Performance Matrix Stations × Departments (34 rows × 10 depts), date-filter (05/01/2026 → 05/06/2026 visible), FY 26-27 column benchmarks (CIVIL 17.2h, COMMERCIAL 61.5h, Electrical 11.4h), DHANBAD cells with avg-hours + delta + days populated, orphan cells rendered as '—'. Tier 2/3 drilldown and station/dept-header expansion could not be fully automated via generic text selectors (body-text didn't change detectably after click), but the matrix markup and clickable nodes are present; main agent smoke screenshot already confirmed inline expansion works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Performance Matrix column headers", "issues": ["Column headers wrap awkwardly when multiple TEST_DEPT_* test-seed depts are present (several very-long dept names push horizontal scroll). Cosmetic — horizontal scroll is expected per spec; worth cleaning up TEST_DEPT_* seed rows before production demo."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase4_extensions.py",
+    "/app/test_reports/pytest/phase4_ext_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid attributes on AdminPerformanceMatrix cells/rows/headers for deterministic automation of Tier 2/3 expand flows.",
+    "(Optional) Clean up residual TEST_DEPT_* seed departments so the matrix header axis stays narrow."
+  ],
+  "critical_code_review_comments": [
+    "analytics._dept_fy_avg_repair_seconds loads ALL orange-list records per dept then filters in Python. For large datasets this will be slow — consider a Mongo aggregation with $match on defective_since range.",
+    "admin_rollup_matrix aggregates each cell by averaging each SUP's own summary.avg_repair_hours rather than weighting by defect count — for cells with multiple SUPs the metric is arithmetic mean of means, not a true weighted avg. Acceptable per spec's inline comment but worth noting.",
+    "When a SUP is assigned to N stations, asset_count is double-counted across N rows in the matrix (each row sums the SUP's total_assets). The code's inline comment acknowledges this. Consider documenting in the matrix UI so totals aren't misread.",
+    "/admin/rollup and /admin/coverage-gaps have no auth/role gate — any authenticated user (or no token) can call them. Confirm this matches the intended RBAC before shipping."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase4_extensions.py (new)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100% on verified elements (banner + matrix + FY headers + date filter render correctly; tier 2/3 expand flagged for manual verification)"},
+  "test_credentials": "SA001/admin123 (Superadmin used for UI + rollup/gaps APIs), SSE001/admin123 (SUP), ASUP001/admin123 (ASUP), DRO EL/admin123 (RO)",
+  "seed_data_creation": "None for this iteration. Existing TEST_DEPT_* rows from prior testing remain visible in matrix axis.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run pytest /app/backend/tests/test_phase4_extensions.py for fast regression of Phase 4 Extensions endpoints. FY label assertion auto-computes the expected Indian FY from datetime.utcnow(), so it works into 2026+. When adding data-testid for AdminPerformanceMatrix, add them to: matrix cell td, station row th, dept column th, 'Back to comparison' button, and the coverage-banner red/amber chips — then automate tier 2/3 expand.",
+  "rca of the issue": "N/A — no bugs found. All Phase 4 Extension endpoints return the expected schema, FY window & label are correct, orphan cells are consistent with coverage-gaps, ASUP/RO performance-summary rows carry benchmark + zero_defect, and legacy endpoints are intact."
+}
