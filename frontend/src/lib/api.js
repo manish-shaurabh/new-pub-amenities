@@ -189,6 +189,26 @@ export const notificationsAPI = {
 // Dashboard / Analytics
 export const analyticsAPI = {
   supervisor: (userId) => api.get(`/analytics/supervisor/${userId}`),
+  supervisorPerformance: (userId, params = {}) => {
+    const p = new URLSearchParams();
+    if (params.fromDate) p.set('from_date', params.fromDate);
+    if (params.toDate) p.set('to_date', params.toDate);
+    if (params.stationId) p.set('station_id', params.stationId);
+    if (params.locationId) p.set('location_id', params.locationId);
+    return api.get(`/analytics/supervisor/${userId}/performance?${p.toString()}`);
+  },
+  asupPerformanceSummary: (userId, params = {}) => {
+    const p = new URLSearchParams();
+    if (params.fromDate) p.set('from_date', params.fromDate);
+    if (params.toDate) p.set('to_date', params.toDate);
+    return api.get(`/analytics/approving-supervisor/${userId}/performance-summary?${p.toString()}`);
+  },
+  roPerformanceSummary: (userId, params = {}) => {
+    const p = new URLSearchParams();
+    if (params.fromDate) p.set('from_date', params.fromDate);
+    if (params.toDate) p.set('to_date', params.toDate);
+    return api.get(`/analytics/reporting-officer/${userId}/performance-summary?${p.toString()}`);
+  },
   approvingSupervisorList: (userId) => api.get(`/analytics/approving-supervisor/${userId}/supervisors`),
   asset: (assetId) => api.get(`/analytics/asset/${assetId}`),
 };

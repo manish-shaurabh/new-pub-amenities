@@ -13,13 +13,16 @@ import { Label } from '../ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Checkbox } from '../ui/checkbox';
 import { ScrollArea } from '../ui/scroll-area';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import {
-  Box, BarChart3, Building2, ChevronDown, ArrowRight, Filter, X, Wrench, ShieldAlert,
+  Box, BarChart3, Building2, ChevronDown, ArrowRight, ArrowLeft,
+  Filter, X, Wrench, ShieldAlert, TrendingUp,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
+import SupervisorAnalyticsView from '../SupervisorAnalyticsView';
 
 const HEALTH_COLORS = { working: '#0e7c6b', orange: '#f97316', red: '#dc2626' };
 
@@ -109,12 +112,18 @@ export default function AdminDashboard({ targetUser = null }) {
   const [stations, setStations] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [reportingOfficers, setReportingOfficers] = useState([]);
+  const [allSupervisors, setAllSupervisors] = useState([]);
   const [selStations, setSelStations] = useState([]);
   const [selDepartments, setSelDepartments] = useState([]);
   const [selROs, setSelROs] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
+  // Performance analytics panel
+  const [showPerfPanel, setShowPerfPanel] = useState(false);
+  const [perfStation, setPerfStation] = useState('');
+  const [perfDept, setPerfDept] = useState('');
+  const [perfSup, setPerfSup] = useState(null); // { _id, name, employee_id }
 
   // Load filter options
   useEffect(() => {
@@ -123,7 +132,9 @@ export default function AdminDashboard({ targetUser = null }) {
         const [s, d, u] = await Promise.all([stationsAPI.list(), departmentsAPI.list(), usersAPI.list({})]);
         setStations(s.data || []);
         setDepartments(d.data || []);
-        setReportingOfficers((u.data || []).filter((x) => x.role === 'reporting_officer' && x.is_active !== false));
+        const users = u.data || [];
+        setReportingOfficers(users.filter((x) => x.role === 'reporting_officer' && x.is_active !== false));
+        setAllSupervisors(users.filter((x) => x.role === 'supervisor' && x.is_active !== false));
       } catch (e) { console.error(e); }
     })();
   }, []);
@@ -141,6 +152,15 @@ export default function AdminDashboard({ targetUser = null }) {
     finally { setLoading(false); }
   }, [selStations, selDepartments, selROs]);
   useEffect(() => { load(); }, [load]);
+
+  // Filtered supervisors for performance panel
+  const perfSupervisors = useMemo(() => {
+    return allSupervisors.filter(s => {
+      const matchStation = !perfStation || (s.assigned_stations || []).includes(perfStation);
+      const matchDept = !perfDept || s.department_id === perfDept;
+      return matchStation && matchDept;
+    });
+  }, [allSupervisors, perfStation, perfDept]);
 
   const filterCount = selStations.length + selDepartments.length + selROs.length;
   const clearAll = () => { setSelStations([]); setSelDepartments([]); setSelROs([]); };
@@ -165,12 +185,104 @@ export default function AdminDashboard({ targetUser = null }) {
             <p className="text-sm text-muted-foreground">Filtered overview across the system</p>
           </div>
         </div>
-        {filterCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearAll} data-testid="admin-clear-filters">
-            <X className="h-4 w-4 mr-1" /> Clear filters
+        <div className="flex items-center gap-2">
+          {filterCount > 0 && (
+            <Button variant="ghost" size="sm" onClick={clearAll} data-testid="admin-clear-filters">
+              <X className="h-4 w-4 mr-1" /> Clear filters
+            </Button>
+          )}
+          <Button
+            variant={showPerfPanel ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => { setShowPerfPanel(v => !v); setPerfSup(null); }}
+            data-testid="admin-performance-analytics-btn"
+          >
+            <TrendingUp className="h-4 w-4 mr-1.5" />
+            Performance Analytics
           </Button>
-        )}
+        </div>
       </div>
+
+      {/* ── Performance Analytics Inline Panel ── */}
+      {showPerfPanel && (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" /> Supervisor Performance Analytics
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => { setShowPerfPanel(false); setPerfSup(null); }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {perfSup ? (
+              <div className="space-y-3">
+                <button
+                  onClick={() => setPerfSup(null)}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                  data-testid="perf-back-btn"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Back to supervisor list
+                </button>
+                <SupervisorAnalyticsView supervisorId={perfSup._id} />
+              </div>
+            ) : (
+              <>
+                {/* Filters */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs mb-1">Filter by Station</Label>
+                    <Select value={perfStation || 'all'} onValueChange={v => { setPerfStation(v === 'all' ? '' : v); }}>
+                      <SelectTrigger className="h-8 text-xs" data-testid="perf-station-select">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Stations</SelectItem>
+                        {stations.map(s => <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs mb-1">Filter by Department</Label>
+                    <Select value={perfDept || 'all'} onValueChange={v => setPerfDept(v === 'all' ? '' : v)}>
+                      <SelectTrigger className="h-8 text-xs" data-testid="perf-dept-select">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Departments</SelectItem>
+                        {departments.map(d => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {/* Supervisor list */}
+                {perfSupervisors.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No supervisors match the selected filters</p>
+                ) : (
+                  <div className="space-y-1" data-testid="perf-supervisor-list">
+                    {perfSupervisors.map(s => (
+                      <button
+                        key={s._id}
+                        onClick={() => setPerfSup(s)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border hover:border-primary/40 hover:bg-muted/30 transition text-left"
+                        data-testid={`perf-sup-btn-${s._id}`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{s.name}</p>
+                          <p className="text-xs text-muted-foreground">{s.employee_id}</p>
+                        </div>
+                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-4">

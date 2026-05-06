@@ -13,6 +13,7 @@ import {
   ChevronDown, Wrench, AlertTriangle, BarChart3, ArrowRight, ArrowLeft, Eye,
 } from 'lucide-react';
 import OrangeListPanel from '../components/OrangeListPanel';
+import SupervisorAnalyticsView from '../components/SupervisorAnalyticsView';
 import {
   Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -133,107 +134,7 @@ function SupervisorOverviewTab({ data, onSelectCategory }) {
 }
 
 function SupervisorPerformanceTab({ userId }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await analyticsAPI.supervisor(userId);
-        setData(r.data);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    })();
-  }, [userId]);
-
-  if (loading) return <div className="h-40 bg-muted/50 animate-pulse rounded-xl" />;
-  if (!data) return null;
-
-  const fmt = (h) => h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`;
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Total Assets</p>
-          <p className="text-2xl font-semibold mt-1 font-[Space_Grotesk] tabular-nums">{data.total_assets}</p>
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Overall Functional Time</p>
-          <p className="text-2xl font-semibold mt-1 font-[Space_Grotesk] tabular-nums">{data.overall_pct_functional}%</p>
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Categories</p>
-          <p className="text-2xl font-semibold mt-1 font-[Space_Grotesk] tabular-nums">{data.categories.length}</p>
-        </CardContent></Card>
-      </div>
-
-      {data.categories.length === 0 ? (
-        <Card><CardContent className="p-12 text-center">
-          <BarChart3 className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-          <p className="text-sm font-medium">No performance data yet</p>
-          <p className="text-xs text-muted-foreground mt-1">Performance metrics will appear once assets are allocated and inspected.</p>
-        </CardContent></Card>
-      ) : (
-        <div className="space-y-3">
-          {data.categories.map((c) => (
-            <Card key={c.asset_type_id} className="overflow-hidden">
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <button className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium text-sm">{c.asset_type_name}</span>
-                      <Badge variant="secondary" className="text-[10px]">{c.asset_count} assets</Badge>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs">
-                      <div className="text-right">
-                        <p className="text-muted-foreground">Avg Repair</p>
-                        <p className="font-semibold tabular-nums">{fmt(c.avg_repair_hours)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-muted-foreground">% Functional</p>
-                        <p className="font-semibold tabular-nums">{c.pct_functional}%</p>
-                      </div>
-                    </div>
-                  </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="border-t">
-                    {c.assets.map((a) => (
-                      <div key={a.asset_id} className="flex items-center justify-between px-4 py-2.5 border-b last:border-0">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className={`h-7 w-7 rounded-md flex items-center justify-center ${
-                            a.current_status === 'defective' ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'
-                          }`}>
-                            <Box className="h-3.5 w-3.5" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{a.asset_number}</p>
-                            <p className="text-xs text-muted-foreground">{a.defect_count} defect(s) recorded</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 text-xs">
-                          <div className="text-right">
-                            <p className="text-muted-foreground">Avg Repair</p>
-                            <p className="font-semibold tabular-nums">{fmt(a.avg_repair_hours)}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-muted-foreground">% Functional</p>
-                            <p className="font-semibold tabular-nums">{a.pct_functional}%</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return <SupervisorAnalyticsView supervisorId={userId} />;
 }
 
 function SupervisorDashboard({ targetUser = null }) {

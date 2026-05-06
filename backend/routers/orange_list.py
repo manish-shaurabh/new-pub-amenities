@@ -325,6 +325,7 @@ async def reject_working(item_id: str, request: RejectWorkingRequest):
         {"_id": ObjectId(item_id)},
         {"$set": {
             "status": OrangeListStatus.DEFECTIVE.value,
+            "last_marked_working_by": item.get("marked_working_by"),   # preserve for analytics
             "marked_working_by": None,
             "marked_working_at": None,
             "working_remarks": None,

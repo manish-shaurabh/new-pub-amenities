@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../lib/auth-context';
 import { dashboardAPI, analyticsAPI } from '../../lib/api';
+import { errString } from '../../lib/err';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -14,11 +15,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import {
   Box, BarChart3, Users, ChevronDown, ArrowLeft, ArrowRight,
-  CheckCircle2, Building2, Wrench, AlertCircle, AlertTriangle,
+  CheckCircle2, Building2, Wrench, AlertCircle, AlertTriangle, TrendingUp,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 import OrangeListPanel from '../OrangeListPanel';
+import SupervisorAnalyticsView from '../SupervisorAnalyticsView';
 
 const HEALTH_COLORS = { working: '#0e7c6b', orange: '#f97316', red: '#dc2626' };
 
@@ -403,6 +405,160 @@ function MySupervisorsBlock({ userId, restrictToIds }) {
   );
 }
 
+// ---------- Performance Comparison Tab ----------
+function PerformanceComparisonTab({ userId, mode }) {
+  const now = new Date();
+  const toDateInput = (d) => d.toISOString().slice(0, 10);
+  const [fromDate, setFromDate] = useState(toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)));
+  const [toDate, setToDate] = useState(toDateInput(now));
+  const [supervisors, setSupervisors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [drillSup, setDrillSup] = useState(null); // { _id, name }
+  const [sortKey, setSortKey] = useState('name');
+  const [sortDir, setSortDir] = useState(1);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = { fromDate, toDate };
+      const res = mode === 'asup'
+        ? await analyticsAPI.asupPerformanceSummary(userId, params)
+        : await analyticsAPI.roPerformanceSummary(userId, params);
+      setSupervisors(res.data?.supervisors || []);
+    } catch (e) {
+      toast.error(errString(e, 'Failed to load performance data'));
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, mode, fromDate, toDate]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const fmt = (h) => {
+    if (h === 0) return '—';
+    return h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`;
+  };
+
+  const sorted = [...supervisors].sort((a, b) => {
+    let av = sortKey === 'name' ? (a.name || '').toLowerCase()
+      : sortKey === 'pct' ? a.summary.pct_functional
+      : sortKey === 'repair' ? a.summary.avg_repair_hours
+      : sortKey === 'defects' ? a.summary.total_defects
+      : a.summary.rejection_count;
+    let bv = sortKey === 'name' ? (b.name || '').toLowerCase()
+      : sortKey === 'pct' ? b.summary.pct_functional
+      : sortKey === 'repair' ? b.summary.avg_repair_hours
+      : sortKey === 'defects' ? b.summary.total_defects
+      : b.summary.rejection_count;
+    return sortKey === 'pct' ? (bv - av) * sortDir : typeof av === 'string'
+      ? av.localeCompare(bv) * sortDir
+      : (av - bv) * sortDir;
+  });
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d * -1);
+    else { setSortKey(key); setSortDir(1); }
+  };
+
+  const SortBtn = ({ col, label }) => (
+    <button
+      onClick={() => toggleSort(col)}
+      className={`text-left text-xs font-medium whitespace-nowrap hover:text-foreground ${sortKey === col ? 'text-foreground' : 'text-muted-foreground'}`}
+    >
+      {label} {sortKey === col ? (sortDir === 1 ? '↑' : '↓') : ''}
+    </button>
+  );
+
+  if (drillSup) {
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setDrillSup(null)}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          data-testid="analytics-back-btn"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to comparison
+        </button>
+        <SupervisorAnalyticsView supervisorId={drillSup._id} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Date range filter */}
+      <div className="flex items-end gap-3 flex-wrap p-3 bg-muted/30 rounded-lg">
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">From</label>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={e => setFromDate(e.target.value)}
+            className="h-8 text-xs rounded-md border border-input bg-background px-2 w-[140px]"
+            data-testid="compare-from-date"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">To</label>
+          <input
+            type="date"
+            value={toDate}
+            onChange={e => setToDate(e.target.value)}
+            className="h-8 text-xs rounded-md border border-input bg-background px-2 w-[140px]"
+            data-testid="compare-to-date"
+          />
+        </div>
+        <Button size="sm" className="h-8 text-xs" onClick={load} disabled={loading}>Apply</Button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 bg-muted/50 animate-pulse rounded-lg" />)}</div>
+      ) : supervisors.length === 0 ? (
+        <Card><CardContent className="py-12 text-center">
+          <TrendingUp className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">No supervisors in your scope</p>
+        </CardContent></Card>
+      ) : (
+        <Card className="overflow-hidden">
+          {/* Table header */}
+          <div className="grid grid-cols-[1fr_80px_80px_70px_60px_36px] gap-2 px-4 py-2.5 bg-muted/50 border-b text-xs text-muted-foreground font-medium">
+            <SortBtn col="name" label="Supervisor" />
+            <SortBtn col="repair" label="Avg Repair" />
+            <SortBtn col="pct" label="% Up" />
+            <SortBtn col="defects" label="Defects" />
+            <SortBtn col="rej" label="Rej." />
+            <span />
+          </div>
+          {sorted.map(s => {
+            const sum = s.summary;
+            return (
+              <div
+                key={s._id}
+                className="grid grid-cols-[1fr_80px_80px_70px_60px_36px] gap-2 items-center px-4 py-3 border-b last:border-0 hover:bg-muted/20 cursor-pointer"
+                onClick={() => setDrillSup(s)}
+                data-testid={`compare-row-${s._id}`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{s.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{s.employee_id} &middot; {s.department_name}</p>
+                </div>
+                <p className="text-sm tabular-nums font-medium">{fmt(sum.avg_repair_hours)}</p>
+                <p className={`text-sm tabular-nums font-semibold ${
+                  sum.pct_functional >= 95 ? 'text-emerald-600' :
+                  sum.pct_functional >= 85 ? 'text-orange-500' : 'text-red-600'
+                }`}>{sum.pct_functional}%</p>
+                <p className="text-sm tabular-nums">{sum.total_defects}</p>
+                <p className="text-sm tabular-nums">{sum.rejection_count}</p>
+                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+            );
+          })}
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ---------- Main exported component ----------
 /**
  * @param mode - 'asup' | 'ro'
@@ -489,6 +645,9 @@ export default function OversightDashboard({ mode = 'asup', targetUser = null })
             <AlertTriangle className="h-4 w-4 mr-2" />
             {mode === 'asup' ? 'Yellow List' : 'Dept Defects'}
           </TabsTrigger>
+          <TabsTrigger value="performance" data-testid="tab-performance">
+            <TrendingUp className="h-4 w-4 mr-2" /> Performance
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
@@ -502,6 +661,9 @@ export default function OversightDashboard({ mode = 'asup', targetUser = null })
         </TabsContent>
         <TabsContent value="defects" className="mt-4">
           <OrangeListPanel userId={user._id} mode={mode === 'asup' ? 'asup' : 'ro'} />
+        </TabsContent>
+        <TabsContent value="performance" className="mt-4">
+          <PerformanceComparisonTab userId={user._id} mode={mode} />
         </TabsContent>
       </Tabs>
     </div>
