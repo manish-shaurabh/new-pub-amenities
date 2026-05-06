@@ -223,7 +223,6 @@ async def create_asset(asset: AssetCreate):
         "status": AssetStatus.WORKING.value,
         "description": asset.description,
         "schedule_frequency": asset.schedule_frequency if asset.schedule_frequency else None,
-        "assigned_supervisor_id": asset.assigned_supervisor_id,
         "last_inspected": None,
         "next_due": None,
         "defective_since": None,
@@ -241,7 +240,6 @@ async def list_assets(
     asset_type_id: Optional[str] = None,
     status: Optional[str] = None,
     department_id: Optional[str] = None,
-    assigned_supervisor_id: Optional[str] = None,
     search: Optional[str] = None,
     paginated: bool = False,
     page: int = 1,
@@ -254,7 +252,7 @@ async def list_assets(
     `{items, total, page, page_size, total_pages}`.
 
     Filters (all optional):
-      - station_id, location_id, asset_type_id, status, department_id, assigned_supervisor_id
+      - station_id, location_id, asset_type_id, status, department_id
       - search: case-insensitive substring of asset_number
     """
     query = {}
@@ -266,8 +264,6 @@ async def list_assets(
         query["asset_type_id"] = asset_type_id
     if status:
         query["status"] = status
-    if assigned_supervisor_id:
-        query["assigned_supervisor_id"] = assigned_supervisor_id
     if department_id:
         dept_asset_types = await asset_types_collection.find({"department_id": department_id}).to_list(1000)
         type_ids = [str(at["_id"]) for at in dept_asset_types]
@@ -295,8 +291,6 @@ async def list_assets(
     type_ids = list(set(d["asset_type_id"] for d in docs if d.get("asset_type_id")))
     station_ids = list(set(d["station_id"] for d in docs if d.get("station_id")))
     location_ids = list(set(d["location_id"] for d in docs if d.get("location_id")))
-    supervisor_ids = list(set(d.get("assigned_supervisor_id") for d in docs if d.get("assigned_supervisor_id")))
-    
     types_map = {}
     types_checklist_map = {}
     types_dept_map = {}
@@ -313,17 +307,12 @@ async def list_assets(
     if location_ids:
         locs_docs = await locations_collection.find({"_id": {"$in": [ObjectId(lid) for lid in location_ids]}}).to_list(1000)
         locations_map = {str(l["_id"]): l["name"] for l in locs_docs}
-    supervisors_map = {}
-    if supervisor_ids:
-        supervisors_docs = await users_collection.find({"_id": {"$in": [ObjectId(sid) for sid in supervisor_ids]}}).to_list(1000)
-        supervisors_map = {str(u["_id"]): u["name"] for u in supervisors_docs}
-    
+
     for doc in docs:
         doc["asset_type_name"] = types_map.get(doc["asset_type_id"], "Unknown")
         doc["station_name"] = stations_map.get(doc["station_id"], "Unknown")
         doc["location_name"] = locations_map.get(doc["location_id"], "Unknown")
         doc["checklist"] = types_checklist_map.get(doc["asset_type_id"], [])
-        doc["assigned_supervisor_name"] = supervisors_map.get(doc.get("assigned_supervisor_id", ""), None)
         doc["department_id"] = types_dept_map.get(doc["asset_type_id"])
         doc["schedule_frequency"] = _normalize_freq_days(doc.get("schedule_frequency"))
 
@@ -368,7 +357,6 @@ async def update_asset(asset_id: str, asset: AssetCreate):
         "asset_number": asset.asset_number,
         "description": asset.description,
         "schedule_frequency": asset.schedule_frequency if asset.schedule_frequency else None,
-        "assigned_supervisor_id": asset.assigned_supervisor_id,
     }
     result = await assets_collection.update_one(
         {"_id": ObjectId(asset_id)},

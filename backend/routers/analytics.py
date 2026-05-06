@@ -39,7 +39,18 @@ async def supervisor_analytics(user_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    assets = await assets_collection.find({"assigned_supervisor_id": user_id}).to_list(5000)
+    # Implicit station + department scoping (Phase 1)
+    sup_stations = list(user.get("assigned_stations") or [])
+    dept_id = user.get("department_id")
+    if sup_stations and dept_id:
+        tdocs = await asset_types_collection.find({"department_id": dept_id}, {"_id": 1}).to_list(2000)
+        sup_type_ids = [str(t["_id"]) for t in tdocs]
+        assets = await assets_collection.find({
+            "station_id": {"$in": sup_stations},
+            "asset_type_id": {"$in": sup_type_ids}
+        }).to_list(5000) if sup_type_ids else []
+    else:
+        assets = []
     categories = await _analytics_for_asset_set(assets)
 
     overall_pct = round(sum(c["pct_functional"] * c["asset_count"] for c in categories) / max(1, sum(c["asset_count"] for c in categories)), 2) if categories else 100.0
@@ -75,7 +86,17 @@ async def approving_supervisor_analytics(user_id: str):
     out = []
     for s in sup_docs:
         sid = str(s["_id"])
-        assets = await assets_collection.find({"assigned_supervisor_id": sid}).to_list(5000)
+        sup_stations_a = list(s.get("assigned_stations") or [])
+        sup_dept_a = s.get("department_id")
+        if sup_stations_a and sup_dept_a:
+            _td = await asset_types_collection.find({"department_id": sup_dept_a}, {"_id": 1}).to_list(2000)
+            _tids = [str(t["_id"]) for t in _td]
+            assets = await assets_collection.find({
+                "station_id": {"$in": sup_stations_a},
+                "asset_type_id": {"$in": _tids}
+            }).to_list(5000) if _tids else []
+        else:
+            assets = []
         categories = await _analytics_for_asset_set(assets)
         # Strip the per-asset list to keep payload manageable; keep aggregates
         slim = [{k: v for k, v in c.items() if k != "assets"} for c in categories]

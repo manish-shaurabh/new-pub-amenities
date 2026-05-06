@@ -10,6 +10,7 @@ import AdminPage from './pages/AdminPage';
 import InspectionHistoryPage from './pages/InspectionHistoryPage';
 import SchedulesPage from './pages/SchedulesPage';
 import NotificationsPage from './pages/NotificationsPage';
+import ProfilePage from './pages/ProfilePage';
 import AppLayout from './components/AppLayout';
 import './App.css';
 
@@ -86,6 +87,13 @@ function AppRoutes() {
         <ProtectedRoute adminOnly>
           <AppLayout>
             <AdminPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/profile" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ProfilePage />
           </AppLayout>
         </ProtectedRoute>
       } />

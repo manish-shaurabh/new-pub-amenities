@@ -36,6 +36,7 @@ from routers import (
     admin,
     dashboards,
     analytics,
+    profiles,
 )
 
 app = FastAPI(title="Railway Asset Inspection Management System")
@@ -91,6 +92,7 @@ for r in (
     admin.router,
     dashboards.router,
     analytics.router,
+    profiles.router,
 ):
     app.include_router(r)
 

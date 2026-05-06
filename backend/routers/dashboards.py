@@ -138,12 +138,22 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    query = {"assigned_supervisor_id": user_id}
-    if station_id:
-        query["station_id"] = station_id
-    assets = await assets_collection.find(query).to_list(5000)
+    # Implicit station + department scoping (Phase 1)
+    dept_id = user.get("department_id")
+    sup_stations = list(user.get("assigned_stations") or [])
+    sup_type_ids_for_query = []
+    if dept_id:
+        _tdocs = await asset_types_collection.find({"department_id": dept_id}, {"_id": 1}).to_list(2000)
+        sup_type_ids_for_query = [str(t["_id"]) for t in _tdocs]
 
-    # Lookups
+    if sup_stations and sup_type_ids_for_query:
+        asset_query = {"station_id": {"$in": sup_stations}, "asset_type_id": {"$in": sup_type_ids_for_query}}
+        if station_id:
+            asset_query["station_id"] = station_id
+    else:
+        asset_query = {"_id": None}
+    assets = await assets_collection.find(asset_query).to_list(5000)
+
     type_ids = list({a.get("asset_type_id") for a in assets if a.get("asset_type_id")})
     station_ids_seen = list({a.get("station_id") for a in assets if a.get("station_id")})
     types_map = {}
@@ -227,10 +237,21 @@ async def supervisor_my_tasks(user_id: str, station_id: Optional[str] = None):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    query = {"assigned_supervisor_id": user_id}
-    if station_id:
-        query["station_id"] = station_id
-    assets = await assets_collection.find(query).to_list(5000)
+    # Implicit station + department scoping (Phase 1)
+    dept_id_t = user.get("department_id")
+    sup_stations_t = list(user.get("assigned_stations") or [])
+    sup_type_ids_t = []
+    if dept_id_t:
+        _td2 = await asset_types_collection.find({"department_id": dept_id_t}, {"_id": 1}).to_list(2000)
+        sup_type_ids_t = [str(t["_id"]) for t in _td2]
+
+    if sup_stations_t and sup_type_ids_t:
+        task_query = {"station_id": {"$in": sup_stations_t}, "asset_type_id": {"$in": sup_type_ids_t}}
+        if station_id:
+            task_query["station_id"] = station_id
+    else:
+        task_query = {"_id": None}
+    assets = await assets_collection.find(task_query).to_list(5000)
 
     type_ids = list({a.get("asset_type_id") for a in assets if a.get("asset_type_id")})
     station_ids_seen = list({a.get("station_id") for a in assets if a.get("station_id")})

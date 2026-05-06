@@ -5,7 +5,7 @@ import { notificationsAPI } from '../lib/api';
 import { useEffect } from 'react';
 import {
   LayoutDashboard, Box, ClipboardCheck, AlertTriangle,
-  Users, Settings, Calendar, History, Menu, X, Bell, LogOut, ChevronDown
+  Users, Settings, Calendar, History, Menu, X, Bell, LogOut, ChevronDown, UserCircle
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -24,10 +24,17 @@ const navItems = [
   { path: '/assets', label: 'Asset Registry', icon: Box, roles: ['superadmin'] },
   { path: '/inspection', label: 'New Inspection', icon: ClipboardCheck, roles: 'all' },
   { path: '/inspection-history', label: 'Inspection History', icon: History, roles: 'all' },
-  { path: '/orange-list', label: 'Orange List', icon: AlertTriangle, roles: ['superadmin', 'admin', 'reporting_officer'] },
+  {
+    path: '/orange-list', label: 'Orange / Red List', icon: AlertTriangle,
+    roles: ['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor']
+  },
   { path: '/schedules', label: 'Schedules', icon: Calendar, roles: 'all' },
   { path: '/notifications', label: 'Notifications', icon: Bell, roles: 'all' },
   { path: '/admin', label: 'Admin Panel', icon: Settings, roles: ['superadmin', 'admin'] },
+  {
+    path: '/profile', label: 'My Profile', icon: UserCircle,
+    roles: ['supervisor', 'approving_supervisor', 'reporting_officer']
+  },
 ];
 
 const roleLabels = {
@@ -127,7 +134,14 @@ export default function AppLayout({ children }) {
           </nav>
         </ScrollArea>
         <div className="p-4 border-t">
-          <div className="flex items-center gap-3">
+          <div
+            className={`flex items-center gap-3 rounded-lg px-2 py-2 transition-colors ${
+              ['supervisor','approving_supervisor','reporting_officer'].includes(user?.role)
+                ? 'cursor-pointer hover:bg-muted' : ''
+            }`}
+            onClick={() => ['supervisor','approving_supervisor','reporting_officer'].includes(user?.role) && navigate('/profile')}
+            data-testid="sidebar-user-profile-block"
+          >
             <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
               {user?.name?.charAt(0) || 'U'}
             </div>
@@ -274,6 +288,18 @@ export default function AppLayout({ children }) {
                   <p className="text-xs text-muted-foreground">ID: {user?.employee_id}</p>
                 </div>
                 <DropdownMenuSeparator />
+                <div className="px-2 py-1.5">
+                  <p className="text-sm font-medium">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground">{roleLabels[user?.role]}</p>
+                  <p className="text-xs text-muted-foreground">ID: {user?.employee_id}</p>
+                </div>
+                <DropdownMenuSeparator />
+                {['supervisor', 'approving_supervisor', 'reporting_officer'].includes(user?.role) && (
+                  <DropdownMenuItem onClick={() => navigate('/profile')} className="cursor-pointer">
+                    <UserCircle className="h-4 w-4 mr-2" />
+                    My Profile
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={logout} className="text-destructive cursor-pointer">
                   <LogOut className="h-4 w-4 mr-2" />
                   Logout

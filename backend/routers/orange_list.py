@@ -76,11 +76,21 @@ async def list_orange_items(
             raise HTTPException(status_code=404, detail="for_user_id not found")
         role = user.get("role")
         if role == UserRole.SUPERVISOR.value:
+            sup_stations = list(user.get("assigned_stations") or [])
+            sup_dept = user.get("department_id")
+            if not sup_stations or not sup_dept:
+                return _empty()
+            sup_types = await asset_types_collection.find(
+                {"department_id": sup_dept}, {"_id": 1}
+            ).to_list(2000)
+            sup_type_ids = [str(t["_id"]) for t in sup_types]
+            if not sup_type_ids:
+                return _empty()
             mine = await assets_collection.find(
-                {"assigned_supervisor_id": for_user_id}, {"_id": 1}
+                {"station_id": {"$in": sup_stations}, "asset_type_id": {"$in": sup_type_ids}},
+                {"_id": 1}
             ).to_list(20000)
             scope_asset_ids = {str(a["_id"]) for a in mine}
-            # Also include items they themselves reported (defensive)
             or_clauses = [{"reported_by": for_user_id}]
             if scope_asset_ids:
                 or_clauses.append({"asset_id": {"$in": list(scope_asset_ids)}})
@@ -272,8 +282,18 @@ async def approve_working(item_id: str, request: ApproveWorkingRequest):
         raise HTTPException(status_code=400, detail="Item is not pending approval")
     
     approver = await users_collection.find_one({"_id": ObjectId(request.approved_by)})
-    if not approver or approver["role"] not in [UserRole.APPROVING_SUPERVISOR.value, UserRole.ADMIN.value, UserRole.SUPERADMIN.value]:
+    if not approver:
+        raise HTTPException(status_code=404, detail="Approver not found")
+    approver_role = approver["role"]
+    if approver_role not in [UserRole.APPROVING_SUPERVISOR.value, UserRole.ADMIN.value, UserRole.SUPERADMIN.value]:
         raise HTTPException(status_code=403, detail="Only approving supervisors, admins, or superadmins can approve")
+    if approver_role == UserRole.APPROVING_SUPERVISOR.value:
+        asset_doc = await assets_collection.find_one({"_id": ObjectId(item["asset_id"])})
+        if asset_doc:
+            asset_station = asset_doc.get("station_id")
+            asup_stations = list(approver.get("assigned_stations") or [])
+            if asset_station not in asup_stations:
+                raise HTTPException(status_code=403, detail="This station is not under your jurisdiction")
     
     await orange_list_collection.update_one(
         {"_id": ObjectId(item_id)},

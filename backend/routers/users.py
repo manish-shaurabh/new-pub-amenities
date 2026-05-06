@@ -28,15 +28,46 @@ router = APIRouter()
 
 
 # ============ USERS ============
+async def _check_supervisor_station_dept_conflict(
+    role: str, dept_id: Optional[str], assigned_stations: list, exclude_user_id: Optional[str] = None
+):
+    """Raise 409 if another active Supervisor already covers the same (station, dept) pair."""
+    if role != UserRole.SUPERVISOR.value or not dept_id or not assigned_stations:
+        return
+    for sid in assigned_stations:
+        conflict_query = {
+            "role": UserRole.SUPERVISOR.value,
+            "department_id": dept_id,
+            "assigned_stations": sid,
+            "is_active": True,
+        }
+        if exclude_user_id:
+            conflict_query["_id"] = {"$ne": ObjectId(exclude_user_id)}
+        conflict = await users_collection.find_one(conflict_query)
+        if conflict:
+            station = await stations_collection.find_one({"_id": ObjectId(sid)})
+            dept = await departments_collection.find_one({"_id": ObjectId(dept_id)})
+            sname = station["name"] if station else sid
+            dname = dept["name"] if dept else dept_id
+            raise HTTPException(
+                status_code=409,
+                detail=f"Station '{sname}' already has a Supervisor for Dept '{dname}': {conflict.get('name')}"
+            )
+
+
 @router.post("/api/users")
 async def create_user(user: UserCreate):
     existing = await users_collection.find_one({"employee_id": user.employee_id})
     if existing:
         raise HTTPException(status_code=400, detail="Employee ID already exists")
-    
+
+    await _check_supervisor_station_dept_conflict(
+        user.role.value, user.department_id, user.assigned_stations
+    )
+
     import bcrypt
     hashed_password = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    
+
     doc = {
         "employee_id": user.employee_id,
         "name": user.name,
@@ -172,6 +203,9 @@ async def get_user(user_id: str):
 
 @router.put("/api/users/{user_id}")
 async def update_user(user_id: str, user: UserCreate):
+    await _check_supervisor_station_dept_conflict(
+        user.role.value, user.department_id, user.assigned_stations, exclude_user_id=user_id
+    )
     update_data = {
         "name": user.name,
         "role": user.role.value,

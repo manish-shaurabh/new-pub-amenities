@@ -16,6 +16,24 @@ RED_THRESHOLD_HOURS = 24
 UMBRELLA_RO_DEPT_NAMES = {"commercial"}
 
 
+async def _get_assets_for_supervisor(user: dict) -> list:
+    """Return all assets scoped to a supervisor via implicit station + department rule."""
+    station_ids = list(user.get("assigned_stations") or [])
+    dept_id = user.get("department_id")
+    if not station_ids or not dept_id:
+        return []
+    type_docs = await asset_types_collection.find(
+        {"department_id": dept_id}, {"_id": 1}
+    ).to_list(2000)
+    type_ids = [str(t["_id"]) for t in type_docs]
+    if not type_ids:
+        return []
+    return await assets_collection.find({
+        "station_id": {"$in": station_ids},
+        "asset_type_id": {"$in": type_ids}
+    }).to_list(5000)
+
+
 async def broadcast_asset_defect_notifications(
     asset: dict,
     *,
@@ -28,8 +46,8 @@ async def broadcast_asset_defect_notifications(
 ):
     """Send notifications about an asset defect event to the full reporting chain:
 
-      1. Supervisor assigned to the asset
-      2. Approving Supervisor of the asset's station
+      1. Supervisor scoped to the asset via station + department
+      2. Approving Supervisors whose assigned_stations includes the asset's station
       3. Reporting Officer of the asset's department (with the station in scope)
       4. Reporting Officer(s) of the umbrella department (Commercial)
       5. All Admins
@@ -40,32 +58,43 @@ async def broadcast_asset_defect_notifications(
     """
     recipients: set = set()
 
-    # 1. Supervisor on the asset
-    sup_id = asset.get("assigned_supervisor_id")
-    if sup_id:
-        recipients.add(sup_id)
-
-    # 2. ASUP at the asset's station
     station_id = asset.get("station_id")
-    station = None
-    if station_id:
-        try:
-            station = await stations_collection.find_one({"_id": ObjectId(station_id)})
-        except Exception:
-            station = None
-    if station and station.get("approving_supervisor_id"):
-        recipients.add(station["approving_supervisor_id"])
-
-    # 3. RO of the asset's department (whose assigned_stations include this station)
     asset_type_id = asset.get("asset_type_id")
+
+    # 1. Supervisor via implicit station + department scoping
     dept_id = None
-    if asset_type_id:
+    if station_id and asset_type_id:
         try:
             atype = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
         except Exception:
             atype = None
         if atype:
             dept_id = atype.get("department_id")
+        if dept_id:
+            async for sup in users_collection.find({
+                "role": UserRole.SUPERVISOR.value,
+                "department_id": dept_id,
+                "assigned_stations": station_id,
+                "is_active": True,
+            }, {"_id": 1}):
+                recipients.add(str(sup["_id"]))
+
+    # 2. All ASUPs whose assigned_stations includes this station
+    station = None
+    if station_id:
+        try:
+            station = await stations_collection.find_one({"_id": ObjectId(station_id)})
+        except Exception:
+            station = None
+    if station_id:
+        async for asup in users_collection.find({
+            "role": UserRole.APPROVING_SUPERVISOR.value,
+            "assigned_stations": station_id,
+            "is_active": True,
+        }, {"_id": 1}):
+            recipients.add(str(asup["_id"]))
+
+    # 3. RO of the asset's department (whose assigned_stations include this station)
     if dept_id:
         ro_query = {
             "role": UserRole.REPORTING_OFFICER.value,

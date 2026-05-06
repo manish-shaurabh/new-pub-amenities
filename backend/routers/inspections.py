@@ -503,17 +503,23 @@ async def list_inspections(
             raise HTTPException(status_code=404, detail="for_user_id not found")
         role = user.get("role")
         if role == UserRole.SUPERVISOR.value:
-            mine = await assets_collection.find(
-                {"assigned_supervisor_id": for_user_id}, {"_id": 1}
-            ).to_list(20000)
-            asset_id_filter = {str(a["_id"]) for a in mine}
-            # Include inspections where supervisor either:
-            #  (a) performed the inspection (was the inspector), OR
-            #  (b) at least one of their assets appears in the items.
+            sup_stations = list(user.get("assigned_stations") or [])
+            sup_dept = user.get("department_id")
+            if sup_stations and sup_dept:
+                dept_types = await asset_types_collection.find(
+                    {"department_id": sup_dept}, {"_id": 1}
+                ).to_list(2000)
+                sup_type_ids = [str(t["_id"]) for t in dept_types]
+                mine = await assets_collection.find(
+                    {"station_id": {"$in": sup_stations}, "asset_type_id": {"$in": sup_type_ids}},
+                    {"_id": 1}
+                ).to_list(20000)
+                asset_id_filter = {str(a["_id"]) for a in mine}
+            else:
+                asset_id_filter = set()
             or_clauses = [{"inspector_id": for_user_id}]
             if asset_id_filter:
                 or_clauses.append({"items.asset_id": {"$in": list(asset_id_filter)}})
-            # Merge with any existing query (e.g. station_id) using $and to be safe
             if any(k in query for k in ("$or", "$and")):
                 query.setdefault("$and", []).append({"$or": or_clauses})
             else:

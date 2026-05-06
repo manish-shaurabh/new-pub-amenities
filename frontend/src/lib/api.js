@@ -284,3 +284,13 @@ export const uploadAPI = {
     return api.post('/upload/multiple', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
 };
+
+// Profiles
+export const profilesAPI = {
+  get: (userId, params = {}) => {
+    const p = new URLSearchParams();
+    if (params.dept_id) p.set('dept_id', params.dept_id);
+    if (params.station_id) p.set('station_id', params.station_id);
+    return api.get(`/profiles/${userId}?${p.toString()}`);
+  },
+};

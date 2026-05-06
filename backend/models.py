@@ -147,7 +147,6 @@ class AssetCreate(BaseModel):
     asset_number: str
     description: Optional[str] = None
     schedule_frequency: Optional[int] = None  # number of days between inspections
-    assigned_supervisor_id: Optional[str] = None  # NEW: supervisor assignment
 
 
 class AssetResponse(BaseModel):
@@ -162,8 +161,6 @@ class AssetResponse(BaseModel):
     status: str = "working"
     description: Optional[str] = None
     schedule_frequency: Optional[int] = None  # days between inspections
-    assigned_supervisor_id: Optional[str] = None  # NEW
-    assigned_supervisor_name: Optional[str] = None  # NEW
     last_inspected: Optional[str] = None
     next_due: Optional[str] = None
     created_at: str

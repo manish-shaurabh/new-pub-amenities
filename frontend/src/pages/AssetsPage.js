@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { assetsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI } from '../lib/api';
+import { assetsAPI, stationsAPI, locationsAPI, assetTypesAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -12,9 +12,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Label } from '../components/ui/label';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { toast } from 'sonner';
-import { Plus, Search, Box, Trash2, Pencil, ChevronDown, User, MoreVertical, AlertTriangle, History } from 'lucide-react';
+import { Plus, Search, Box, Trash2, Pencil, ChevronDown, MoreVertical, AlertTriangle, History } from 'lucide-react';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
-import SupervisorHistoryDrawer from '../components/SupervisorHistoryDrawer';
 import MarkDefectiveDialog from '../components/dialogs/MarkDefectiveDialog';
 import Pagination from '../components/Pagination';
 
@@ -26,7 +25,6 @@ export default function AssetsPage() {
   const [stations, setStations] = useState([]);
   const [locations, setLocations] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
-  const [supervisors, setSupervisors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStation, setFilterStation] = useState('');
@@ -35,15 +33,13 @@ export default function AssetsPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
   const [assetHistory, setAssetHistory] = useState(null);
-  const [supervisorHistory, setSupervisorHistory] = useState(null);
   const [markingAsset, setMarkingAsset] = useState(null);
-  // Pagination state
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const searchDebounce = useRef(null);
   const [formData, setFormData] = useState({
-    asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', assigned_supervisor_id: ''
+    asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: ''
   });
 
   useEffect(() => { loadStaticData(); }, []);
@@ -103,22 +99,6 @@ export default function AssetsPage() {
     }
   };
 
-  const loadSupervisors = async (stationId, assetTypeId) => {
-    // Get department from asset type
-    const assetType = assetTypes.find(t => t._id === assetTypeId);
-    const params = {};
-    if (stationId) params.station_id = stationId;
-    if (assetType?.department_id) params.department_id = assetType.department_id;
-    
-    try {
-      const res = await usersAPI.supervisors(params);
-      setSupervisors(res.data);
-    } catch (e) {
-      console.error('Failed to load supervisors', e);
-      setSupervisors([]);
-    }
-  };
-
   const handleCreate = async () => {
     if (!formData.asset_type_id || !formData.station_id || !formData.location_id || !formData.asset_number) {
       toast.error('Please fill all required fields');
@@ -128,7 +108,6 @@ export default function AssetsPage() {
       await assetsAPI.create({
         ...formData,
         schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
-        assigned_supervisor_id: (formData.assigned_supervisor_id && formData.assigned_supervisor_id !== 'none') ? formData.assigned_supervisor_id : null
       });
       toast.success('Asset created successfully');
       setShowCreate(false);
@@ -148,10 +127,8 @@ export default function AssetsPage() {
       asset_number: asset.asset_number || '',
       description: asset.description || '',
       schedule_frequency: asset.schedule_frequency || '',
-      assigned_supervisor_id: asset.assigned_supervisor_id || ''
     });
     loadLocations(asset.station_id);
-    loadSupervisors(asset.station_id, asset.asset_type_id);
     setShowEdit(true);
   };
 
@@ -164,7 +141,6 @@ export default function AssetsPage() {
       await assetsAPI.update(editingAsset._id, {
         ...formData,
         schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
-        assigned_supervisor_id: (formData.assigned_supervisor_id && formData.assigned_supervisor_id !== 'none') ? formData.assigned_supervisor_id : null
       });
       toast.success('Asset updated successfully');
       setShowEdit(false);
@@ -188,9 +164,8 @@ export default function AssetsPage() {
   };
 
   const resetForm = () => {
-    setFormData({ asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', assigned_supervisor_id: '' });
+    setFormData({ asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '' });
     setLocations([]);
-    setSupervisors([]);
   };
 
   const filteredAssets = assets.filter(a => {
@@ -225,10 +200,7 @@ export default function AssetsPage() {
     <div className="space-y-4">
       <div>
         <Label>Asset Type *</Label>
-        <Select value={formData.asset_type_id} onValueChange={(v) => {
-          setFormData({...formData, asset_type_id: v});
-          if (formData.station_id) loadSupervisors(formData.station_id, v);
-        }}>
+        <Select value={formData.asset_type_id} onValueChange={(v) => setFormData({...formData, asset_type_id: v})}>
           <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
           <SelectContent>
             {assetTypes.map(t => <SelectItem key={t._id} value={t._id}>{t.name} ({t.department_name})</SelectItem>)}
@@ -237,10 +209,9 @@ export default function AssetsPage() {
       </div>
       <div>
         <Label>Station *</Label>
-        <Select value={formData.station_id} onValueChange={(v) => { 
-          setFormData({...formData, station_id: v, location_id: ''}); 
+        <Select value={formData.station_id} onValueChange={(v) => {
+          setFormData({...formData, station_id: v, location_id: ''});
           loadLocations(v);
-          if (formData.asset_type_id) loadSupervisors(v, formData.asset_type_id);
         }}>
           <SelectTrigger><SelectValue placeholder="Select station" /></SelectTrigger>
           <SelectContent>
@@ -260,16 +231,6 @@ export default function AssetsPage() {
       <div>
         <Label>Asset Number *</Label>
         <Input value={formData.asset_number} onChange={(e) => setFormData({...formData, asset_number: e.target.value})} placeholder="e.g., FAN-P1-001" />
-      </div>
-      <div>
-        <Label>Assigned Supervisor</Label>
-        <Select value={formData.assigned_supervisor_id} onValueChange={(v) => setFormData({...formData, assigned_supervisor_id: v})}>
-          <SelectTrigger><SelectValue placeholder="Select supervisor (optional)" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">No Assignment</SelectItem>
-            {supervisors.map(s => <SelectItem key={s._id} value={s._id}>{s.name} ({s.employee_id})</SelectItem>)}
-          </SelectContent>
-        </Select>
       </div>
       <div>
         <Label>Description</Label>
@@ -307,15 +268,6 @@ export default function AssetsPage() {
           <p className="text-xs text-muted-foreground truncate">
             {asset.station_name} &middot; {asset.location_name}
           </p>
-          {asset.assigned_supervisor_name && (
-            <button
-              onClick={() => setSupervisorHistory({ id: asset.assigned_supervisor_id, name: asset.assigned_supervisor_name })}
-              className="flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
-            >
-              <User className="h-3 w-3" />
-              {asset.assigned_supervisor_name}
-            </button>
-          )}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -487,14 +439,6 @@ export default function AssetsPage() {
         assetNumber={assetHistory?.number}
         open={!!assetHistory}
         onOpenChange={(open) => !open && setAssetHistory(null)}
-      />
-
-      {/* Supervisor History Drawer */}
-      <SupervisorHistoryDrawer
-        supervisorId={supervisorHistory?.id}
-        supervisorName={supervisorHistory?.name}
-        open={!!supervisorHistory}
-        onOpenChange={(open) => !open && setSupervisorHistory(null)}
       />
 
       {/* Mark Defective Dialog (admin / superadmin only) */}
