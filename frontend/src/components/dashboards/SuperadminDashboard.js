@@ -94,28 +94,26 @@ function StationsMultiSelect({ stations, selected, onChange }) {
             </div>
           </div>
         </div>
-        <ScrollArea className="max-h-[280px]">
-          <div className="p-1">
-            {filtered.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-6">No stations match</p>
-            )}
-            {filtered.map((s) => {
-              const checked = selected.includes(s._id);
-              return (
-                <button
-                  key={s._id}
-                  onClick={() => toggle(s._id)}
-                  className="w-full flex items-center gap-2 px-2 py-2 rounded hover:bg-muted/40 text-left"
-                  data-testid={`station-option-${s._id}`}
-                >
-                  <Checkbox checked={checked} className="pointer-events-none" />
-                  <span className="text-sm truncate flex-1">{s.name}</span>
-                  {checked && <Check className="h-3.5 w-3.5 text-primary" />}
-                </button>
-              );
-            })}
-          </div>
-        </ScrollArea>
+        <div className="max-h-[280px] overflow-y-auto p-1" data-testid="superadmin-station-options-list">
+          {filtered.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-6">No stations match</p>
+          )}
+          {filtered.map((s) => {
+            const checked = selected.includes(s._id);
+            return (
+              <button
+                key={s._id}
+                onClick={() => toggle(s._id)}
+                className="w-full flex items-center gap-2 px-2 py-2 rounded hover:bg-muted/40 text-left"
+                data-testid={`station-option-${s._id}`}
+              >
+                <Checkbox checked={checked} className="pointer-events-none" />
+                <span className="text-sm truncate flex-1">{s.name}</span>
+                {checked && <Check className="h-3.5 w-3.5 text-primary" />}
+              </button>
+            );
+          })}
+        </div>
       </PopoverContent>
     </Popover>
   );
