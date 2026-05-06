@@ -8,11 +8,11 @@
     "status": "completed"
   },
   {
-    "content": "Frontend: Update api.js with new endpoints (superadmin filters, assignBulk, oversightCategoryAssets w/ department_id)",
+    "content": "Frontend: Update api.js with new endpoints",
     "status": "completed"
   },
   {
-    "content": "Frontend: Build new SuperadminDashboard.js (move out of DashboardPage) with redesigned overview",
+    "content": "Frontend: Build new SuperadminDashboard.js with redesigned overview",
     "status": "completed"
   },
   {
@@ -25,10 +25,10 @@
   },
   {
     "content": "Test (backend + frontend) via testing_agent",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Update plan.md Phase 7 to COMPLETED",
-    "status": "pending"
+    "status": "completed"
   }
 ]

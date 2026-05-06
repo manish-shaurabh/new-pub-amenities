@@ -2,7 +2,7 @@
 
 ## Objectives
 - Deliver a production-usable **Railway Asset Inspection Management System** with:
-  - Asset master data (stations/locations/asset types/assets)
+  - Asset master data (departments/stations/locations/asset types/assets)
   - Inspections (individual + SIG)
   - Defect tracking + Orange/Red aging
   - Approval workflow:
@@ -18,10 +18,12 @@
     - Station personnel mapping
     - Linking supervisors → reporting officers
     - Bulk reassignment of assets (supervisor transfer/retirement)
+    - **Bulk asset allocation / reassignment from Superadmin dashboard** (done)
   - Operational visibility:
     - Role dashboards (Supervisor, Approving Supervisor, Reporting Officer, Admin, Superadmin)
     - Minimal, clean UI with charts where helpful
     - Actionable “My Tasks” and approvals queue
+    - **Superadmin “View as” for RO/ASUP/Supervisor dashboards** (done)
   - Reporting:
     - Print-friendly inspection report including all remarks + photos
   - Notifications:
@@ -247,7 +249,7 @@ Delivered:
 
 ---
 
-#### Phase 4.5 — Superadmin Dashboard Redesign ✅ COMPLETE
+#### Phase 4.5 — Superadmin Dashboard Redesign (V1) ✅ COMPLETE
 Delivered:
 - Minimal operational dashboard with drill-down summary tabs.
 
@@ -337,11 +339,92 @@ Testing approach (per instruction: **use both**):
 
 ---
 
+### Phase 7 — Superadmin Dashboard Overhaul + View-As + Asset Allocation ✅ COMPLETE
+**Goal:** Upgrade Superadmin to a true command-center dashboard:
+- Category-wise health (like RO dashboard)
+- Station-wise health (like RO dashboard)
+- Department health replacing “divisions”
+- Clickable drill-down for every overview tile
+- Ability for Superadmin to enter RO/ASUP/Supervisor dashboards via click
+- Direct asset allocation/reassignment from Superadmin dashboard
+
+#### Phase 7.1 — Superadmin Overview: Category/Station/Department health blocks ✅ COMPLETE
+Delivered:
+- Superadmin overview now shows:
+  - **Asset category-wise health** (working/orange/red + % functional)
+  - **Station-wise health** (working/orange/red + % functional)
+  - **Department-wise health** (working/orange/red + % functional)
+- Added **multi-station filter** (popover multi-select with search):
+  - Default: all stations
+  - Select 1+ stations to scope all overview totals/health
+
+Backend support:
+- `GET /api/dashboard/superadmin` accepts `station_ids` (multi) and returns:
+  - `asset_categories`, `stations`, `departments`
+  - `pct_functional` per group
+  - `available_stations` for filter
+  - `supervisors` list with asset counts
+
+#### Phase 7.2 — Click-to-drill-down asset lists (priority vs working) ✅ COMPLETE
+Delivered:
+- Every overview card is clickable and opens a **drill-down view** with:
+  - Priority list (orange/red) + Working list
+  - Back button
+- Drill-down sources:
+  - Category → uses asset_type_id
+  - Department → uses department_id (includes asset_type_name per row)
+  - Station → uses station_id
+
+Backend support:
+- Extended `GET /api/dashboard/oversight/{user_id}/category-assets`:
+  - Accepts `department_id` (admin/superadmin/RO)
+  - Accepts `station_id` without requiring asset_type_id/department_id (admin/superadmin/ASUP/RO)
+  - Returns 400 if none of `asset_type_id/department_id/station_id` provided
+
+#### Phase 7.3 — “View as” navigation from Superadmin dashboard ✅ COMPLETE
+Delivered:
+- Superadmin tabs:
+  - Reporting Officers
+  - Approving Supervisors
+  - Supervisors
+- Clicking any row navigates to `/?as=<user_id>` and renders that user’s dashboard.
+- View-As banner:
+  - Shows “Viewing as <name>” + role badge
+  - “Back to my dashboard” button clears `as` and returns to Superadmin
+
+Implementation details:
+- `DashboardPage.js` enhanced with View-As mode for **superadmin/admin**.
+- `OversightDashboard` and `AdminDashboard` updated to accept `targetUser`.
+- `SupervisorDashboard` updated to accept `targetUser`.
+
+#### Phase 7.4 — Allocate Assets tab (single + bulk) ✅ COMPLETE
+Delivered:
+- New Superadmin dashboard tab: **Allocate Assets**
+  - **Quick Assign (single)**: choose asset + supervisor → assign/unassign
+  - **Bulk Allocate / Reassign**:
+    - Filters: station, asset type, current supervisor (including unassigned), search
+    - Multi-select assets + “select all visible”
+    - Assign to supervisor or unassign
+
+Backend support:
+- New endpoint: `POST /api/admin/assets/assign-bulk`
+  - Body: `{ asset_ids: [...], to_supervisor_id: str|null, performed_by: str|null }`
+  - Validates target is a supervisor
+  - Audit logs operation with from_breakdown
+
+#### Phase 7.5 — Testing & verification for Phase 7 ✅ COMPLETE
+Testing approach (per instruction: **use both**):
+- Backend: **100%** (43/43) pass rate including Phase 7 endpoints
+- Frontend: **100%** pass rate, no regressions or critical bugs
+
+---
+
 ## Next Actions (Optional / Future)
 1. **Integrate real SMS/WhatsApp provider** (adapter infrastructure exists; pending API keys).
 2. Add pagination for other large datasets (inspections, assets, orange list) if performance requires.
 3. Add automated unit tests for approval edge cases and schedule computations.
 4. Optional: Add notification retention policies (auto-delete older than N days) and indexes in MongoDB for notifications.
+5. Optional: Add “permission-aware view-as” constraints (e.g., admin can view-as only within scope) if required.
 
 ---
 
@@ -353,6 +436,9 @@ Testing approach (per instruction: **use both**):
   - Supervisor transfer/reassignment supported.
 - Dashboards:
   - Supervisor / ASUP / RO / Admin / Superadmin dashboards match agreed logic.
+  - Superadmin overview includes category/station/department health + drill-down.
+  - Superadmin can view-as RO/ASUP/Supervisor.
+  - Superadmin can allocate/reassign assets directly.
   - Approvals actionable (Pass/Fail per item).
   - **% functional time** visible per asset category.
 - Approval:
