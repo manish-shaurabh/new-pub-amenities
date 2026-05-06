@@ -824,7 +824,6 @@ export default function SuperadminDashboard() {
           <TabsTrigger value="reporting-officers" data-testid="tab-reporting-officers">Reporting Officers</TabsTrigger>
           <TabsTrigger value="approving-supervisors" data-testid="tab-approving-supervisors">Approving Sup.</TabsTrigger>
           <TabsTrigger value="supervisors" data-testid="tab-supervisors">Supervisors</TabsTrigger>
-          <TabsTrigger value="allocate" data-testid="tab-allocate"><ClipboardList className="h-4 w-4 mr-2" /> Allocate Assets</TabsTrigger>
         </TabsList>
 
         {/* OVERVIEW */}
@@ -994,16 +993,6 @@ export default function SuperadminDashboard() {
                   onClick={() => viewAs(u._id)}
                 />
               ))}
-        </TabsContent>
-
-        {/* ALLOCATE ASSETS */}
-        <TabsContent value="allocate" className="mt-4">
-          <AllocateAssetsTab
-            user={user}
-            supervisors={data.supervisors || []}
-            stations={data.available_stations || []}
-            onChanged={load}
-          />
         </TabsContent>
       </Tabs>
     </div>

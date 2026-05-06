@@ -137,27 +137,6 @@ async def list_supervisors_for_assignment(
     return [serialize_doc(d) for d in docs]
 
 
-@router.get("/api/users/supervisors")
-async def list_supervisors_for_assignment(
-    station_id: Optional[str] = None,
-    department_id: Optional[str] = None
-):
-    """Get active supervisors for asset assignment"""
-    query = {
-        "role": {"$in": [UserRole.SUPERVISOR.value, UserRole.APPROVING_SUPERVISOR.value]},
-        "is_active": True
-    }
-    if station_id:
-        query["assigned_stations"] = station_id
-    if department_id:
-        query["department_id"] = department_id
-    
-    docs = await users_collection.find(query).to_list(1000)
-    for doc in docs:
-        doc.pop("password", None)
-    return [serialize_doc(d) for d in docs]
-
-
 @router.get("/api/users/station-staff")
 async def get_station_wise_staff():
     """Get station-wise view of all staff (Supervisors, Reporting Officers, Approving Supervisors)"""

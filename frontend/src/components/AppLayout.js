@@ -288,12 +288,6 @@ export default function AppLayout({ children }) {
                   <p className="text-xs text-muted-foreground">ID: {user?.employee_id}</p>
                 </div>
                 <DropdownMenuSeparator />
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{user?.name}</p>
-                  <p className="text-xs text-muted-foreground">{roleLabels[user?.role]}</p>
-                  <p className="text-xs text-muted-foreground">ID: {user?.employee_id}</p>
-                </div>
-                <DropdownMenuSeparator />
                 {['supervisor', 'approving_supervisor', 'reporting_officer'].includes(user?.role) && (
                   <DropdownMenuItem onClick={() => navigate('/profile')} className="cursor-pointer">
                     <UserCircle className="h-4 w-4 mr-2" />
