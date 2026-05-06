@@ -34,14 +34,79 @@ async def list_orange_items(
     status: Optional[str] = None,
     station_id: Optional[str] = None,
     department_id: Optional[str] = None,
-    list_type: Optional[str] = None  # "orange", "red", or None for all
+    list_type: Optional[str] = None,  # "orange", "red", or None for all
+    for_user_id: Optional[str] = None,
 ):
+    """List orange/red items.
+
+    When `for_user_id` is provided, role-based scoping kicks in (mirrors the
+    inspections endpoint logic) so each user sees only the entries relevant
+    to them:
+
+      - SUPERVISOR: only assets assigned to them OR entries they reported.
+      - APPROVING_SUPERVISOR: only assets at stations they are assigned to.
+      - REPORTING_OFFICER: only assets at their stations whose type belongs
+        to their department.
+      - ADMIN / SUPERADMIN: no scoping (see everything).
+    """
     query = {}
     if status:
         query["status"] = status
     else:
         query["status"] = {"$ne": OrangeListStatus.RESOLVED.value}
-    
+
+    # ---- Role-based scoping
+    scope_asset_ids: Optional[set] = None  # None = no scoping; set = restrict to these
+    if for_user_id:
+        try:
+            user = await users_collection.find_one({"_id": ObjectId(for_user_id)})
+        except Exception:
+            user = None
+        if not user:
+            raise HTTPException(status_code=404, detail="for_user_id not found")
+        role = user.get("role")
+        if role == UserRole.SUPERVISOR.value:
+            mine = await assets_collection.find(
+                {"assigned_supervisor_id": for_user_id}, {"_id": 1}
+            ).to_list(20000)
+            scope_asset_ids = {str(a["_id"]) for a in mine}
+            # Also include items they themselves reported (defensive)
+            or_clauses = [{"reported_by": for_user_id}]
+            if scope_asset_ids:
+                or_clauses.append({"asset_id": {"$in": list(scope_asset_ids)}})
+            query["$or"] = or_clauses
+        elif role == UserRole.APPROVING_SUPERVISOR.value:
+            asup_stations = list(user.get("assigned_stations") or [])
+            if not asup_stations:
+                return []
+            station_assets = await assets_collection.find(
+                {"station_id": {"$in": asup_stations}}, {"_id": 1}
+            ).to_list(20000)
+            scope_asset_ids = {str(a["_id"]) for a in station_assets}
+            if not scope_asset_ids:
+                return []
+            query["asset_id"] = {"$in": list(scope_asset_ids)}
+        elif role == UserRole.REPORTING_OFFICER.value:
+            ro_stations = list(user.get("assigned_stations") or [])
+            ro_dept = user.get("department_id")
+            if not ro_stations or not ro_dept:
+                return []
+            dept_types = await asset_types_collection.find(
+                {"department_id": ro_dept}, {"_id": 1}
+            ).to_list(2000)
+            type_ids = [str(t["_id"]) for t in dept_types]
+            if not type_ids:
+                return []
+            ro_assets = await assets_collection.find(
+                {"asset_type_id": {"$in": type_ids}, "station_id": {"$in": ro_stations}},
+                {"_id": 1},
+            ).to_list(20000)
+            scope_asset_ids = {str(a["_id"]) for a in ro_assets}
+            if not scope_asset_ids:
+                return []
+            query["asset_id"] = {"$in": list(scope_asset_ids)}
+        # admin/superadmin: no scoping
+
     docs = await orange_list_collection.find(query).sort("created_at", -1).to_list(1000)
     
     now = datetime.utcnow()

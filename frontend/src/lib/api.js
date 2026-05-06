@@ -42,9 +42,15 @@ export const authAPI = {
 // Departments
 export const departmentsAPI = {
   list: () => api.get('/departments'),
-  create: (data) => api.post('/departments', data),
-  update: (id, data) => api.put(`/departments/${id}`, data),
-  delete: (id) => api.delete(`/departments/${id}`),
+  create: (data, currentUserId) => api.post('/departments', data, {
+    params: { current_user_id: currentUserId || undefined }
+  }),
+  update: (id, data, currentUserId) => api.put(`/departments/${id}`, data, {
+    params: { current_user_id: currentUserId || undefined }
+  }),
+  delete: (id, currentUserId) => api.delete(`/departments/${id}`, {
+    params: { current_user_id: currentUserId || undefined }
+  }),
 };
 
 // Stations
@@ -79,6 +85,7 @@ export const assetsAPI = {
   update: (id, data) => api.put(`/assets/${id}`, data),
   delete: (id) => api.delete(`/assets/${id}`),
   inspections: (id, limit) => api.get(`/assets/${id}/inspections`, { params: { limit } }),
+  markDefective: (id, data) => api.post(`/assets/${id}/mark-defective`, data),
 };
 
 // Users

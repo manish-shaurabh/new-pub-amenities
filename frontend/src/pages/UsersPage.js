@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { usersAPI, departmentsAPI, stationsAPI } from '../lib/api';
+import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -79,7 +80,7 @@ export default function UsersPage() {
       resetForm();
       loadAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to create user');
+      toast.error(errString(e, 'Failed to create user'));
     }
   };
 
@@ -111,7 +112,7 @@ export default function UsersPage() {
       resetForm();
       loadAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to update user');
+      toast.error(errString(e, 'Failed to update user'));
     }
   };
 
@@ -121,7 +122,7 @@ export default function UsersPage() {
       toast.success('Admin powers granted');
       loadAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to grant admin');
+      toast.error(errString(e, 'Failed to grant admin'));
     }
   };
 

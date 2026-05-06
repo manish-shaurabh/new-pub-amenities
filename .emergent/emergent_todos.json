@@ -1,34 +1,38 @@
 [
   {
-    "content": "Backend: Extend GET /api/dashboard/superadmin with station_ids filter + per-department health + supervisors list",
+    "content": "Trace + fix the React runtime error ('Objects are not valid as a React child') on Admin Panel",
     "status": "completed"
   },
   {
-    "content": "Backend: Add POST /api/admin/assets/assign-bulk endpoint for bulk asset (re)assignment",
+    "content": "Investigate Orange List 'not updating properly for users' issue",
     "status": "completed"
   },
   {
-    "content": "Frontend: Update api.js with new endpoints",
+    "content": "Departments: super-admin only role gate (backend) + hide buttons for non-superadmin (frontend) + S&T seed",
     "status": "completed"
   },
   {
-    "content": "Frontend: Build new SuperadminDashboard.js with redesigned overview",
+    "content": "Build broadcast_asset_defect_notifications helper",
     "status": "completed"
   },
   {
-    "content": "Frontend: Implement 'View as' mode in DashboardPage.js + targetUser prop in dashboards",
+    "content": "Backend: POST /api/assets/{asset_id}/mark-defective endpoint with synthetic inspection + orange-list entry + audit",
     "status": "completed"
   },
   {
-    "content": "Frontend: Build 'Allocate Assets' tab — single + bulk allocation/reassignment",
+    "content": "Backend: scope GET /api/orange-list by for_user_id",
     "status": "completed"
   },
   {
-    "content": "Test (backend + frontend) via testing_agent",
+    "content": "Frontend: row action menu on Asset Registry + Mark-Defective modal",
     "status": "completed"
   },
   {
-    "content": "Update plan.md Phase 7 to COMPLETED",
-    "status": "completed"
+    "content": "Test end-to-end (backend + frontend agent)",
+    "status": "in_progress"
+  },
+  {
+    "content": "Update plan.md Phase 8 to COMPLETED",
+    "status": "pending"
   }
 ]

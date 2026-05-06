@@ -28,8 +28,22 @@ router = APIRouter()
 
 
 # ============ DEPARTMENTS ============
+async def _require_superadmin(current_user_id: Optional[str]):
+    """Raise 403 unless the given user_id belongs to a superadmin."""
+    if not current_user_id:
+        raise HTTPException(status_code=403, detail="Only Super Admin can manage departments")
+    try:
+        u = await users_collection.find_one({"_id": ObjectId(current_user_id)})
+    except Exception:
+        u = None
+    if not u or u.get("role") != UserRole.SUPERADMIN.value:
+        raise HTTPException(status_code=403, detail="Only Super Admin can manage departments")
+    return u
+
+
 @router.post("/api/departments")
-async def create_department(dept: DepartmentCreate):
+async def create_department(dept: DepartmentCreate, current_user_id: Optional[str] = Query(None)):
+    await _require_superadmin(current_user_id)
     doc = {
         "name": dept.name,
         "code": dept.code,
@@ -56,7 +70,8 @@ async def get_department(dept_id: str):
 
 
 @router.put("/api/departments/{dept_id}")
-async def update_department(dept_id: str, dept: DepartmentCreate):
+async def update_department(dept_id: str, dept: DepartmentCreate, current_user_id: Optional[str] = Query(None)):
+    await _require_superadmin(current_user_id)
     result = await departments_collection.update_one(
         {"_id": ObjectId(dept_id)},
         {"$set": {"name": dept.name, "code": dept.code, "description": dept.description}}
@@ -68,7 +83,15 @@ async def update_department(dept_id: str, dept: DepartmentCreate):
 
 
 @router.delete("/api/departments/{dept_id}")
-async def delete_department(dept_id: str):
+async def delete_department(dept_id: str, current_user_id: Optional[str] = Query(None)):
+    await _require_superadmin(current_user_id)
+    # Block deletion if any asset type still references this department
+    in_use = await asset_types_collection.count_documents({"department_id": dept_id})
+    if in_use > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete: {in_use} asset type(s) still reference this department"
+        )
     result = await departments_collection.delete_one({"_id": ObjectId(dept_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Department not found")

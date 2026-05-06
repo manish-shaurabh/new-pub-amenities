@@ -53,6 +53,17 @@ def seed():
     dept_id = str(dept_result.inserted_id)
     print(f"  Created Department: Electrical ({dept_id})")
 
+    # Seed core departments (idempotent — only insert if not present)
+    for d in [
+        {"name": "S&T", "code": "S&T", "description": "Signal & Telecommunications"},
+        {"name": "Civil", "code": "CIVIL", "description": "Civil engineering & infrastructure"},
+        {"name": "Mechanical", "code": "MECH", "description": "Mechanical maintenance"},
+        {"name": "Commercial", "code": "COMM", "description": "Commercial operations (umbrella)"},
+    ]:
+        if not db.departments.find_one({"name": {"$regex": f"^{d['name']}$", "$options": "i"}}):
+            db.departments.insert_one({**d, "created_at": datetime.utcnow()})
+            print(f"  Seeded department: {d['name']}")
+
     # Create sample station
     station_result = db.stations.insert_one({
         "name": "Mumbai Central",

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI } from '../lib/api';
+import { errString } from '../lib/err';
+import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -11,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft } from 'lucide-react';
+import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase } from 'lucide-react';
 
 // Import the user management components from the old UsersPage
 const roleLabels = {
@@ -31,6 +33,7 @@ const roleColors = {
 };
 
 export default function AdminPage() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('stations');
   const [loading, setLoading] = useState(true);
   
@@ -53,6 +56,7 @@ export default function AdminPage() {
   const [stationForm, setStationForm] = useState({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
   const [locationForm, setLocationForm] = useState({ name: '', station_id: '', description: '' });
   const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [] });
+  const [departmentForm, setDepartmentForm] = useState({ name: '', description: '' });
   const [userForm, setUserForm] = useState({
     employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], 
     password: '', email: '', phone: '', reports_to_id: ''
@@ -96,7 +100,7 @@ export default function AdminPage() {
       setTransferFrom('');
       setTransferTo('');
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Transfer failed');
+      toast.error(errString(e, 'Transfer failed'));
     } finally {
       setTransferLoading(false);
     }
@@ -144,6 +148,44 @@ export default function AdminPage() {
     }
   }, [activeTab]);
 
+  // ========== Department CRUD ==========
+  const handleCreateDepartment = async () => {
+    if (!departmentForm.name) {
+      toast.error('Name is required');
+      return;
+    }
+    try {
+      await departmentsAPI.create(departmentForm, user?._id);
+      toast.success('Department created');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error(errString(e, 'Failed to create department'));
+    }
+  };
+
+  const handleUpdateDepartment = async () => {
+    try {
+      await departmentsAPI.update(editingItem._id, departmentForm, user?._id);
+      toast.success('Department updated');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error(errString(e, 'Failed to update'));
+    }
+  };
+
+  const handleDeleteDepartment = async (id) => {
+    if (!window.confirm('Delete this department? This will fail if any asset types still reference it.')) return;
+    try {
+      await departmentsAPI.delete(id, user?._id);
+      toast.success('Department deleted');
+      loadAll();
+    } catch (e) {
+      toast.error(errString(e, 'Failed to delete — remove dependent asset types first'));
+    }
+  };
+
   // ========== Station CRUD ==========
   const handleCreateStation = async () => {
     if (!stationForm.name || !stationForm.code) {
@@ -156,7 +198,7 @@ export default function AdminPage() {
       setDialogOpen(false);
       loadAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to create');
+      toast.error(errString(e, 'Failed to create'));
     }
   };
 
@@ -189,7 +231,7 @@ export default function AdminPage() {
       return;
     }
     try {
-      await locationsAPI.create(locationForm.station_id, locationForm);
+      await locationsAPI.create(locationForm);
       toast.success('Location created');
       setDialogOpen(false);
       loadAll();
@@ -270,7 +312,7 @@ export default function AdminPage() {
       setDialogOpen(false);
       loadAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to create');
+      toast.error(errString(e, 'Failed to create'));
     }
   };
 
@@ -327,7 +369,8 @@ export default function AdminPage() {
     setDialogMode('create');
     setEditingItem(null);
     // Reset forms based on type
-    if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
+    if (type === 'department') setDepartmentForm({ name: '', description: '' });
+    else if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
     else if (type === 'location') setLocationForm({ name: '', station_id: '', description: '' });
     else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [] });
     else if (type === 'user') setUserForm({ employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], password: '', email: '', phone: '', reports_to_id: '' });
@@ -338,7 +381,9 @@ export default function AdminPage() {
     setDialogType(type);
     setDialogMode('edit');
     setEditingItem(item);
-    if (type === 'station') {
+    if (type === 'department') {
+      setDepartmentForm({ name: item.name, description: item.description || '' });
+    } else if (type === 'station') {
       setStationForm({ name: item.name, code: item.code, zone: item.zone || '', division: item.division || '', approving_supervisor_id: item.approving_supervisor_id || '' });
     } else if (type === 'location') {
       setLocationForm({ name: item.name, station_id: item.station_id, description: item.description || '' });
@@ -352,12 +397,14 @@ export default function AdminPage() {
 
   const handleDialogSubmit = () => {
     if (dialogMode === 'create') {
-      if (dialogType === 'station') handleCreateStation();
+      if (dialogType === 'department') handleCreateDepartment();
+      else if (dialogType === 'station') handleCreateStation();
       else if (dialogType === 'location') handleCreateLocation();
       else if (dialogType === 'asset-type') handleCreateAssetType();
       else if (dialogType === 'user') handleCreateUser();
     } else {
-      if (dialogType === 'station') handleUpdateStation();
+      if (dialogType === 'department') handleUpdateDepartment();
+      else if (dialogType === 'station') handleUpdateStation();
       else if (dialogType === 'location') handleUpdateLocation();
       else if (dialogType === 'asset-type') handleUpdateAssetType();
       else if (dialogType === 'user') handleUpdateUser();
@@ -434,7 +481,8 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-8">
+          <TabsTrigger value="departments" data-testid="tab-departments"><Briefcase className="h-4 w-4 mr-2" /> Depts</TabsTrigger>
           <TabsTrigger value="stations"><Building2 className="h-4 w-4 mr-2" /> Stations</TabsTrigger>
           <TabsTrigger value="locations"><MapPin className="h-4 w-4 mr-2" /> Locations</TabsTrigger>
           <TabsTrigger value="asset-types"><Layers className="h-4 w-4 mr-2" /> Asset Types</TabsTrigger>
@@ -443,6 +491,61 @@ export default function AdminPage() {
           <TabsTrigger value="personnel-map"><TableIcon className="h-4 w-4 mr-2" /> Personnel Map</TabsTrigger>
           <TabsTrigger value="transfer"><ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer</TabsTrigger>
         </TabsList>
+
+        {/* DEPARTMENTS TAB */}
+        <TabsContent value="departments" className="space-y-3">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-medium">{departments.length} Departments</h3>
+            {user?.role === 'superadmin' ? (
+              <Button onClick={() => openCreateDialog('department')} size="sm" data-testid="add-department-button">
+                <Plus className="h-4 w-4 mr-1" /> Add Department
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground italic" data-testid="departments-readonly-note">
+                Read-only — only Super Admin can manage departments
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            {departments.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No departments yet. {user?.role === 'superadmin' ? 'Click "Add Department" to create one (e.g. S&T, Civil, Electrical).' : 'Ask a Super Admin to add departments.'}
+              </p>
+            )}
+            {departments.map(dept => (
+              <Card key={dept._id}>
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium" data-testid={`department-name-${dept._id}`}>{dept.name}</p>
+                    {dept.description && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{dept.description}</p>
+                    )}
+                  </div>
+                  {user?.role === 'superadmin' && (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditDialog('department', dept)}
+                        data-testid={`edit-department-${dept._id}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteDepartment(dept._id)}
+                        data-testid={`delete-department-${dept._id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
 
         {/* STATIONS TAB */}
         <TabsContent value="stations" className="space-y-3">
@@ -939,12 +1042,40 @@ export default function AdminPage() {
           <DialogHeader>
             <DialogTitle>
               {dialogMode === 'create' ? 'Create' : 'Edit'}{' '}
+              {dialogType === 'department' && 'Department'}
               {dialogType === 'station' && 'Station'}
               {dialogType === 'location' && 'Location'}
               {dialogType === 'asset-type' && 'Asset Type'}
               {dialogType === 'user' && 'User'}
             </DialogTitle>
           </DialogHeader>
+
+          {/* DEPARTMENT FORM */}
+          {dialogType === 'department' && (
+            <div className="space-y-3">
+              <div>
+                <Label>Name *</Label>
+                <Input
+                  value={departmentForm.name}
+                  onChange={(e) => setDepartmentForm({ ...departmentForm, name: e.target.value })}
+                  placeholder="e.g. S&T"
+                  data-testid="department-name-input"
+                />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input
+                  value={departmentForm.description}
+                  onChange={(e) => setDepartmentForm({ ...departmentForm, description: e.target.value })}
+                  placeholder="Signal & Telecommunications"
+                  data-testid="department-description-input"
+                />
+              </div>
+              <Button onClick={handleDialogSubmit} className="w-full" data-testid="department-submit-button">
+                {dialogMode === 'create' ? 'Create' : 'Update'}
+              </Button>
+            </div>
+          )}
 
           {/* STATION FORM */}
           {dialogType === 'station' && (

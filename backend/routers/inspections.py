@@ -468,12 +468,14 @@ async def list_inspections(
         query["inspection_type"] = inspection_type
 
     # Role-scoped filtering when for_user_id is provided.
-    # Supervisor: items must include assets allocated to them.
+    # Supervisor: inspections where they were the inspector OR items include
+    #             assets allocated to them (either way, they can see it).
     # Approving Supervisor: only inspections at stations where they are the assigned ASUP.
     # Reporting Officer: stations in their assigned_stations AND items must include
     #                    assets whose type belongs to their department.
     # Superadmin / Admin: no scoping.
     asset_id_filter: Optional[set] = None
+    supervisor_was_inspector = False
     if for_user_id:
         try:
             user = await users_collection.find_one({"_id": ObjectId(for_user_id)})
@@ -487,9 +489,18 @@ async def list_inspections(
                 {"assigned_supervisor_id": for_user_id}, {"_id": 1}
             ).to_list(20000)
             asset_id_filter = {str(a["_id"]) for a in mine}
-            if not asset_id_filter:
-                return []
-            query["items.asset_id"] = {"$in": list(asset_id_filter)}
+            # Include inspections where supervisor either:
+            #  (a) performed the inspection (was the inspector), OR
+            #  (b) at least one of their assets appears in the items.
+            or_clauses = [{"inspector_id": for_user_id}]
+            if asset_id_filter:
+                or_clauses.append({"items.asset_id": {"$in": list(asset_id_filter)}})
+            # Merge with any existing query (e.g. station_id) using $and to be safe
+            if any(k in query for k in ("$or", "$and")):
+                query.setdefault("$and", []).append({"$or": or_clauses})
+            else:
+                query["$or"] = or_clauses
+            supervisor_was_inspector = True  # signal to keep all items if inspector
         elif role == UserRole.APPROVING_SUPERVISOR.value:
             asup_stations = list(user.get("assigned_stations") or [])
             if not asup_stations:
@@ -527,9 +538,13 @@ async def list_inspections(
     docs = await inspections_collection.find(query).sort("created_at", -1).to_list(limit)
 
     # When asset_id_filter is set, also strip items not relevant to the user
-    # so they only see "their" assets per inspection.
+    # so they only see "their" assets per inspection — UNLESS the user was
+    # the inspector themselves (in which case show every item they recorded).
     if asset_id_filter is not None:
         for d in docs:
+            if supervisor_was_inspector and d.get("inspector_id") == for_user_id:
+                # Keep all items the supervisor inspected
+                continue
             d["items"] = [it for it in d.get("items", []) if it.get("asset_id") in asset_id_filter]
 
     # Batch fetch stations

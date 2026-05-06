@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { assetsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI } from '../lib/api';
+import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -7,12 +8,14 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from '../components/ui/dropdown-menu';
 import { Label } from '../components/ui/label';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { toast } from 'sonner';
-import { Plus, Search, Box, Trash2, Pencil, ChevronDown, User } from 'lucide-react';
+import { Plus, Search, Box, Trash2, Pencil, ChevronDown, User, MoreVertical, AlertTriangle, History } from 'lucide-react';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 import SupervisorHistoryDrawer from '../components/SupervisorHistoryDrawer';
+import MarkDefectiveDialog from '../components/dialogs/MarkDefectiveDialog';
 
 export default function AssetsPage() {
   const { isAdmin } = useAuth();
@@ -30,6 +33,7 @@ export default function AssetsPage() {
   const [editingAsset, setEditingAsset] = useState(null);
   const [assetHistory, setAssetHistory] = useState(null);
   const [supervisorHistory, setSupervisorHistory] = useState(null);
+  const [markingAsset, setMarkingAsset] = useState(null);
   const [formData, setFormData] = useState({
     asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', assigned_supervisor_id: ''
   });
@@ -92,7 +96,7 @@ export default function AssetsPage() {
       resetForm();
       loadAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to create asset');
+      toast.error(errString(e, 'Failed to create asset'));
     }
   };
 
@@ -129,7 +133,7 @@ export default function AssetsPage() {
       resetForm();
       loadAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to update asset');
+      toast.error(errString(e, 'Failed to update asset'));
     }
   };
 
@@ -280,16 +284,51 @@ export default function AssetsPage() {
         {asset.schedule_frequency && (
           <Badge variant="outline" className="text-xs hidden sm:flex">every {asset.schedule_frequency}d</Badge>
         )}
-        {isAdmin() && (
-          <>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(asset)} data-testid="asset-edit-button">
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              data-testid={`asset-actions-trigger-${asset._id}`}
+            >
+              <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(asset._id)}>
-              <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-            </Button>
-          </>
-        )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              {asset.asset_number}
+            </DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => setAssetHistory({ id: asset._id, number: asset.asset_number })}
+              data-testid={`asset-action-history-${asset._id}`}
+            >
+              <History className="h-3.5 w-3.5 mr-2" /> View history
+            </DropdownMenuItem>
+            {isAdmin() && (
+              <>
+                <DropdownMenuItem onClick={() => handleEdit(asset)} data-testid="asset-edit-button">
+                  <Pencil className="h-3.5 w-3.5 mr-2" /> Edit asset
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setMarkingAsset(asset)}
+                  className="text-orange-600 focus:text-orange-700"
+                  data-testid={`asset-mark-defective-${asset._id}`}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 mr-2" /> Mark defective
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => handleDelete(asset._id)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -405,6 +444,14 @@ export default function AssetsPage() {
         supervisorName={supervisorHistory?.name}
         open={!!supervisorHistory}
         onOpenChange={(open) => !open && setSupervisorHistory(null)}
+      />
+
+      {/* Mark Defective Dialog (admin / superadmin only) */}
+      <MarkDefectiveDialog
+        asset={markingAsset}
+        open={!!markingAsset}
+        onOpenChange={(o) => !o && setMarkingAsset(null)}
+        onMarked={() => { setMarkingAsset(null); loadAll(); }}
       />
     </div>
   );

@@ -5,6 +5,7 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../lib/auth-context';
+import { errString } from '../../lib/err';
 import { dashboardAPI, analyticsAPI, approvalsAPI } from '../../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -430,7 +431,7 @@ function MyTasksBlock({ reviewerId }) {
       toast.success(approve ? 'Item approved' : 'Item rejected');
       await load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Action failed');
+      toast.error(errString(e, 'Action failed'));
     } finally {
       setActioning((s) => ({ ...s, [key]: false }));
     }

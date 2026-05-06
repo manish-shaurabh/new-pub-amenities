@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '../../lib/auth-context';
+import { errString } from '../../lib/err';
 import { dashboardAPI, assetsAPI, usersAPI, stationsAPI, assetTypesAPI, adminAPI } from '../../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -438,7 +439,7 @@ function AllocateAssetsTab({ user, supervisors, stations, onChanged }) {
       onChanged && onChanged();
     } catch (e) {
       console.error(e);
-      toast.error(e.response?.data?.detail || 'Failed to assign');
+      toast.error(errString(e, 'Failed to assign'));
     } finally {
       setSingleBusy(false);
     }
@@ -459,7 +460,7 @@ function AllocateAssetsTab({ user, supervisors, stations, onChanged }) {
       onChanged && onChanged();
     } catch (e) {
       console.error(e);
-      toast.error(e.response?.data?.detail || 'Bulk assignment failed');
+      toast.error(errString(e, 'Bulk assignment failed'));
     } finally {
       setBulkBusy(false);
     }

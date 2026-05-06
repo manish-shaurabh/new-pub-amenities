@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { assetsAPI, stationsAPI, locationsAPI, inspectionsAPI, usersAPI, uploadAPI } from '../lib/api';
+import { errString } from '../lib/err';
 import { openInspectionReport } from '../lib/inspection-report';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -347,7 +348,7 @@ export default function InspectionPage() {
       setInspectionDate(new Date());
       setInspectionTime(format(new Date(), 'HH:mm'));
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to submit inspection');
+      toast.error(errString(e, 'Failed to submit inspection'));
     } finally {
       setSubmitting(false);
     }

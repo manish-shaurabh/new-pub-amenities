@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { orangeListAPI } from '../lib/api';
+import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -9,28 +10,42 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle, Clock, Download, FileText, FileSpreadsheet } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Download, FileText, FileSpreadsheet, RefreshCw } from 'lucide-react';
 
 export default function OrangeListPage() {
   const { user, canApprove } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('orange');
   const [actionDialog, setActionDialog] = useState(null);
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => { loadItems(); }, []);
+  // Role-scoped fetch: only superadmin/admin see global; everyone else scopes to their role.
+  const isScoped = user && !['superadmin', 'admin'].includes(user.role);
 
-  const loadItems = async () => {
+  const loadItems = useCallback(async () => {
+    if (!user?._id) return;
     try {
-      const res = await orangeListAPI.list({});
-      setItems(res.data);
+      const params = {};
+      if (isScoped) params.for_user_id = user._id;
+      const res = await orangeListAPI.list(params);
+      setItems(res.data || []);
     } catch (e) {
       console.error('Failed to load orange list', e);
+      toast.error(errString(e, 'Failed to load orange list'));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }, [user?._id, isScoped]);
+
+  useEffect(() => { loadItems(); }, [loadItems]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadItems();
   };
 
   const handleMarkWorking = async () => {
@@ -46,7 +61,7 @@ export default function OrangeListPage() {
       setRemarks('');
       loadItems();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to mark working');
+      toast.error(errString(e, 'Failed to mark working'));
     } finally {
       setSubmitting(false);
     }
@@ -65,7 +80,7 @@ export default function OrangeListPage() {
       setRemarks('');
       loadItems();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to approve');
+      toast.error(errString(e, 'Failed to approve'));
     } finally {
       setSubmitting(false);
     }
@@ -170,7 +185,17 @@ export default function OrangeListPage() {
           <p className="text-sm text-muted-foreground">Orange List (&lt;24hrs) &middot; Red List (&gt;24hrs)</p>
         </div>
         {/* Export buttons */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            data-testid="orange-list-refresh-button"
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
           <Button variant="outline" size="sm" onClick={() => handleExportExcel(activeTab !== 'pending' ? activeTab : null)}>
             <FileSpreadsheet className="h-4 w-4 mr-1" /> Excel
           </Button>
