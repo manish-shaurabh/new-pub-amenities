@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 import time
 
 # Use the public endpoint
-BASE_URL = "https://asset-track-rail.preview.emergentagent.com/api"
+BASE_URL = "https://rail-inspect-hub.preview.emergentagent.com/api"
 
 class RailwayAssetTester:
     def __init__(self):
