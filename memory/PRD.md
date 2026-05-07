@@ -28,6 +28,20 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Comprehensive E2E Lifecycle Test Harness
+- **`/app/backend/tests/e2e_full_lifecycle.py`**: 10-phase orchestrator that creates a full org slice (1 station, 3 users — RO/ASUP/SUP, 2 asset types, 5 assets across Electrical+Commercial), runs the entire defect lifecycle (inspection → orange/red → mark working → approve/reject → re-inspect → auto-reject), exercises remarks from all 4 roles, validates IST literal format on every API response, runs the 10-invariant audit, and **guarantees full cleanup** via `try/finally` (deletes by tracked _ids + tag-prefix sweep + asset/user link sweep).
+- **Verified on preview**: RUN_ID=5D02488A — 0 discrepancies. All 10 phases passed:
+  - List type assignments (E0=red @ 30h, E1/C0=orange @ 2h)
+  - Cross-role scope (SUP=Electrical only, ASUP=all 3 cross-dept, RO=Electrical at station)
+  - Mark working → Yellow
+  - ASUP approve → Resolved (asset.defective_since cleared)
+  - ASUP reject → back to defective with **clock preserved** (canonical defective_since intact)
+  - All 4 roles post remarks; SA reads all 4 with correct role tags
+  - Auto-reject on re-inspection of yellow → defective with clock preserved
+  - All datetimes across superadmin/supervisor/approving-supervisor/reporting-officer endpoints are bare IST literals (no Z, no +05:30)
+  - Audit: 10/10 PASS
+- **Cleanup confirmed**: asset count 74 → 74 (zero net change). All test inspections, OL entries, remarks, notifications, audit_log entries, asset_types, station, and users removed.
+
 ### Feb 2026 — Auto-reject on re-inspection + canonical `defective_since`
 - **Auto-reject path**: when NOT_OK or NEEDS_REPAIR is filed on a YELLOW (pending_approval) asset, the system reverts the OL to defective, clears `marked_working_by/at` (preserved as `last_marked_working_by`), sets `rejection_remarks/rejected_by/rejected_at`, posts a `rejection` auto-remark, notifies the original SUP + ROs/SUPs/ASUPs, and writes audit log `re_inspection_auto_rejected`. **Clock (`OL.defective_since`) is NEVER reset.**
 - **Canonical `defective_since`**: `OL.defective_since` is the immutable source of truth. `asset.defective_since` is mirrored from OL on every write — never overwritten with the new inspection's typed value. Notifications, dashboards, PDFs all read from this canonical field.

@@ -1,0 +1,6 @@
+{
+  "run_id": "AED55A93",
+  "ran_at": "2026-05-07T18:03:13.781402",
+  "discrepancies": [],
+  "error": "mark-working failed: 422 {\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"marked_by\"],\"msg\":\"Field required\",\"input\":{\"current_user_id\":\"69fcd3de56eb2115bacdcd84\",\"marked_working_at\":\"2026-05-07T17:33:12\",\"remarks\":\"Repaired and tested\"},\"url\":\"https://errors.pydantic.dev/2.12/v/missing\"}]}"
+}
