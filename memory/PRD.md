@@ -157,3 +157,21 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 - Profile page: Schedule Summary tab
 - Optimize `_dept_fy_avg_repair_seconds` via Mongo `$match` aggregation (currently filters in Python)
 - Performance matrix: documented caveat that SUPs assigned to N stations have asset_count summed across all N rows
+
+### Data Consistency Audit — 3 Bugs Fixed (May 2026)
+A 68-check cross-system audit was run covering 17 test phases with variable-date defect injection across 6 assets (1h, 10h, 25h, 50h, 96h, 192h defective). Three bugs were found and fixed:
+
+#### Bug 1: `GET /api/dashboard/stats` — orange+red count included pending_approval
+- **Root cause:** `all_defective` query used `status != resolved`, so `pending_approval` items (yellow) leaked into `orange_list_count` / `red_list_count`.
+- **Fix:** Changed query to `status == defective` only (`/app/backend/routers/dashboards.py` line ~42).
+
+#### Bug 2: `GET /api/orange-list?list_type=orange/red` — returned pending_approval items
+- **Root cause:** `list_type` filter only compared computed orange/red classification (based on time), not the actual status. `pending_approval` items with < 24h defective_since were returned as "orange".
+- **Fix:** Added an early `continue` for `pending_approval` status entries when `list_type` filter is active (`/app/backend/routers/orange_list.py` line ~195).
+
+#### Bug 3: SUP-scoped orange list had cross-department pollution
+- **Root cause:** The `$or: [reported_by=sup_id, asset_in_scope]` logic in SUPERVISOR OL scoping included assets from other departments if the SUP was the `inspector_id`. This caused OL list count > dashboard health count for the same SUP.
+- **Fix:** Removed legacy `reported_by` OR clause. Now uses strict station+dept scope only: `query["asset_id"] = {"$in": list(scope_asset_ids)}` (`/app/backend/routers/orange_list.py` line ~79-97).
+- **Note:** This is consistent with Phase 1 (removal of `assigned_supervisor_id`); the `reported_by` OR clause was a pre-Phase-1 remnant.
+
+**Audit result: 68/68 PASS** — All dashboards (Superadmin, Admin, SUP, ASUP, RO), orange-list endpoint, stats, station health, drill-downs, filter consistency, remarks thread, yellow lifecycle, and role-scoping containment (SUP ⊆ ASUP ⊆ SA) all verified consistent.

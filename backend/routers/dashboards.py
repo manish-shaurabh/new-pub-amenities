@@ -38,8 +38,9 @@ async def get_dashboard_stats():
     
     now = datetime.utcnow()
     
-    # Orange list (< 24 hrs) and Red list (> 24 hrs)
-    all_defective = await orange_list_collection.find({"status": {"$ne": OrangeListStatus.RESOLVED.value}}).to_list(5000)
+    # Orange list (< 24 hrs) and Red list (> 24 hrs).
+    # Only count entries with status=defective; pending_approval (yellow) is counted separately.
+    all_defective = await orange_list_collection.find({"status": OrangeListStatus.DEFECTIVE.value}).to_list(5000)
     orange_count = 0
     red_count = 0
     for item in all_defective:

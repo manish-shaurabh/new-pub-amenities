@@ -91,10 +91,11 @@ async def list_orange_items(
                 {"_id": 1}
             ).to_list(20000)
             scope_asset_ids = {str(a["_id"]) for a in mine}
-            or_clauses = [{"reported_by": for_user_id}]
-            if scope_asset_ids:
-                or_clauses.append({"asset_id": {"$in": list(scope_asset_ids)}})
-            query["$or"] = or_clauses
+            if not scope_asset_ids:
+                return _empty()
+            # Strict station+dept scope only — consistent with the dashboard health counts.
+            # (Phase 1 removed assigned_supervisor_id; reported_by OR clause is no longer needed.)
+            query["asset_id"] = {"$in": list(scope_asset_ids)}
         elif role == UserRole.APPROVING_SUPERVISOR.value:
             asup_stations = list(user.get("assigned_stations") or [])
             if not asup_stations:
@@ -183,7 +184,12 @@ async def list_orange_items(
         station = stations_map.get(asset.get("station_id", ""))
         location = locations_map.get(asset.get("location_id", ""))
         
-        # Calculate duration and classify as orange/red
+        # Calculate duration and classify as orange/red.
+        # pending_approval items are "yellow" — skip them when filtering by list_type
+        # so that ?list_type=orange/red only returns genuinely defective entries.
+        if list_type and doc.get("status") == OrangeListStatus.PENDING_APPROVAL.value:
+            continue
+
         defective_since = doc.get("defective_since") or doc.get("created_at")
         if isinstance(defective_since, str):
             try:
