@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -68,7 +68,7 @@ async def transfer_supervisor(payload: dict):
             "to_supervisor_id": to_id,
             "assets_updated": result.modified_count,
         },
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     })
 
     return {
@@ -139,7 +139,7 @@ async def assign_assets_bulk(payload: dict):
             "from_breakdown": from_breakdown,
             "assets_updated": result.modified_count,
         },
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
     })
 
     return {
@@ -170,7 +170,7 @@ async def grant_admin_powers(user_id: str, granted_by: str = Query(...)):
         "entity_id": user_id,
         "action": "granted_admin",
         "performed_by": granted_by,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     })
     
     return {"message": "Admin powers granted"}

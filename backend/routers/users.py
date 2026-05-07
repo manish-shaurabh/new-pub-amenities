@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -79,7 +79,7 @@ async def create_user(user: UserCreate):
         "phone": user.phone,
         "reports_to_id": user.reports_to_id,
         "is_active": True,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     result = await users_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

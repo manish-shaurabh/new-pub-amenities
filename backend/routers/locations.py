@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -37,7 +37,7 @@ async def create_location(location: LocationCreate):
         "name": location.name,
         "station_id": location.station_id,
         "description": location.description,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     result = await locations_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

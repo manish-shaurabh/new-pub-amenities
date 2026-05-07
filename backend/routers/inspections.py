@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -68,8 +68,8 @@ async def create_inspection(inspection: InspectionCreate):
         "items": items_data,
         "participants": participants_data,
         "overall_remarks": inspection.overall_remarks,
-        "inspection_at": inspection.inspection_at or datetime.utcnow().isoformat(),
-        "created_at": datetime.utcnow()
+        "inspection_at": inspection.inspection_at or datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc)
     }
     result = await inspections_collection.insert_one(doc)
     inspection_id = str(result.inserted_id)
@@ -116,7 +116,7 @@ async def create_inspection(inspection: InspectionCreate):
             "related_entity_type": "inspection",
             "related_entity_id": inspection_id,
             "is_read": False,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         })
 
     # Audit log
@@ -126,7 +126,7 @@ async def create_inspection(inspection: InspectionCreate):
         "action": "submitted",
         "performed_by": inspection.inspector_id,
         "details": {"item_count": len(items_data), "station_id": inspection.station_id, "defects": not_ok_count},
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     })
 
     return serialize_doc(doc)
@@ -154,9 +154,9 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                     defective_since.replace('Z', '+00:00').replace('+00:00', '')
                 )
             except (ValueError, AttributeError):
-                defective_since_dt = datetime.utcnow()
+                defective_since_dt = datetime.now(timezone.utc)
         else:
-            defective_since_dt = datetime.utcnow()
+            defective_since_dt = datetime.now(timezone.utc)
 
         await assets_collection.update_one(
             {"_id": ObjectId(asset_id)},
@@ -183,13 +183,15 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                 "marked_working_at": None,
                 "approved_by": None,
                 "approved_at": None,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             })
             new_orange_list_id = str(ins.inserted_id)
             # Auto-log first remark (defect_report)
             try:
                 from routers.remarks import add_auto_remark
                 inspector = await users_collection.find_one({"_id": ObjectId(inspector_id)}) if inspector_id else None
+                # Pass event_at=defective_since_dt so the remarks thread can distinguish
+                # "logged at T" from "defect started at T-N" for backdated entries.
                 await add_auto_remark(
                     orange_list_id=new_orange_list_id,
                     asset_id=asset_id,
@@ -198,6 +200,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                     author_id=inspector_id,
                     author_name=(inspector.get("name") if inspector else "Inspector"),
                     author_role=(inspector.get("role") if inspector else None),
+                    event_at=defective_since_dt,
                 )
             except Exception as e:
                 print(f"[inspections] auto-remark (defect_report) failed: {e}")
@@ -230,7 +233,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                     "related_entity_type": "orange_list",
                     "related_entity_id": asset_id,
                     "is_read": False,
-                    "created_at": datetime.utcnow()
+                    "created_at": datetime.now(timezone.utc)
                 })
 
     elif item_status == InspectionItemStatus.OK.value:
@@ -245,9 +248,9 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                         rectified_on.replace('Z', '+00:00').replace('+00:00', '')
                     )
                 except (ValueError, AttributeError):
-                    rectified_dt = datetime.utcnow()
+                    rectified_dt = datetime.now(timezone.utc)
             else:
-                rectified_dt = datetime.utcnow()
+                rectified_dt = datetime.now(timezone.utc)
 
             open_entry = await orange_list_collection.find_one({
                 "asset_id": asset_id,
@@ -306,11 +309,11 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                         "related_entity_type": "orange_list",
                         "related_entity_id": asset_id,
                         "is_read": False,
-                        "created_at": datetime.utcnow()
+                        "created_at": datetime.now(timezone.utc)
                     })
 
     # Update last_inspected and next_due for all items
-    now_ts = datetime.utcnow()
+    now_ts = datetime.now(timezone.utc)
     update_fields = {"last_inspected": now_ts}
     asset_doc2 = await assets_collection.find_one({"_id": ObjectId(asset_id)})
     if asset_doc2:
@@ -325,7 +328,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
         "action": "auto_applied",
         "performed_by": reviewer_id,
         "details": {"inspection_id": inspection_id, "asset_id": asset_id, "item_status": item_status},
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     })
 
 
@@ -374,7 +377,7 @@ async def approve_inspection_item(inspection_id: str, item_index: int, payload: 
     await _apply_inspection_item_effects(insp, item, reviewer_id)
     items[item_index]["approval_status"] = "approved"
     items[item_index]["reviewed_by"] = reviewer_id
-    items[item_index]["reviewed_at"] = datetime.utcnow()
+    items[item_index]["reviewed_at"] = datetime.now(timezone.utc)
     items[item_index]["reviewer_remarks"] = remarks
     await inspections_collection.update_one(
         {"_id": ObjectId(inspection_id)},
@@ -390,7 +393,7 @@ async def approve_inspection_item(inspection_id: str, item_index: int, payload: 
         "related_entity_type": "inspection",
         "related_entity_id": inspection_id,
         "is_read": False,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     })
 
     return {"message": "Item approved", "inspection_id": inspection_id, "item_index": item_index}
@@ -423,8 +426,8 @@ async def reject_inspection_item(inspection_id: str, item_index: int, payload: d
     if item.get("approval_status") != "pending_approval":
         raise HTTPException(status_code=400, detail=f"Item already {item.get('approval_status')}")
 
-    submission_time = insp.get("created_at") or datetime.utcnow()
-    rejection_time = datetime.utcnow()
+    submission_time = insp.get("created_at") or datetime.now(timezone.utc)
+    rejection_time = datetime.now(timezone.utc)
     gap_seconds = max(0, int((rejection_time - submission_time).total_seconds()))
 
     items[item_index]["approval_status"] = "rejected"
@@ -464,7 +467,7 @@ async def reject_inspection_item(inspection_id: str, item_index: int, payload: d
         "related_entity_type": "inspection",
         "related_entity_id": inspection_id,
         "is_read": False,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     })
 
     return {

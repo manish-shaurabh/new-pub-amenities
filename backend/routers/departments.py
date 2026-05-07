@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -62,7 +62,7 @@ async def create_department(dept: DepartmentCreate, current_user_id: Optional[st
         "name": dept.name,
         "code": dept.code,
         "description": dept.description,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     try:
         result = await departments_collection.insert_one(doc)

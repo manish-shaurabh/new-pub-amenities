@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -68,7 +68,7 @@ async def mark_asset_defective(asset_id: str, payload: dict):
             defective_at = defective_at.replace(tzinfo=None)
     except Exception:
         raise HTTPException(status_code=400, detail="defective_at must be a valid ISO datetime")
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if defective_at > now + timedelta(minutes=1):
         raise HTTPException(status_code=400, detail="defective_at cannot be in the future")
     performed_by = payload.get("performed_by")
@@ -226,7 +226,7 @@ async def create_asset(asset: AssetCreate):
         "last_inspected": None,
         "next_due": None,
         "defective_since": None,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     result = await assets_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

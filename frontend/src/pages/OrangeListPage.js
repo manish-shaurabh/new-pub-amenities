@@ -17,6 +17,7 @@ import { AlertTriangle, CheckCircle, Clock, FileText, FileSpreadsheet, RefreshCw
 import { format } from 'date-fns';
 import Pagination from '../components/Pagination';
 import RemarksThread from '../components/RemarksThread';
+import { formatDateTime, formatDuration } from '../lib/utils';
 
 const PAGE_SIZE = 25;
 
@@ -193,16 +194,19 @@ export default function OrangeListPage() {
               </p>
               {item.defective_since && (
                 <p className="text-xs text-destructive font-medium">
-                  Defective since: {new Date(item.defective_since).toLocaleString()}
+                  Defective since: {formatDateTime(item.defective_since)}
                 </p>
               )}
-              {item.hours_defective !== undefined && (
+              {item.hours_defective != null && (
                 <Badge variant="outline" className="text-[10px]">
-                  {item.hours_defective > 24
-                    ? `${Math.floor(item.hours_defective / 24)}d ${Math.round(item.hours_defective % 24)}h`
-                    : `${Math.round(item.hours_defective)}h`
-                  }
+                  {formatDuration(item.hours_defective)}
                 </Badge>
+              )}
+              {/* Issue 2: Rectification time for yellow (pending_approval) items */}
+              {item.status === 'pending_approval' && item.marked_working_at && (
+                <p className="text-xs text-yellow-700 font-semibold" data-testid={`ol-repaired-at-${item._id}`}>
+                  Repaired: {formatDateTime(item.marked_working_at)}
+                </p>
               )}
             </div>
           </div>

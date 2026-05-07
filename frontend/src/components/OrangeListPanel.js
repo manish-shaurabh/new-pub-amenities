@@ -22,6 +22,7 @@ import { Calendar } from './ui/calendar';
 import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle, Clock, RefreshCw, CalendarIcon, XCircle, Wrench, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatDateTimeCompact, formatDateTime, formatDuration } from '../lib/utils';
 import RemarksThread from './RemarksThread';
 
 export default function OrangeListPanel({ userId, mode = 'sup' }) {
@@ -145,8 +146,10 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
         <div className="flex items-center justify-between px-3 py-2.5 gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`h-8 w-8 rounded-md flex items-center justify-center flex-shrink-0 ${
+            // Issue 7 fix: isPending checked BEFORE list_type so yellow items show
+            // yellow icon regardless of their original orange/red classification.
+            isPending                ? 'bg-yellow-50 text-yellow-600' :
             item.list_type === 'red' ? 'bg-red-50 text-red-600' :
-            isPending ? 'bg-yellow-50 text-yellow-600' :
             'bg-orange-50 text-orange-600'
           }`}>
             <Wrench className="h-3.5 w-3.5" />
@@ -169,16 +172,18 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
             </p>
             {item.defective_since && (
               <p className="text-[10px] text-destructive">
-                Since {new Date(item.defective_since).toLocaleString('en-IN', {
-                  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                })}
-                {item.hours_defective !== undefined && (
+                Since {formatDateTimeCompact(item.defective_since)}
+                {item.hours_defective != null && (
                   <span className="ml-1 text-muted-foreground">
-                    ({item.hours_defective > 24
-                      ? `${Math.floor(item.hours_defective / 24)}d ${Math.round(item.hours_defective % 24)}h`
-                      : `${Math.round(item.hours_defective)}h`})
+                    ({formatDuration(item.hours_defective)})
                   </span>
                 )}
+              </p>
+            )}
+            {/* Issue 2: Show rectification time on yellow items so ASUP can see WHEN the SUP claimed repair */}
+            {isPending && item.marked_working_at && (
+              <p className="text-[10px] text-yellow-700 font-medium mt-0.5" data-testid={`panel-repaired-at-${item._id}`}>
+                Repaired: {formatDateTimeCompact(item.marked_working_at)}
               </p>
             )}
           </div>
@@ -366,7 +371,7 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
               </p>
               {actionDialog?.item?.defective_since && (
                 <p className="text-xs text-destructive mt-1">
-                  Defective since: {new Date(actionDialog.item.defective_since).toLocaleString()}
+                  Defective since: {formatDateTime(actionDialog.item.defective_since)}
                 </p>
               )}
             </div>

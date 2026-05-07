@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -35,7 +35,7 @@ async def create_asset_type(asset_type: AssetTypeCreate):
         "department_id": asset_type.department_id,
         "checklist": [item.model_dump() for item in asset_type.checklist],
         "description": asset_type.description,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     result = await asset_types_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

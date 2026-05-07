@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -36,7 +36,7 @@ async def get_dashboard_stats():
     working_assets = await assets_collection.count_documents({"status": AssetStatus.WORKING.value})
     defective_assets = await assets_collection.count_documents({"status": {"$ne": AssetStatus.WORKING.value}})
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Orange list (< 24 hrs) and Red list (> 24 hrs).
     # Only count entries with status=defective; pending_approval (yellow) is counted separately.
@@ -177,7 +177,7 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
         ud = await stations_collection.find({"_id": {"$in": [ObjectId(s) for s in user_station_ids]}}).to_list(100)
         user_stations = [{"_id": str(s["_id"]), "name": s.get("name")} for s in ud]
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     grouped: dict = {}
     health_counts = {"working": 0, "orange": 0, "red": 0, "yellow": 0}
 
@@ -280,7 +280,7 @@ async def supervisor_my_tasks(user_id: str, station_id: Optional[str] = None):
         ).to_list(20000):
             ol_history_by_asset.setdefault(rec["asset_id"], []).append(rec)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     by_category: dict = {}
     pending_by_category: dict = {}
 
@@ -399,7 +399,7 @@ async def _build_oversight_dashboard(
         available_departments = [{"_id": str(d["_id"]), "name": d.get("name")} for d in dd]
         available_departments.sort(key=lambda x: x["name"] or "")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     health = {"working": 0, "orange": 0, "red": 0, "yellow": 0}
     by_category: dict = {}
     by_station: dict = {}
@@ -573,7 +573,7 @@ async def superadmin_full_dashboard(
       - reporting_officers, approving_supervisors, supervisors
       - available_stations (for the station multi-select)
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     asset_query = {}
     if station_ids:
@@ -790,7 +790,7 @@ async def admin_full_dashboard(
     reporting_officer_ids: Optional[List[str]] = Query(None),
 ):
     """Admin dashboard — same structure as superadmin but with dept + RO filters."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Build asset query with optional station + department filters
     asset_query: dict = {}
@@ -1049,7 +1049,7 @@ async def oversight_category_assets(
         ).to_list(20000):
             ol_history_by_asset.setdefault(rec["asset_id"], []).append(rec)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     priority = []
     working = []
     for a in assets:
@@ -1058,6 +1058,14 @@ async def oversight_category_assets(
         ds = open_ol.get("defective_since") or a.get("defective_since")
         ds_iso = ds.isoformat() if isinstance(ds, datetime) else ds
         ds_sortable = ds if isinstance(ds, datetime) else datetime.min
+        # Compute hours_defective so the UI can render duration badges
+        hours_defective: Optional[float] = None
+        if ds and isinstance(ds, datetime):
+            raw_secs = (now - ds.replace(tzinfo=None)).total_seconds() if ds.tzinfo is None else (now - ds).total_seconds()
+            hours_defective = round(raw_secs / 3600, 1)
+        # marked_working_at for pending_approval items (ASUP needs this)
+        mw = open_ol.get("marked_working_at") if open_ol else None
+        mw_iso = mw.isoformat() + "Z" if isinstance(mw, datetime) and mw.tzinfo is None else (mw.isoformat() if isinstance(mw, datetime) else mw)
         item = {
             "_id": str(a["_id"]),
             "asset_number": a.get("asset_number"),
@@ -1066,6 +1074,8 @@ async def oversight_category_assets(
             "status": a.get("status", "working"),
             "health_class": cls,
             "defective_since": ds_iso,
+            "hours_defective": hours_defective,
+            "marked_working_at": mw_iso,
             "station_name": sm.get(a.get("station_id"), "Unknown"),
             "location_name": lm.get(a.get("location_id"), "Unknown"),
             "supervisor_name": um.get(a.get("assigned_supervisor_id"), None),

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -47,7 +47,7 @@ async def login(credentials: UserLogin):
         "user_id": str(user["_id"]),
         "employee_id": user["employee_id"],
         "role": user["role"],
-        "exp": datetime.utcnow() + timedelta(hours=24)
+        "exp": datetime.now(timezone.utc) + timedelta(hours=24)
     }
     token = jwt.encode(token_data, os.environ.get("JWT_SECRET", "railway-secret-key"), algorithm="HS256")
     

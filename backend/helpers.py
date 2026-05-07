@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from bson import ObjectId
 
@@ -138,7 +138,7 @@ async def broadcast_asset_defect_notifications(
     if not recipients:
         return 0
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     docs = [
         {
             "user_id": uid,
@@ -237,7 +237,7 @@ async def _analytics_for_asset_set(asset_docs: list) -> list:
     """Build per-category analytics with nested per-asset metrics for a set of assets."""
     if not asset_docs:
         return []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     asset_ids = [str(a["_id"]) for a in asset_docs]
     type_ids = list({a.get("asset_type_id") for a in asset_docs if a.get("asset_type_id")})
@@ -335,9 +335,18 @@ def _classify_health(asset: dict, now: datetime, open_ol_entry: dict = None) -> 
         return "orange"
     if isinstance(ds, str):
         try:
-            ds = datetime.fromisoformat(ds.replace("Z", "+00:00").replace("+00:00", ""))
+            # Strip timezone info before parsing — all stored datetimes are UTC-naive.
+            # fromisoformat handles both "Z" and "+00:00" forms after the replace.
+            ds = datetime.fromisoformat(ds.replace("Z", "").replace("+00:00", ""))
         except Exception:
             return "orange"
-    hours = (now - ds).total_seconds() / 3600
+    # Ensure both sides are naive UTC before subtraction to avoid TypeError
+    if hasattr(ds, 'tzinfo') and ds.tzinfo is not None:
+        ds = ds.replace(tzinfo=None)
+    now_naive = now.replace(tzinfo=None) if hasattr(now, 'tzinfo') and now.tzinfo is not None else now
+    try:
+        hours = (now_naive - ds).total_seconds() / 3600
+    except TypeError:
+        return "orange"
     return "red" if hours > RED_THRESHOLD_HOURS else "orange"
 

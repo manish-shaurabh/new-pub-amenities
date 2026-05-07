@@ -86,7 +86,7 @@ async def get_user_profile(
             {"_id": {"$in": [ObjectId(s) for s in station_filter]}}
         ).to_list(100)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     total_assets = 0
     total_working = 0
     total_orange = 0

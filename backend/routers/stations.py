@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -36,7 +36,7 @@ async def create_station(station: StationCreate):
         "zone": station.zone,
         "division": station.division,
         "approving_supervisor_id": station.approving_supervisor_id,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     result = await stations_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

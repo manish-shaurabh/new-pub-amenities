@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -58,7 +58,7 @@ def _fy_window(now: Optional[datetime] = None):
     `end` is the *exclusive* upper bound (Apr 1 of next FY) so callers can use
     `start <= ds < end` checks. The displayed label uses inclusive Mar 31.
     """
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     if now.month >= 4:
         start_year = now.year
     else:
@@ -125,6 +125,7 @@ def _asset_performance(asset_records: list, user_id: str,
     """
     period_secs = max(1, int((range_end - range_start).total_seconds()))
     repair_secs_list = []
+    approval_lag_secs_list = []   # approved_at − marked_working_at (ASUP paperwork lag)
     defective_secs = 0
     defect_count = 0
     rejection_count = 0
@@ -150,6 +151,11 @@ def _asset_performance(asset_records: list, user_id: str,
         defect_count += 1
         repair_secs_list.append(int((mw - ds).total_seconds()))
 
+        # Approval lag: time between SUP mark-working and ASUP formal approval
+        approved = _coerce_dt(rec.get("approved_at"))
+        if approved and approved > mw:
+            approval_lag_secs_list.append(int((approved - mw).total_seconds()))
+
         # Clip to date-range window for % functional
         eff_s = max(ds, range_start)
         eff_e = min(mw, range_end)
@@ -160,13 +166,21 @@ def _asset_performance(asset_records: list, user_id: str,
         int(sum(repair_secs_list) / len(repair_secs_list))
         if repair_secs_list else 0
     )
+    avg_approval_lag = (
+        int(sum(approval_lag_secs_list) / len(approval_lag_secs_list))
+        if approval_lag_secs_list else 0
+    )
     pct_functional = max(0.0, min(100.0,
         (1 - defective_secs / period_secs) * 100
     ))
     return {
         "defect_count": defect_count,
+        # Repair Time: how long the physical repair took (SUP's claim: marked_working_at − defective_since)
         "avg_repair_seconds": avg_repair,
         "avg_repair_hours": round(avg_repair / 3600, 2),
+        # Approval Lag: how long ASUP took to formally approve after SUP's claim
+        "avg_approval_lag_seconds": avg_approval_lag,
+        "avg_approval_lag_hours": round(avg_approval_lag / 3600, 2),
         "pct_functional": round(pct_functional, 2),
         "rejection_count": rejection_count,
         "_defective_secs": defective_secs,        # internal, removed before response
@@ -317,7 +331,7 @@ async def supervisor_performance(
     Metrics use Option A timing: marked_working_at − defective_since.
     Only resolved defects are counted; unresolved are excluded.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
 
@@ -422,6 +436,8 @@ async def supervisor_performance(
             "defect_count": m["defect_count"],
             "avg_repair_seconds": m["avg_repair_seconds"],
             "avg_repair_hours": m["avg_repair_hours"],
+            "avg_approval_lag_seconds": m["avg_approval_lag_seconds"],
+            "avg_approval_lag_hours": m["avg_approval_lag_hours"],
             "pct_functional": m["pct_functional"],
             "rejection_count": m["rejection_count"],
         }
@@ -499,7 +515,7 @@ async def asup_performance_summary(
     if not asup:
         raise HTTPException(status_code=404, detail="User not found")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
 
@@ -534,7 +550,7 @@ async def ro_performance_summary(
     if not ro:
         raise HTTPException(status_code=404, detail="User not found")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
 
@@ -661,7 +677,7 @@ async def asset_analytics(asset_id: str):
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     history = await orange_list_collection.find({"asset_id": asset_id}).to_list(10000)
-    return _compute_asset_metrics(asset, history, datetime.utcnow())
+    return _compute_asset_metrics(asset, history, datetime.now(timezone.utc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -691,7 +707,7 @@ async def admin_rollup_matrix(
         if cu and cu.get("role") not in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value):
             raise HTTPException(status_code=403, detail="Admin/superadmin only")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
 
