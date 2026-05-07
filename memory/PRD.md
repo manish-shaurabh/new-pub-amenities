@@ -28,6 +28,15 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Auto-reject on re-inspection + canonical `defective_since`
+- **Auto-reject path**: when NOT_OK or NEEDS_REPAIR is filed on a YELLOW (pending_approval) asset, the system reverts the OL to defective, clears `marked_working_by/at` (preserved as `last_marked_working_by`), sets `rejection_remarks/rejected_by/rejected_at`, posts a `rejection` auto-remark, notifies the original SUP + ROs/SUPs/ASUPs, and writes audit log `re_inspection_auto_rejected`. **Clock (`OL.defective_since`) is NEVER reset.**
+- **Canonical `defective_since`**: `OL.defective_since` is the immutable source of truth. `asset.defective_since` is mirrored from OL on every write — never overwritten with the new inspection's typed value. Notifications, dashboards, PDFs all read from this canonical field.
+- **Inspection POST response** now returns `auto_rejections: [{asset_id, ol_id}]`. Frontend toast: *"Inspection submitted. ⚠ N asset(s) re-reported defective — prior rectification claim auto-rejected."*
+- **PDF inspection report fix** (`inspection-report.js`): replaced hardcoded "PENDING APPROVAL" badge with live classifier (ORANGE/RED/YELLOW/RESOLVED/PASS) computed from `asset.status` + `ol_defective_since`. When canonical and inspector-typed `defective_since` differ, both are shown. All datetimes use the shared IST literal formatter.
+- **Audit invariant I9** added — every defective/pending asset must have `asset.defective_since == OL.defective_since`. Audit now 10/10 PASS.
+- **Drift scanner** at `/app/backend/scripts/diff_defective_since.py` (read-only).
+- **Verified by `testing_agent_v3_fork` iteration 18**: 8/8 backend + 6/6 classifier + 10/10 audit all pass. Net DB shift: yellow 9→3, OLs created/transitioned per test scenarios.
+
 ### Feb 2026 — Cross-UI IST consistency hardening (post-Phase IST)
 - **OL page tab badge counts fixed** — previously badges showed only counts within the current paginated page (e.g., "Red (12)" when API truth was 30). Now `OrangeListPage.js` fetches the full unpaginated list once, derives Orange/Red/Yellow buckets in memory, and paginates client-side per active tab. Tab badges always reflect true totals.
 - **Remarks drawer datetime format unified** — auto-event timestamps inside `RemarksThread.js` now use the shared `formatDateTime()` helper (was previously inline `new Date().toLocaleString` with different format options). Across OL row → drawer → asset history, the same datetime now renders byte-identically.
