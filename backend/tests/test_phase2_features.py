@@ -7,7 +7,7 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://rail-inspect-phase2.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://orange-red-yellow.preview.emergentagent.com').rstrip('/')
 
 # Known test credentials
 SA_CREDS = {"employee_id": "SA001", "password": "admin123"}
