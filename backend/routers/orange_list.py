@@ -350,9 +350,15 @@ async def reject_working(item_id: str, request: RejectWorkingRequest):
         }}
     )
 
+    # Restore asset to defective. Also restore asset.defective_since to match
+    # the open OL entry's defective_since so dashboards & profiles stay in sync.
+    ol_ds = item.get("defective_since")
+    asset_update = {"status": AssetStatus.DEFECTIVE.value}
+    if ol_ds:
+        asset_update["defective_since"] = ol_ds
     await assets_collection.update_one(
         {"_id": ObjectId(item["asset_id"])},
-        {"$set": {"status": AssetStatus.DEFECTIVE.value}}
+        {"$set": asset_update}
     )
 
     # Notify the person who marked it working (SUP)

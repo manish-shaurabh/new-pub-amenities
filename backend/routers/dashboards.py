@@ -25,7 +25,7 @@ from models import (
 )
 
 router = APIRouter()
-from helpers import _classify_health, _compute_asset_metrics, RED_THRESHOLD_HOURS
+from helpers import _classify_health, _compute_asset_metrics, _open_ol_entry, RED_THRESHOLD_HOURS
 
 
 # ============ DASHBOARD ============
@@ -192,7 +192,8 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
     for asset in assets:
         type_id = asset.get("asset_type_id") or "unknown"
         type_name = types_map.get(type_id, "Unknown")
-        cls = _classify_health(asset, now)
+        asset_history = history_by_asset.get(str(asset["_id"]), [])
+        cls = _classify_health(asset, now, _open_ol_entry(asset_history))
         health_counts[cls] += 1
         bucket = grouped.setdefault(type_id, {
             "asset_type_id": type_id,
@@ -203,7 +204,7 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
         })
         bucket["asset_count"] += 1
         bucket[cls] += 1
-        m = _compute_asset_metrics(asset, history_by_asset.get(str(asset["_id"]), []), now)
+        m = _compute_asset_metrics(asset, asset_history, now)
         bucket["_pct_sum"] += m["pct_functional"]
 
     for c in grouped.values():
@@ -269,6 +270,15 @@ async def supervisor_my_tasks(user_id: str, station_id: Optional[str] = None):
         ld = await locations_collection.find({"_id": {"$in": [ObjectId(l) for l in location_ids_seen]}}).to_list(1000)
         locations_map = {str(loc["_id"]): loc["name"] for loc in ld}
 
+    # Pre-fetch OL entries for these assets so health classification uses
+    # the canonical defective_since from the orange-list collection.
+    ol_history_by_asset: dict = {}
+    if assets:
+        for rec in await orange_list_collection.find(
+            {"asset_id": {"$in": [str(a["_id"]) for a in assets]}}
+        ).to_list(20000):
+            ol_history_by_asset.setdefault(rec["asset_id"], []).append(rec)
+
     now = datetime.utcnow()
     by_category: dict = {}
     pending_by_category: dict = {}
@@ -276,7 +286,9 @@ async def supervisor_my_tasks(user_id: str, station_id: Optional[str] = None):
     for asset in assets:
         type_id = asset.get("asset_type_id") or "unknown"
         type_name = types_map.get(type_id, "Unknown")
-        cls = _classify_health(asset, now)
+        open_ol = _open_ol_entry(ol_history_by_asset.get(str(asset["_id"]), []))
+        cls = _classify_health(asset, now, open_ol)
+        canonical_ds = open_ol.get("defective_since") or asset.get("defective_since")
         item = {
             "_id": str(asset["_id"]),
             "asset_number": asset.get("asset_number"),
@@ -284,7 +296,7 @@ async def supervisor_my_tasks(user_id: str, station_id: Optional[str] = None):
             "location_name": locations_map.get(asset.get("location_id"), "Unknown"),
             "status": asset.get("status", "working"),
             "health_class": cls,
-            "defective_since": asset.get("defective_since").isoformat() if isinstance(asset.get("defective_since"), datetime) else asset.get("defective_since"),
+            "defective_since": canonical_ds.isoformat() if isinstance(canonical_ds, datetime) else canonical_ds,
             "asset_type_id": type_id,
             "asset_type_name": type_name,
         }
@@ -401,7 +413,9 @@ async def _build_oversight_dashboard(
         history_by_asset.setdefault(rec["asset_id"], []).append(rec)
 
     for a in assets:
-        cls = _classify_health(a, now)
+        asset_history = history_by_asset.get(str(a["_id"]), [])
+        open_ol = _open_ol_entry(asset_history)
+        cls = _classify_health(a, now, open_ol)
         health[cls] += 1
 
         type_id = a.get("asset_type_id") or "unknown"
@@ -412,7 +426,7 @@ async def _build_oversight_dashboard(
         })
         c["asset_count"] += 1
         c[cls] += 1
-        m = _compute_asset_metrics(a, history_by_asset.get(str(a["_id"]), []), now)
+        m = _compute_asset_metrics(a, asset_history, now)
         c["_pct_sum"] += m["pct_functional"]
 
         sid = a.get("station_id") or "unknown"
@@ -433,12 +447,13 @@ async def _build_oversight_dashboard(
         })
         sc["asset_count"] += 1
         sc[cls] += 1
+        canonical_ds = open_ol.get("defective_since") or a.get("defective_since")
         sc["assets"].append({
             "_id": str(a["_id"]),
             "asset_number": a.get("asset_number"),
             "status": a.get("status", "working"),
             "health_class": cls,
-            "defective_since": a.get("defective_since").isoformat() if isinstance(a.get("defective_since"), datetime) else a.get("defective_since"),
+            "defective_since": canonical_ds.isoformat() if isinstance(canonical_ds, datetime) else canonical_ds,
         })
 
     # Compute per-station % functional based on health (simple score)
@@ -585,15 +600,17 @@ async def superadmin_full_dashboard(
         history_by_asset.setdefault(rec["asset_id"], []).append(rec)
 
     # Pre-classify health and per-asset metrics once
-    classed = []  # (asset, cls, metrics)
+    classed = []  # (asset, cls, metrics, open_ol)
     for a in all_assets:
-        cls = _classify_health(a, now)
-        m = _compute_asset_metrics(a, history_by_asset.get(str(a["_id"]), []), now)
-        classed.append((a, cls, m))
+        asset_history = history_by_asset.get(str(a["_id"]), [])
+        open_ol = _open_ol_entry(asset_history)
+        cls = _classify_health(a, now, open_ol)
+        m = _compute_asset_metrics(a, asset_history, now)
+        classed.append((a, cls, m, open_ol))
 
     # ---- asset_categories (with pct_functional)
     cat_acc: dict = {}
-    for (a, cls, m) in classed:
+    for (a, cls, m, _) in classed:
         type_id = a.get("asset_type_id") or "unknown"
         type_info = types_map.get(type_id, {})
         type_name = type_info.get("name", "Unknown")
@@ -614,7 +631,7 @@ async def superadmin_full_dashboard(
 
     # ---- stations (with pct_functional)
     station_acc: dict = {}
-    for (a, cls, m) in classed:
+    for (a, cls, m, _open_ol) in classed:
         sid = a.get("station_id") or "unknown"
         s_info = stations_map.get(sid, {})
         s = station_acc.setdefault(sid, {
@@ -644,7 +661,7 @@ async def superadmin_full_dashboard(
 
     # ---- departments (with health + pct_functional)
     dept_acc: dict = {}
-    for (a, cls, m) in classed:
+    for (a, cls, m, _open_ol) in classed:
         type_info = types_map.get(a.get("asset_type_id"), {})
         dept_id = type_info.get("department_id") or "unknown"
         d_info = departments_map.get(dept_id, {})
@@ -732,9 +749,9 @@ async def superadmin_full_dashboard(
         supervisors_out.sort(key=lambda x: x["name"] or "")
 
     health = {
-        "working": sum(1 for (_, c, _) in classed if c == "working"),
-        "orange":  sum(1 for (_, c, _) in classed if c == "orange"),
-        "red":     sum(1 for (_, c, _) in classed if c == "red"),
+        "working": sum(1 for (_, c, _, _) in classed if c == "working"),
+        "orange":  sum(1 for (_, c, _, _) in classed if c == "orange"),
+        "red":     sum(1 for (_, c, _, _) in classed if c == "red"),
     }
 
     available_stations = [{"_id": str(s["_id"]), "name": s.get("name")} for s in stations_docs]
@@ -808,13 +825,15 @@ async def admin_full_dashboard(
 
     classed = []
     for a in all_assets:
-        cls = _classify_health(a, now)
-        m = _compute_asset_metrics(a, history_by_asset.get(str(a["_id"]), []), now)
-        classed.append((a, cls, m))
+        asset_history = history_by_asset.get(str(a["_id"]), [])
+        open_ol = _open_ol_entry(asset_history)
+        cls = _classify_health(a, now, open_ol)
+        m = _compute_asset_metrics(a, asset_history, now)
+        classed.append((a, cls, m, open_ol))
 
     # Asset categories
     cat_acc: dict = {}
-    for (a, cls, m) in classed:
+    for (a, cls, m, _open_ol) in classed:
         type_id = a.get("asset_type_id") or "unknown"
         type_info = types_map.get(type_id, {})
         type_name = type_info.get("name", "Unknown")
@@ -835,7 +854,7 @@ async def admin_full_dashboard(
 
     # Stations
     station_acc: dict = {}
-    for (a, cls, m) in classed:
+    for (a, cls, m, _open_ol) in classed:
         sid = a.get("station_id") or "unknown"
         s_info = stations_map.get(sid, {})
         s = station_acc.setdefault(sid, {
@@ -855,7 +874,7 @@ async def admin_full_dashboard(
 
     # Departments
     dept_acc: dict = {}
-    for (a, cls, m) in classed:
+    for (a, cls, m, _open_ol) in classed:
         type_id = a.get("asset_type_id")
         type_info = types_map.get(type_id or "", {})
         did = type_info.get("department_id") or "unknown"
@@ -893,9 +912,9 @@ async def admin_full_dashboard(
     reporting_officers.sort(key=lambda x: x["name"] or "")
 
     health = {
-        "working": sum(1 for (_, c, _) in classed if c == "working"),
-        "orange":  sum(1 for (_, c, _) in classed if c == "orange"),
-        "red":     sum(1 for (_, c, _) in classed if c == "red"),
+        "working": sum(1 for (_, c, _, _) in classed if c == "working"),
+        "orange":  sum(1 for (_, c, _, _) in classed if c == "orange"),
+        "red":     sum(1 for (_, c, _, _) in classed if c == "red"),
     }
 
     available_stations = [{"_id": str(s["_id"]), "name": s.get("name")} for s in stations_docs]
@@ -1019,12 +1038,21 @@ async def oversight_category_assets(
         ).to_list(2000)
         tm = {str(t["_id"]): t.get("name") for t in td}
 
+    # Prefetch OL history for canonical defective_since
+    ol_history_by_asset: dict = {}
+    if assets:
+        for rec in await orange_list_collection.find(
+            {"asset_id": {"$in": [str(a["_id"]) for a in assets]}}
+        ).to_list(20000):
+            ol_history_by_asset.setdefault(rec["asset_id"], []).append(rec)
+
     now = datetime.utcnow()
     priority = []
     working = []
     for a in assets:
-        cls = _classify_health(a, now)
-        ds = a.get("defective_since")
+        open_ol = _open_ol_entry(ol_history_by_asset.get(str(a["_id"]), []))
+        cls = _classify_health(a, now, open_ol)
+        ds = open_ol.get("defective_since") or a.get("defective_since")
         ds_iso = ds.isoformat() if isinstance(ds, datetime) else ds
         ds_sortable = ds if isinstance(ds, datetime) else datetime.min
         item = {

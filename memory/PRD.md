@@ -137,6 +137,14 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
   - `AdminDashboard` — "Performance Analytics" button now opens AdminPerformanceMatrix
 - Tested via `testing_agent_v3_fork` (iteration_14.json): 20/20 backend, 100% on critical UI flows. No bugs.
 
+### Asset Health Source-of-Truth Fix (May 2026)
+- **Bug found:** Superadmin dashboard's orange/red counts disagreed with the Orange/Red List page (6 orange / 8 red on dashboard vs 1 orange / 13 red on list — both totalling 14). Root cause: `_classify_health()` read `asset.defective_since` which was `None` on 4 assets while their orange_list entry held the correct timestamp. Additionally, `reject_working` reset `asset.status='defective'` but didn't restore `asset.defective_since`.
+- **Fixes:**
+  1. **Read-side (option A):** `_classify_health(asset, now, open_ol_entry=None)` now treats orange_list as the canonical source. New `_open_ol_entry(history)` helper picks the most-recent non-resolved entry. All 5 dashboard endpoints (admin/superadmin/asup/ro/dashboards) now pre-fetch OL history and pass the open entry.
+  2. **Write-side (option B-lite):** `orange_list.reject_working` now also restores `asset.defective_since` from the OL entry.
+  3. **Backfill:** `/app/backend/scripts/backfill_defective_since.py` (idempotent) — sync existing assets where the two sources disagree. Ran once: 2 assets fixed, 12 unchanged, 0 stale-working.
+- **Verified:** `/api/dashboard/superadmin` health and `/api/orange-list` now both report `orange=1, red=13`. 54/54 regression tests still pass.
+
 ### Future / Backlog
 - SMS/WhatsApp notification integration (infrastructure present, needs API keys)
 - Profile page: Schedule Summary tab

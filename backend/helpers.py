@@ -291,11 +291,31 @@ async def _analytics_for_asset_set(asset_docs: list) -> list:
     result.sort(key=lambda r: r["asset_type_name"])
     return result
 
-def _classify_health(asset: dict, now: datetime) -> str:
-    """Return 'working', 'orange', or 'red' based on defective duration."""
+def _open_ol_entry(history: list) -> dict:
+    """Pick the canonical 'open' orange-list entry from a list of an asset's OL
+    history. Prefers the most recently-created non-resolved entry. Returns an
+    empty dict if none."""
+    if not history:
+        return {}
+    open_entries = [h for h in history if h.get("status") != "resolved"]
+    if not open_entries:
+        return {}
+    # Newest by created_at (or defective_since if missing)
+    open_entries.sort(
+        key=lambda h: (h.get("created_at") or h.get("defective_since") or datetime.min),
+        reverse=True,
+    )
+    return open_entries[0]
+
+
+def _classify_health(asset: dict, now: datetime, open_ol_entry: dict = None) -> str:
     if asset.get("status") == "working":
         return "working"
-    ds = asset.get("defective_since")
+    ds = None
+    if open_ol_entry:
+        ds = open_ol_entry.get("defective_since") or open_ol_entry.get("created_at")
+    if not ds:
+        ds = asset.get("defective_since")
     if not ds:
         return "orange"
     if isinstance(ds, str):
