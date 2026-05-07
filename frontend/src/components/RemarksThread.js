@@ -12,6 +12,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { remarksAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
+import { formatDateTime } from '../lib/utils';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Textarea } from './ui/textarea';
@@ -192,9 +193,7 @@ export default function RemarksThread({ orangeListId, readOnlyHint = false }) {
                       </Badge>
                     )}
                     <span className="text-[10px] text-muted-foreground ml-auto">
-                      {r.created_at ? new Date(r.created_at).toLocaleString('en-IN', {
-                        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                      }) : ''}
+                      {r.created_at ? formatDateTime(r.created_at) : ''}
                     </span>
                   </div>
                   <p className="text-xs text-foreground break-words whitespace-pre-wrap">{r.text}</p>

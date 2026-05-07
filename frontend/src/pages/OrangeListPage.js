@@ -23,13 +23,11 @@ const PAGE_SIZE = 25;
 
 export default function OrangeListPage() {
   const { user, canApprove } = useAuth();
-  const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [page, setPage] = useState(1);
+  const [allItems, setAllItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('orange');
+  const [page, setPage] = useState(1);
   const [actionDialog, setActionDialog] = useState(null);
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -43,12 +41,10 @@ export default function OrangeListPage() {
   const loadItems = useCallback(async () => {
     if (!user?._id) return;
     try {
-      const opts = { page, pageSize: PAGE_SIZE };
-      if (isScoped) opts.for_user_id = user._id;
-      const res = await orangeListAPI.listPaginated(opts);
-      setItems(res.data.items || []);
-      setTotal(res.data.total || 0);
-      setTotalPages(res.data.total_pages || 1);
+      const params = {};
+      if (isScoped) params.for_user_id = user._id;
+      const res = await orangeListAPI.list(params);
+      setAllItems(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       console.error('Failed to load orange list', e);
       toast.error(errString(e, 'Failed to load orange list'));
@@ -56,7 +52,7 @@ export default function OrangeListPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?._id, isScoped, page]);
+  }, [user?._id, isScoped]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
 
@@ -157,9 +153,19 @@ export default function OrangeListPage() {
     window.open(`${backendUrl}/api/orange-list/export/pdf?list_type=${listType || ''}`, '_blank');
   };
 
-  const orangeItems = items.filter(i => i.list_type === 'orange' && i.status !== 'pending_approval');
-  const redItems = items.filter(i => i.list_type === 'red' && i.status !== 'pending_approval');
-  const yellowItems = items.filter(i => i.status === 'pending_approval');
+  // ── Tab buckets — derived from the FULL unpaginated list so the tab
+  // counts always reflect the true totals (not just the current page).
+  const orangeItems = allItems.filter(i => i.list_type === 'orange' && i.status !== 'pending_approval');
+  const redItems = allItems.filter(i => i.list_type === 'red' && i.status !== 'pending_approval');
+  const yellowItems = allItems.filter(i => i.status === 'pending_approval');
+
+  // Client-side pagination per active tab
+  const activeBucket = activeTab === 'orange' ? orangeItems
+                     : activeTab === 'red' ? redItems
+                     : yellowItems;
+  const total = activeBucket.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const items = activeBucket.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   if (loading) {
     return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-20 bg-muted animate-pulse rounded-xl" />)}</div>;
@@ -316,7 +322,7 @@ export default function OrangeListPage() {
               </CardContent>
             </Card>
           ) : (
-            orangeItems.map(item => <ItemCard key={item._id} item={item} />)
+            items.map(item => <ItemCard key={item._id} item={item} />)
           )}
         </TabsContent>
 
@@ -329,7 +335,7 @@ export default function OrangeListPage() {
               </CardContent>
             </Card>
           ) : (
-            redItems.map(item => <ItemCard key={item._id} item={item} />)
+            items.map(item => <ItemCard key={item._id} item={item} />)
           )}
         </TabsContent>
 
@@ -342,7 +348,7 @@ export default function OrangeListPage() {
               </CardContent>
             </Card>
           ) : (
-            yellowItems.map(item => <ItemCard key={item._id} item={item} />)
+            items.map(item => <ItemCard key={item._id} item={item} />)
           )}
         </TabsContent>
       </Tabs>
@@ -384,7 +390,7 @@ export default function OrangeListPage() {
               </p>
               {actionDialog?.item?.defective_since && (
                 <p className="text-xs text-destructive mt-1">
-                  Defective since: {new Date(actionDialog.item.defective_since).toLocaleString()}
+                  Defective since: {formatDateTime(actionDialog.item.defective_since)}
                 </p>
               )}
             </div>

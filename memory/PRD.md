@@ -28,6 +28,11 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Cross-UI IST consistency hardening (post-Phase IST)
+- **OL page tab badge counts fixed** — previously badges showed only counts within the current paginated page (e.g., "Red (12)" when API truth was 30). Now `OrangeListPage.js` fetches the full unpaginated list once, derives Orange/Red/Yellow buckets in memory, and paginates client-side per active tab. Tab badges always reflect true totals.
+- **Remarks drawer datetime format unified** — auto-event timestamps inside `RemarksThread.js` now use the shared `formatDateTime()` helper (was previously inline `new Date().toLocaleString` with different format options). Across OL row → drawer → asset history, the same datetime now renders byte-identically.
+- **Verified by `testing_agent_v3_fork` iteration 17**: 13/13 backend tests pass (+5 new cross-UI tests in `test_ist_cross_ui_consistency.py`) + frontend Playwright covered Superadmin/SUP/ASUP across 7 spec items including byte-identical cross-page timestamp comparison. Zero `Z`, `+05:30`, `GMT`, `UTC` strings on any rendered page.
+
 ### Feb 2026 — Phase IST + List Consistency Audit
 - **IST-only datetime model** — system operates exclusively in Indian Standard Time. Backend uses `now_ist()` (naive IST datetimes). `_dt_to_iso()` emits bare ISO strings (no `Z`, no offset). Frontend `formatDateTime` parses literal string parts via `Intl` formatter — no JS Date timezone math, so display always matches storage regardless of browser TZ. Legacy UTC data displays with a one-time +5h30m label shift (accepted tradeoff per user choice 1b).
 - **Timestamp-ordering hard-reject (HTTP 400)** on:

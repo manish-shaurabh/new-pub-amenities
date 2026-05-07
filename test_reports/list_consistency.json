@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-05-07T11:43:10.841000",
+  "run_at": "2026-05-07T11:51:22.823209",
   "summary": {
     "total_checks": 9,
     "pass": 9,
@@ -9,15 +9,15 @@
   "dataset": {
     "assets_total": 74,
     "assets_working": 25,
-    "assets_defective": 41,
-    "assets_pending_approval": 8,
+    "assets_defective": 40,
+    "assets_pending_approval": 9,
     "ol_entries_total": 71,
-    "ol_open_defective": 41,
-    "ol_open_pending_approval": 8,
+    "ol_open_defective": 40,
+    "ol_open_pending_approval": 9,
     "ol_resolved": 22,
     "list_orange_count": 13,
-    "list_red_count": 28,
-    "list_yellow_count": 8
+    "list_red_count": 27,
+    "list_yellow_count": 9
   },
   "violations": []
 }
