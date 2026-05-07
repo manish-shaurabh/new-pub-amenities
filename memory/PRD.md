@@ -28,6 +28,17 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Phase IST + List Consistency Audit
+- **IST-only datetime model** — system operates exclusively in Indian Standard Time. Backend uses `now_ist()` (naive IST datetimes). `_dt_to_iso()` emits bare ISO strings (no `Z`, no offset). Frontend `formatDateTime` parses literal string parts via `Intl` formatter — no JS Date timezone math, so display always matches storage regardless of browser TZ. Legacy UTC data displays with a one-time +5h30m label shift (accepted tradeoff per user choice 1b).
+- **Timestamp-ordering hard-reject (HTTP 400)** on:
+  - `POST /api/inspections` — rejects future `inspection_at`, future `defective_since`, or `defective_since > inspection_at`
+  - `POST /api/orange-list/{id}/mark-working` — rejects future `marked_working_at` or `marked_working_at < defective_since`
+  - 5-minute clock-skew tolerance on all checks
+- **Pending Verification tile split** — yellow (rectified, awaiting ASUP verification) is now its own dedicated tile separate from "Active Defects". Implemented on Superadmin, Admin, SUP, ASUP/RO dashboards. Pie chart legend on every dashboard shows Working/Orange/Red only.
+- **List-consistency audit** — new read-only audit script `/app/backend/tests/audit_list_consistency.py` (9 invariants × all assets) + pytest wrapper `test_list_consistency.py`. Catches asset-OL drift, list exclusivity violations, time-math anomalies, orphaned records. Currently 9/9 PASS.
+- **DB cleanup** — fixed 1 stray asset with non-canonical status, removed 3 orphaned resolved OL entries pointing to deleted assets, clamped 1 historical bad-timestamp resolved OL.
+- **Test files added**: `/app/backend/tests/test_ist_and_validation.py` (7 tests covering IST format + 400-validations) by testing agent.
+
 ### Phase 1 — Asset Linkage + Profile Tab (DONE — May 2026)
 - Removed `assigned_supervisor_id` from AssetCreate schema and all scoping queries
 - Fixed implicit station+dept scoping in inspections.py, orange_list.py, dashboards.py, analytics.py
