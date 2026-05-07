@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -36,7 +36,7 @@ async def get_dashboard_stats():
     working_assets = await assets_collection.count_documents({"status": AssetStatus.WORKING.value})
     defective_assets = await assets_collection.count_documents({"status": {"$ne": AssetStatus.WORKING.value}})
     
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     
     # Orange list (< 24 hrs) and Red list (> 24 hrs).
     # Only count entries with status=defective; pending_approval (yellow) is counted separately.
@@ -177,7 +177,7 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
         ud = await stations_collection.find({"_id": {"$in": [ObjectId(s) for s in user_station_ids]}}).to_list(100)
         user_stations = [{"_id": str(s["_id"]), "name": s.get("name")} for s in ud]
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     grouped: dict = {}
     health_counts = {"working": 0, "orange": 0, "red": 0, "yellow": 0}
 
@@ -280,7 +280,7 @@ async def supervisor_my_tasks(user_id: str, station_id: Optional[str] = None):
         ).to_list(20000):
             ol_history_by_asset.setdefault(rec["asset_id"], []).append(rec)
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     by_category: dict = {}
     pending_by_category: dict = {}
 
@@ -399,7 +399,7 @@ async def _build_oversight_dashboard(
         available_departments = [{"_id": str(d["_id"]), "name": d.get("name")} for d in dd]
         available_departments.sort(key=lambda x: x["name"] or "")
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     health = {"working": 0, "orange": 0, "red": 0, "yellow": 0}
     by_category: dict = {}
     by_station: dict = {}
@@ -573,7 +573,7 @@ async def superadmin_full_dashboard(
       - reporting_officers, approving_supervisors, supervisors
       - available_stations (for the station multi-select)
     """
-    now = datetime.now(timezone.utc)
+    now = now_ist()
 
     asset_query = {}
     if station_ids:
@@ -790,7 +790,7 @@ async def admin_full_dashboard(
     reporting_officer_ids: Optional[List[str]] = Query(None),
 ):
     """Admin dashboard — same structure as superadmin but with dept + RO filters."""
-    now = datetime.now(timezone.utc)
+    now = now_ist()
 
     # Build asset query with optional station + department filters
     asset_query: dict = {}
@@ -1049,7 +1049,7 @@ async def oversight_category_assets(
         ).to_list(20000):
             ol_history_by_asset.setdefault(rec["asset_id"], []).append(rec)
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     priority = []
     working = []
     for a in assets:

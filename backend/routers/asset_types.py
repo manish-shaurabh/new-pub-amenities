@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -35,7 +35,7 @@ async def create_asset_type(asset_type: AssetTypeCreate):
         "department_id": asset_type.department_id,
         "checklist": [item.model_dump() for item in asset_type.checklist],
         "description": asset_type.description,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     }
     result = await asset_types_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

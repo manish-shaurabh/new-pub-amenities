@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -79,7 +79,7 @@ async def create_user(user: UserCreate):
         "phone": user.phone,
         "reports_to_id": user.reports_to_id,
         "is_active": True,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     }
     result = await users_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

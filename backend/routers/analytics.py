@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -58,7 +58,7 @@ def _fy_window(now: Optional[datetime] = None):
     `end` is the *exclusive* upper bound (Apr 1 of next FY) so callers can use
     `start <= ds < end` checks. The displayed label uses inclusive Mar 31.
     """
-    now = now or datetime.now(timezone.utc)
+    now = now or now_ist()
     if now.month >= 4:
         start_year = now.year
     else:
@@ -331,7 +331,7 @@ async def supervisor_performance(
     Metrics use Option A timing: marked_working_at − defective_since.
     Only resolved defects are counted; unresolved are excluded.
     """
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
 
@@ -515,7 +515,7 @@ async def asup_performance_summary(
     if not asup:
         raise HTTPException(status_code=404, detail="User not found")
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
 
@@ -550,7 +550,7 @@ async def ro_performance_summary(
     if not ro:
         raise HTTPException(status_code=404, detail="User not found")
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
 
@@ -677,7 +677,7 @@ async def asset_analytics(asset_id: str):
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     history = await orange_list_collection.find({"asset_id": asset_id}).to_list(10000)
-    return _compute_asset_metrics(asset, history, datetime.now(timezone.utc))
+    return _compute_asset_metrics(asset, history, now_ist())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -707,7 +707,7 @@ async def admin_rollup_matrix(
         if cu and cu.get("role") not in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value):
             raise HTTPException(status_code=403, detail="Admin/superadmin only")
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     range_end = _parse_dt_param(to_date, now)
     range_start = _parse_dt_param(from_date, now - timedelta(days=30))
 

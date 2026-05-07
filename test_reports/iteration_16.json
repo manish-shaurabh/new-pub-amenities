@@ -1,0 +1,34 @@
+{
+  "summary": "Phase-IST hardening verified: backend emits naive IST datetimes (no Z, no +05:30), dashboard health.{working,orange,red,yellow} stays internally consistent, hard-reject HTTP 400 validation works on POST /api/inspections (future defective_since, defective_since>inspection_at) and on POST /api/orange-list/{id}/mark-working (future, before-defective_since), valid mark-working still 200s. Superadmin / SUP / ASUP-RO dashboards all expose the 4 split health tiles with the correct data-testids and the pie-chart legend has dropped the yellow slice across all roles tested. Pytest wrapper test_list_consistency.py runs and the audit reports 9/9 PASS on live data. New focused suite test_ist_and_validation.py = 7/7 PASS, plus list_consistency wrapper = 1/1 PASS, total 8/8 backend.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ist_and_validation.py",
+    "/app/backend/tests/test_list_consistency.py",
+    "/app/test_reports/pytest/ist_validation_results.xml",
+    "/app/test_reports/list_consistency.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "test_credentials.md doesn't list a working password for any 'admin' role user. Two admin users (SUP002, SUP003) were found via /api/users?role=admin but admin123 is rejected at /api/auth/login → could not UI-verify data-testid='admin-health-tile-pending-verification' end-to-end. Source-code grep confirms the testid IS present at AdminDashboard.js:257. Recommend adding an admin test credential to /app/memory/test_credentials.md so this surface can be UI-tested in future iterations.",
+    "Pre-existing inconsistency carried over from iteration 14/15: most non-departments routers still trust client-supplied current_user_id; new IST validation lives at the route layer and inherits that trust model. Not a regression, but worth wrapping inside a centralised get_current_user dependency now that validation logic is being added.",
+    "POST /api/inspections and POST /api/orange-list/{id}/mark-working both apply a 5-minute future tolerance (now_n + timedelta(minutes=5)). Documented for clarity; tests use ≥1d future to stay clear of the skew window."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ist_and_validation.py (NEW — 7 tests covering IST format on /api/orange-list, dashboard health.{working,orange,red,yellow} consistency vs OL, inspection 400-validations, mark-working 400-validations, mark-working happy path)"
+  ],
+  "success_rate": {"backend": "100% (8/8: 7 IST/validation + 1 list-consistency-9invariants)", "frontend": "100% verified (Superadmin 4 tiles, SUP tile, ASUP-RO oversight tile, pie legend yellow-removed across roles); admin role tile verified in source only — no admin credential available"},
+  "test_credentials": "SA001/admin123 (Superadmin), SSE001/admin123 (SUP), ASUP001/admin123 (ASUP) — all verified working. No working password for role='admin' users.",
+  "seed_data_creation": "test_mark_working_succeeds_with_valid_timestamp moved exactly ONE OL entry from status='defective' to 'pending_approval' (asset 69fc5a917fcee267ba0191ee). This is why API counts show orange+red=27 and yellow=8 (was 28/7 in the IST-spec baseline). Audit ran AFTER and still passes 9/9.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run regression with: REACT_APP_BACKEND_URL=<url> pytest /app/backend/tests/test_ist_and_validation.py /app/backend/tests/test_list_consistency.py /app/backend/tests/test_e2e_regression.py -v . Note that test_mark_working_succeeds_with_valid_timestamp consumes 1 defective OL each run; if no defective OL exists it pytest.skip()s gracefully. Pie-chart legend assertion in playwright: legend should contain 'Working' and 'Red' but never 'Yellow' or 'Pending Verification'. Health-tile data-testids: 'health-tile-{working|orange|red|pending-verification}' (Superadmin), 'admin-health-tile-pending-verification' (Admin), 'sup-health-tile-pending-verification' (SUP), 'oversight-health-tile-pending-verification' (ASUP/RO).",
+  "rca of the issue": "N/A — no defects found. All 7 spec items verified PASS. The Phase-IST refactor + dashboard split + timestamp-ordering hard-reject is implemented correctly end-to-end."
+}

@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from bson import ObjectId
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -86,7 +86,7 @@ async def get_user_profile(
             {"_id": {"$in": [ObjectId(s) for s in station_filter]}}
         ).to_list(100)
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     total_assets = 0
     total_working = 0
     total_orange = 0

@@ -788,10 +788,11 @@ export default function SuperadminDashboard() {
 
   const pieData = [
     { name: 'Working', value: data.health.working, color: HEALTH_COLORS.working },
-    { name: 'Orange', value: data.health.orange, color: HEALTH_COLORS.orange },
-    { name: 'Red', value: data.health.red, color: HEALTH_COLORS.red },
-    { name: 'Yellow', value: data.health.yellow || 0, color: HEALTH_COLORS.yellow },
+    { name: 'Orange (≤24h)', value: data.health.orange, color: HEALTH_COLORS.orange },
+    { name: 'Red (>24h)', value: data.health.red, color: HEALTH_COLORS.red },
   ].filter((d) => d.value > 0);
+  const pendingVerificationCount = data.health.yellow || 0;
+  const activeDefectsCount = (data.health.orange || 0) + (data.health.red || 0);
 
   return (
     <div className="space-y-6" data-testid="superadmin-dashboard">
@@ -823,6 +824,27 @@ export default function SuperadminDashboard() {
         <SummaryTile icon={Wrench} label="Reporting Officers" value={data.totals.reporting_officers} testId="tile-ro" onClick={() => setActiveTab('reporting-officers')} />
         <SummaryTile icon={ShieldAlert} label="Approving Sup." value={data.totals.approving_supervisors} testId="tile-asup" onClick={() => setActiveTab('approving-supervisors')} />
         <SummaryTile icon={Users} label="Supervisors" value={data.totals.supervisors} testId="tile-supervisors" onClick={() => setActiveTab('supervisors')} />
+      </div>
+
+      {/* Health tiles row — Working / Orange / Red / Pending Verification */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="health-tiles-row">
+        <div className="rounded-xl border bg-emerald-50/60 px-4 py-3" data-testid="health-tile-working">
+          <p className="text-xs text-emerald-700/80 font-medium">Working</p>
+          <p className="text-2xl font-semibold text-emerald-700 mt-1">{data.health.working || 0}</p>
+        </div>
+        <div className="rounded-xl border bg-orange-50/60 px-4 py-3" data-testid="health-tile-orange">
+          <p className="text-xs text-orange-700/80 font-medium">Orange (Active ≤ 24h)</p>
+          <p className="text-2xl font-semibold text-orange-700 mt-1">{data.health.orange || 0}</p>
+        </div>
+        <div className="rounded-xl border bg-red-50/60 px-4 py-3" data-testid="health-tile-red">
+          <p className="text-xs text-red-700/80 font-medium">Red (Active &gt; 24h)</p>
+          <p className="text-2xl font-semibold text-red-700 mt-1">{data.health.red || 0}</p>
+        </div>
+        <div className="rounded-xl border bg-yellow-50/60 px-4 py-3" data-testid="health-tile-pending-verification">
+          <p className="text-xs text-yellow-700/80 font-medium">Pending Verification</p>
+          <p className="text-2xl font-semibold text-yellow-700 mt-1">{pendingVerificationCount}</p>
+          <p className="text-[10px] text-yellow-700/60 mt-0.5">Rectified, awaiting ASUP check</p>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>

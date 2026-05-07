@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -68,7 +68,7 @@ async def mark_asset_defective(asset_id: str, payload: dict):
             defective_at = defective_at.replace(tzinfo=None)
     except Exception:
         raise HTTPException(status_code=400, detail="defective_at must be a valid ISO datetime")
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     if defective_at > now + timedelta(minutes=1):
         raise HTTPException(status_code=400, detail="defective_at cannot be in the future")
     performed_by = payload.get("performed_by")
@@ -226,7 +226,7 @@ async def create_asset(asset: AssetCreate):
         "last_inspected": None,
         "next_due": None,
         "defective_since": None,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     }
     result = await assets_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

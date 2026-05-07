@@ -1,64 +1,23 @@
 {
-  "run_at": "2026-05-07T10:45:52.271458",
+  "run_at": "2026-05-07T11:20:46.156740",
   "summary": {
-    "total_checks": 11,
-    "pass": 6,
-    "fail": 5,
+    "total_checks": 9,
+    "pass": 9,
+    "fail": 0,
     "warn": 0
   },
   "dataset": {
     "assets_total": 74,
     "assets_working": 39,
     "assets_defective": 27,
-    "assets_pending_approval": 7,
-    "ol_entries_total": 60,
-    "ol_open_defective": 28,
-    "ol_open_pending_approval": 7,
-    "ol_resolved": 25,
-    "list_orange_count": 4,
+    "assets_pending_approval": 8,
+    "ol_entries_total": 57,
+    "ol_open_defective": 27,
+    "ol_open_pending_approval": 8,
+    "ol_resolved": 22,
+    "list_orange_count": 3,
     "list_red_count": 24,
-    "list_yellow_count": 7
+    "list_yellow_count": 8
   },
-  "violations": [
-    {
-      "invariant": "I5",
-      "severity": "FAIL",
-      "check": "asset.status='defective' count != orange+red OL count",
-      "asset_id": null,
-      "ol_id": null,
-      "detail": "asset_status_defective=27 vs orange+red=28"
-    },
-    {
-      "invariant": "I6",
-      "severity": "FAIL",
-      "check": "marked_working_at < defective_since",
-      "asset_id": null,
-      "ol_id": "69fb2412ac19ea83aa5dc435",
-      "detail": "OL._id=69fb2412ac19ea83aa5dc435 ds=2026-05-06 11:20:00 mw=2026-05-05 14:30:00"
-    },
-    {
-      "invariant": "I7",
-      "severity": "FAIL",
-      "check": "OL entry references deleted/non-existent asset",
-      "asset_id": "69f5f977dd6a924aad7954b1",
-      "ol_id": "69f5fa3ae52280f7f91cbf8a",
-      "detail": "OL._id=69f5fa3ae52280f7f91cbf8a asset_id=69f5f977dd6a924aad7954b1 status=resolved"
-    },
-    {
-      "invariant": "I7",
-      "severity": "FAIL",
-      "check": "OL entry references deleted/non-existent asset",
-      "asset_id": "69f6fde2f3f687e9573332ca",
-      "ol_id": "69f6fe17f3f687e9573332cc",
-      "detail": "OL._id=69f6fe17f3f687e9573332cc asset_id=69f6fde2f3f687e9573332ca status=resolved"
-    },
-    {
-      "invariant": "I7",
-      "severity": "FAIL",
-      "check": "OL entry references deleted/non-existent asset",
-      "asset_id": "69f7495f4baaffbc78dc14ab",
-      "ol_id": "69f74a6a4baaffbc78dc14ae",
-      "detail": "OL._id=69f74a6a4baaffbc78dc14ae asset_id=69f7495f4baaffbc78dc14ab status=resolved"
-    }
-  ]
+  "violations": []
 }

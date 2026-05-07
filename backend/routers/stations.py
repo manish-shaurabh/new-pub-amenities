@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -36,7 +36,7 @@ async def create_station(station: StationCreate):
         "zone": station.zone,
         "division": station.division,
         "approving_supervisor_id": station.approving_supervisor_id,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     }
     result = await stations_collection.insert_one(doc)
     doc["_id"] = result.inserted_id

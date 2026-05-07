@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from bson import ObjectId
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     asset_types_collection, orange_list_collection,
     assets_collection, stations_collection, users_collection,
@@ -138,7 +138,7 @@ async def broadcast_asset_defect_notifications(
     if not recipients:
         return 0
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     docs = [
         {
             "user_id": uid,
@@ -237,7 +237,7 @@ async def _analytics_for_asset_set(asset_docs: list) -> list:
     """Build per-category analytics with nested per-asset metrics for a set of assets."""
     if not asset_docs:
         return []
-    now = datetime.now(timezone.utc)
+    now = now_ist()
 
     asset_ids = [str(a["_id"]) for a in asset_docs]
     type_ids = list({a.get("asset_type_id") for a in asset_docs if a.get("asset_type_id")})
@@ -314,12 +314,12 @@ def _classify_health(asset: dict, now: datetime, open_ol_entry: dict = None) -> 
     Classification:
       - 'working'  → asset.status == 'working'
       - 'yellow'   → asset.status == 'pending_approval' (rectified, awaiting ASUP verification)
-      - 'red'      → defective for > RED_THRESHOLD_HOURS
+      - 'red'      → defective for > RED_THRESHOLD_HOURS (24h)
       - 'orange'   → defective for ≤ RED_THRESHOLD_HOURS
 
-    The orange_list collection is the canonical record of defects. If an
-    `open_ol_entry` is supplied for this asset, its `defective_since` takes
-    precedence over `asset.defective_since`.
+    All datetimes are naive IST literals. The orange_list collection is the
+    canonical record of defects — if an `open_ol_entry` is supplied for this
+    asset, its `defective_since` takes precedence over `asset.defective_since`.
     """
     status = asset.get("status")
     if status == "working":
@@ -335,15 +335,14 @@ def _classify_health(asset: dict, now: datetime, open_ol_entry: dict = None) -> 
         return "orange"
     if isinstance(ds, str):
         try:
-            # Strip timezone info before parsing — all stored datetimes are UTC-naive.
-            # fromisoformat handles both "Z" and "+00:00" forms after the replace.
             ds = datetime.fromisoformat(ds.replace("Z", "").replace("+00:00", ""))
         except Exception:
             return "orange"
-    # Ensure both sides are naive UTC before subtraction to avoid TypeError
-    if hasattr(ds, 'tzinfo') and ds.tzinfo is not None:
+    # Strip tzinfo so we work in naive space (legacy aware datetimes are UTC,
+    # new ones are naive IST — both are treated as wall-clock for duration math).
+    if hasattr(ds, "tzinfo") and ds.tzinfo is not None:
         ds = ds.replace(tzinfo=None)
-    now_naive = now.replace(tzinfo=None) if hasattr(now, 'tzinfo') and now.tzinfo is not None else now
+    now_naive = now.replace(tzinfo=None) if hasattr(now, "tzinfo") and now.tzinfo is not None else now
     try:
         hours = (now_naive - ds).total_seconds() / 3600
     except TypeError:

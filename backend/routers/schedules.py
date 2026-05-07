@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -35,7 +35,7 @@ async def create_schedule(schedule: ScheduleCreate):
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     next_due = calculate_next_due(now, schedule.frequency)
     
     await schedules_collection.update_one(
@@ -63,7 +63,7 @@ async def create_schedule(schedule: ScheduleCreate):
 async def list_schedules(overdue_only: bool = False):
     query = {}
     if overdue_only:
-        query["next_due"] = {"$lt": datetime.now(timezone.utc)}
+        query["next_due"] = {"$lt": now_ist()}
     
     docs = await schedules_collection.find(query).to_list(1000)
     
@@ -77,14 +77,14 @@ async def list_schedules(overdue_only: bool = False):
                 "asset_type_name": asset_type["name"] if asset_type else "Unknown",
                 "station_name": station["name"] if station else "Unknown"
             }
-        doc["is_overdue"] = doc.get("next_due", datetime.now(timezone.utc)) < datetime.now(timezone.utc) if doc.get("next_due") else False
+        doc["is_overdue"] = doc.get("next_due", now_ist()) < now_ist() if doc.get("next_due") else False
     
     return [serialize_doc(d) for d in docs]
 
 
 @router.get("/api/schedules/due-today")
 async def get_due_today(user_id: Optional[str] = None):
-    today_end = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59)
+    today_end = now_ist().replace(hour=23, minute=59, second=59)
     
     query = {"next_due": {"$lte": today_end}}
     docs = await schedules_collection.find(query).to_list(1000)
@@ -108,7 +108,7 @@ async def get_due_today(user_id: Optional[str] = None):
                 "station_name": station["name"] if station else "Unknown",
                 "location_name": location["name"] if location else "Unknown"
             }
-            doc["is_overdue"] = doc.get("next_due", datetime.now(timezone.utc)) < datetime.now(timezone.utc)
+            doc["is_overdue"] = doc.get("next_due", now_ist()) < now_ist()
             results.append(serialize_doc(doc))
     
     return results
@@ -133,7 +133,7 @@ async def get_supervisor_schedule(
         if from_date:
             range_start = datetime.strptime(from_date, "%Y-%m-%d")
         else:
-            today = datetime.now(timezone.utc)
+            today = now_ist()
             range_start = datetime(today.year, today.month, today.day)
         if to_date:
             range_end = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
@@ -197,7 +197,7 @@ async def get_supervisor_schedule(
         l_docs = await locations_collection.find({"_id": {"$in": [ObjectId(lid) for lid in location_ids]}}).to_list(1000)
         locations_map = {str(loc["_id"]): loc["name"] for loc in l_docs}
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     grouped: dict = {}
 
     for asset in assets:
@@ -288,7 +288,7 @@ async def get_admin_schedule(
         if from_date:
             range_start = datetime.strptime(from_date, "%Y-%m-%d")
         else:
-            today = datetime.now(timezone.utc)
+            today = now_ist()
             range_start = datetime(today.year, today.month, today.day)
         if to_date:
             range_end = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
@@ -365,7 +365,7 @@ async def get_admin_schedule(
         ud = await users_collection.find({"_id": {"$in": [ObjectId(u) for u in sup_ids_set]}}).to_list(1000)
         sups_map = {str(u["_id"]): {"name": u.get("name"), "employee_id": u.get("employee_id")} for u in ud}
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     grouped: dict = {}
     for asset in assets:
         freq_days = _normalize_freq_days(asset.get("schedule_frequency"))

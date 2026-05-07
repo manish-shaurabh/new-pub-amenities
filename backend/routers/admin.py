@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -68,7 +68,7 @@ async def transfer_supervisor(payload: dict):
             "to_supervisor_id": to_id,
             "assets_updated": result.modified_count,
         },
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     })
 
     return {
@@ -139,7 +139,7 @@ async def assign_assets_bulk(payload: dict):
             "from_breakdown": from_breakdown,
             "assets_updated": result.modified_count,
         },
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now_ist(),
     })
 
     return {
@@ -170,7 +170,7 @@ async def grant_admin_powers(user_id: str, granted_by: str = Query(...)):
         "entity_id": user_id,
         "action": "granted_admin",
         "performed_by": granted_by,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     })
     
     return {"message": "Admin powers granted"}

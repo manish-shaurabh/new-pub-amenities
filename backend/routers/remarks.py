@@ -30,7 +30,7 @@ from fastapi import APIRouter, HTTPException
 from bson import ObjectId
 from pydantic import BaseModel, Field
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     orange_list_collection,
     assets_collection,
@@ -115,7 +115,7 @@ async def _seed_default_tags():
     count = await remark_tags_collection.count_documents({})
     if count > 0:
         return
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     docs = [{**t, "archived": False, "is_default": True, "created_at": now} for t in DEFAULT_TAGS]
     await remark_tags_collection.insert_many(docs)
 
@@ -208,7 +208,7 @@ async def _notify_fanout(asset: dict, remark_type: str, author_id: str, item_id:
     recipients.discard(author_id)
     if not recipients:
         return
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     docs = [
         {
             "user_id": uid,
@@ -253,7 +253,7 @@ async def add_auto_remark(
         "tag": tag,
         "tag_ref": tag_ref,
         "is_auto": True,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now_ist(),
         # event_at: when the underlying event occurred — only set when different from created_at.
         # Enables UI to show "logged now, defect started T-30h" without mutating the audit timestamp.
         "event_at": event_at if event_at else None,
@@ -289,7 +289,7 @@ async def create_tag(payload: TagCreate, current_user_id: str):
         "archived": False,
         "is_default": False,
         "created_by": current_user_id,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now_ist(),
     }
     res = await remark_tags_collection.insert_one(doc)
     out = await remark_tags_collection.find_one({"_id": res.inserted_id})
@@ -336,7 +336,7 @@ async def list_remarks(item_id: str):
     item = await _get_orange_item(item_id)
 
     cutoff = _archival_cutoff(item)
-    archived = bool(cutoff and datetime.now(timezone.utc) > cutoff)
+    archived = bool(cutoff and now_ist() > cutoff)
 
     if archived:
         return {
@@ -390,7 +390,7 @@ async def create_remark(item_id: str, payload: RemarkCreate, current_user_id: st
         "tag": tag_slug,
         "tag_ref": (payload.tag_ref or "").strip() or None,
         "is_auto": False,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now_ist(),
     }
     res = await remarks_collection.insert_one(doc)
 

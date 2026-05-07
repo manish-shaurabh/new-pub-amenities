@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -36,6 +36,40 @@ async def create_inspection(inspection: InspectionCreate):
     inspector = await users_collection.find_one({"_id": ObjectId(inspection.inspector_id)})
     if not inspector:
         raise HTTPException(status_code=404, detail="Inspector not found")
+
+    # ─── Timestamp validation ──────────────────────────────────────────────
+    # All datetimes are naive IST. Reject inspections dated in the future,
+    # and reject any item whose defective_since is in the future or after
+    # the inspection itself.
+    now = now_ist()
+    insp_at = None
+    if inspection.inspection_at:
+        try:
+            insp_at = datetime.fromisoformat(
+                str(inspection.inspection_at).replace("Z", "").replace("+00:00", "")
+            )
+            if insp_at.tzinfo is not None:
+                insp_at = insp_at.replace(tzinfo=None)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid inspection_at format")
+        if insp_at > now + timedelta(minutes=5):
+            raise HTTPException(status_code=400, detail="inspection_at cannot be in the future")
+    for it in inspection.items:
+        ds = getattr(it, "defective_since", None)
+        if ds:
+            try:
+                dsv = datetime.fromisoformat(str(ds).replace("Z", "").replace("+00:00", ""))
+                if dsv.tzinfo is not None:
+                    dsv = dsv.replace(tzinfo=None)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid defective_since format on item")
+            if dsv > now + timedelta(minutes=5):
+                raise HTTPException(status_code=400, detail="defective_since cannot be in the future")
+            if insp_at and dsv > insp_at + timedelta(minutes=5):
+                raise HTTPException(
+                    status_code=400,
+                    detail="defective_since cannot be after the inspection time",
+                )
 
     items_data = []
     for item in inspection.items:
@@ -68,8 +102,8 @@ async def create_inspection(inspection: InspectionCreate):
         "items": items_data,
         "participants": participants_data,
         "overall_remarks": inspection.overall_remarks,
-        "inspection_at": inspection.inspection_at or datetime.now(timezone.utc).isoformat(),
-        "created_at": datetime.now(timezone.utc)
+        "inspection_at": inspection.inspection_at or now_ist().isoformat(),
+        "created_at": now_ist()
     }
     result = await inspections_collection.insert_one(doc)
     inspection_id = str(result.inserted_id)
@@ -116,7 +150,7 @@ async def create_inspection(inspection: InspectionCreate):
             "related_entity_type": "inspection",
             "related_entity_id": inspection_id,
             "is_read": False,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": now_ist()
         })
 
     # Audit log
@@ -126,7 +160,7 @@ async def create_inspection(inspection: InspectionCreate):
         "action": "submitted",
         "performed_by": inspection.inspector_id,
         "details": {"item_count": len(items_data), "station_id": inspection.station_id, "defects": not_ok_count},
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     })
 
     return serialize_doc(doc)
@@ -154,9 +188,9 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                     defective_since.replace('Z', '+00:00').replace('+00:00', '')
                 )
             except (ValueError, AttributeError):
-                defective_since_dt = datetime.now(timezone.utc)
+                defective_since_dt = now_ist()
         else:
-            defective_since_dt = datetime.now(timezone.utc)
+            defective_since_dt = now_ist()
 
         await assets_collection.update_one(
             {"_id": ObjectId(asset_id)},
@@ -183,7 +217,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                 "marked_working_at": None,
                 "approved_by": None,
                 "approved_at": None,
-                "created_at": datetime.now(timezone.utc)
+                "created_at": now_ist()
             })
             new_orange_list_id = str(ins.inserted_id)
             # Auto-log first remark (defect_report)
@@ -233,7 +267,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                     "related_entity_type": "orange_list",
                     "related_entity_id": asset_id,
                     "is_read": False,
-                    "created_at": datetime.now(timezone.utc)
+                    "created_at": now_ist()
                 })
 
     elif item_status == InspectionItemStatus.OK.value:
@@ -248,9 +282,9 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                         rectified_on.replace('Z', '+00:00').replace('+00:00', '')
                     )
                 except (ValueError, AttributeError):
-                    rectified_dt = datetime.now(timezone.utc)
+                    rectified_dt = now_ist()
             else:
-                rectified_dt = datetime.now(timezone.utc)
+                rectified_dt = now_ist()
 
             open_entry = await orange_list_collection.find_one({
                 "asset_id": asset_id,
@@ -309,11 +343,11 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                         "related_entity_type": "orange_list",
                         "related_entity_id": asset_id,
                         "is_read": False,
-                        "created_at": datetime.now(timezone.utc)
+                        "created_at": now_ist()
                     })
 
     # Update last_inspected and next_due for all items
-    now_ts = datetime.now(timezone.utc)
+    now_ts = now_ist()
     update_fields = {"last_inspected": now_ts}
     asset_doc2 = await assets_collection.find_one({"_id": ObjectId(asset_id)})
     if asset_doc2:
@@ -328,7 +362,7 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
         "action": "auto_applied",
         "performed_by": reviewer_id,
         "details": {"inspection_id": inspection_id, "asset_id": asset_id, "item_status": item_status},
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     })
 
 
@@ -377,7 +411,7 @@ async def approve_inspection_item(inspection_id: str, item_index: int, payload: 
     await _apply_inspection_item_effects(insp, item, reviewer_id)
     items[item_index]["approval_status"] = "approved"
     items[item_index]["reviewed_by"] = reviewer_id
-    items[item_index]["reviewed_at"] = datetime.now(timezone.utc)
+    items[item_index]["reviewed_at"] = now_ist()
     items[item_index]["reviewer_remarks"] = remarks
     await inspections_collection.update_one(
         {"_id": ObjectId(inspection_id)},
@@ -393,7 +427,7 @@ async def approve_inspection_item(inspection_id: str, item_index: int, payload: 
         "related_entity_type": "inspection",
         "related_entity_id": inspection_id,
         "is_read": False,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     })
 
     return {"message": "Item approved", "inspection_id": inspection_id, "item_index": item_index}
@@ -426,8 +460,8 @@ async def reject_inspection_item(inspection_id: str, item_index: int, payload: d
     if item.get("approval_status") != "pending_approval":
         raise HTTPException(status_code=400, detail=f"Item already {item.get('approval_status')}")
 
-    submission_time = insp.get("created_at") or datetime.now(timezone.utc)
-    rejection_time = datetime.now(timezone.utc)
+    submission_time = insp.get("created_at") or now_ist()
+    rejection_time = now_ist()
     gap_seconds = max(0, int((rejection_time - submission_time).total_seconds()))
 
     items[item_index]["approval_status"] = "rejected"
@@ -467,7 +501,7 @@ async def reject_inspection_item(inspection_id: str, item_index: int, payload: d
         "related_entity_type": "inspection",
         "related_entity_id": inspection_id,
         "is_read": False,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     })
 
     return {

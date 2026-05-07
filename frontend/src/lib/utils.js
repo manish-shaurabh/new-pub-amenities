@@ -5,38 +5,55 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-// ─── Date / Time Formatters ───────────────────────────────────────────────────
-// All backend timestamps are UTC ISO strings (e.g. "2026-05-07T09:21:19Z").
-// JavaScript parses strings with "Z" or "+00:00" as UTC and converts to local
-// time via toLocaleString, so these formatters produce the correct local time
-// for the user's timezone (IST, UTC, etc.).
+// ─── Date / Time Formatters (IST naive) ───────────────────────────────────────
+// All backend timestamps are naive Indian Standard Time literals, e.g.
+// "2026-05-07T14:51:19" (no Z, no offset). We never apply timezone math
+// because the entire system runs in IST. The formatters below parse the
+// literal string parts and format them directly so the displayed value is
+// always identical to what was stored, regardless of the browser's timezone.
 
-const LOCALE = 'en-IN';
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** "07 May 2026, 09:21 AM" — used on OL pages, remarks, history drawers */
+function _parseLiteral(ts) {
+  if (!ts) return null;
+  // Accept legacy "...Z" or "...+05:30" forms but always treat as naive IST.
+  const s = String(ts).replace('Z', '').replace(/[+-]\d{2}:?\d{2}$/, '');
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m) return null;
+  return {
+    y: +m[1], mo: +m[2], d: +m[3],
+    hh: m[4] != null ? +m[4] : 0,
+    mm: m[5] != null ? +m[5] : 0,
+    ss: m[6] != null ? +m[6] : 0,
+  };
+}
+
+function _ampm(hh, mm) {
+  const h12 = ((hh + 11) % 12) + 1;
+  const ap = hh < 12 ? 'AM' : 'PM';
+  return `${String(h12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${ap}`;
+}
+
+/** "07 May 2026, 02:51 PM" — used on OL pages, remarks, history drawers */
 export function formatDateTime(ts) {
-  if (!ts) return '—';
-  return new Date(ts).toLocaleString(LOCALE, {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  const p = _parseLiteral(ts);
+  if (!p) return '—';
+  return `${String(p.d).padStart(2, '0')} ${MONTHS[p.mo - 1]} ${p.y}, ${_ampm(p.hh, p.mm)}`;
 }
 
 /** "07 May 2026" — used on compact dashboard cards */
 export function formatDateOnly(ts) {
-  if (!ts) return '—';
-  return new Date(ts).toLocaleDateString(LOCALE, {
-    day: '2-digit', month: 'short', year: 'numeric',
-  });
+  const p = _parseLiteral(ts);
+  if (!p) return '—';
+  return `${String(p.d).padStart(2, '0')} ${MONTHS[p.mo - 1]} ${p.y}`;
 }
 
-/** "07 May, 09:21 AM" — used on sidebar panel item rows */
+/** "07 May, 02:51 PM" — used on sidebar panel item rows */
 export function formatDateTimeCompact(ts) {
-  if (!ts) return '—';
-  return new Date(ts).toLocaleString(LOCALE, {
-    day: '2-digit', month: 'short',
-    hour: '2-digit', minute: '2-digit',
-  });
+  const p = _parseLiteral(ts);
+  if (!p) return '—';
+  return `${String(p.d).padStart(2, '0')} ${MONTHS[p.mo - 1]}, ${_ampm(p.hh, p.mm)}`;
 }
 
 /**

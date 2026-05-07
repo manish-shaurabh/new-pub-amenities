@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -130,7 +130,7 @@ async def list_orange_items(
 
     docs = await orange_list_collection.find(query).sort("created_at", -1).to_list(1000)
     
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     
     # Batch fetch all related data to avoid N+1 queries
     asset_ids = list(set(doc["asset_id"] for doc in docs if doc.get("asset_id")))
@@ -251,7 +251,22 @@ async def mark_working(item_id: str, request: MarkWorkingRequest):
         raise HTTPException(status_code=400, detail="Item is not in defective status")
 
     # Use user-entered timestamp if provided, otherwise now
-    marked_working_dt = request.marked_working_at or datetime.now(timezone.utc)
+    marked_working_dt = request.marked_working_at or now_ist()
+    # Coerce to naive IST for storage and comparison
+    if hasattr(marked_working_dt, "tzinfo") and marked_working_dt.tzinfo is not None:
+        marked_working_dt = marked_working_dt.replace(tzinfo=None)
+    # ─── Validation: marked_working_at must be ≥ defective_since and ≤ now ──
+    now_n = now_ist()
+    if marked_working_dt > now_n + timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="marked_working_at cannot be in the future")
+    ds = item.get("defective_since")
+    if isinstance(ds, datetime):
+        ds_n = ds.replace(tzinfo=None) if ds.tzinfo is not None else ds
+        if marked_working_dt < ds_n:
+            raise HTTPException(
+                status_code=400,
+                detail="marked_working_at cannot be earlier than defective_since",
+            )
 
     await orange_list_collection.update_one(
         {"_id": ObjectId(item_id)},
@@ -288,7 +303,7 @@ async def mark_working(item_id: str, request: MarkWorkingRequest):
                     "related_entity_type": "orange_list",
                     "related_entity_id": item_id,
                     "is_read": False,
-                    "created_at": datetime.now(timezone.utc)
+                    "created_at": now_ist()
                 })
 
     await audit_log_collection.insert_one({
@@ -297,7 +312,7 @@ async def mark_working(item_id: str, request: MarkWorkingRequest):
         "action": "marked_working",
         "performed_by": request.marked_by,
         "details": {"remarks": request.remarks, "marked_working_at": marked_working_dt.isoformat()},
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     })
 
     # Auto-log remark
@@ -341,7 +356,7 @@ async def reject_working(item_id: str, request: RejectWorkingRequest):
             if asset_doc_check.get("station_id") not in asup_stations:
                 raise HTTPException(status_code=403, detail="This station is not under your jurisdiction")
 
-    now = datetime.now(timezone.utc)
+    now = now_ist()
     await orange_list_collection.update_one(
         {"_id": ObjectId(item_id)},
         {"$set": {
@@ -475,7 +490,7 @@ async def approve_working(item_id: str, request: ApproveWorkingRequest):
         {"$set": {
             "status": OrangeListStatus.RESOLVED.value,
             "approved_by": request.approved_by,
-            "approved_at": datetime.now(timezone.utc),
+            "approved_at": now_ist(),
             "approval_remarks": request.remarks
         }}
     )
@@ -491,7 +506,7 @@ async def approve_working(item_id: str, request: ApproveWorkingRequest):
         "action": "approved_working",
         "performed_by": request.approved_by,
         "details": {"remarks": request.remarks},
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     })
 
     # ── Notifications ──────────────────────────────────────────────────────────
@@ -511,7 +526,7 @@ async def approve_working(item_id: str, request: ApproveWorkingRequest):
             "related_entity_type": "orange_list",
             "related_entity_id": item_id,
             "is_read": False,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": now_ist()
         })
 
     # 2) Notify ROs scoped to this asset (dept + station)
@@ -546,7 +561,7 @@ async def approve_working(item_id: str, request: ApproveWorkingRequest):
                     "related_entity_type": "orange_list",
                     "related_entity_id": item_id,
                     "is_read": False,
-                    "created_at": datetime.now(timezone.utc)
+                    "created_at": now_ist()
                 })
     
     # Auto-log remark
@@ -602,7 +617,7 @@ async def export_orange_list_excel(list_type: Optional[str] = None):
     wb.save(output)
     output.seek(0)
     
-    filename = f"defective_assets_{list_type or 'all'}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"defective_assets_{list_type or 'all'}_{now_ist().strftime('%Y%m%d_%H%M')}.xlsx"
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -626,7 +641,7 @@ async def export_orange_list_pdf(list_type: Optional[str] = None):
     styles = getSampleStyleSheet()
     
     # Title
-    title = f"{'Red' if list_type == 'red' else 'Orange' if list_type == 'orange' else 'Defective'} List Report - {datetime.now(timezone.utc).strftime('%d %b %Y')}"
+    title = f"{'Red' if list_type == 'red' else 'Orange' if list_type == 'orange' else 'Defective'} List Report - {now_ist().strftime('%d %b %Y')}"
     elements.append(Paragraph(title, styles['Title']))
     elements.append(Spacer(1, 20))
     
@@ -663,7 +678,7 @@ async def export_orange_list_pdf(list_type: Optional[str] = None):
     doc.build(elements)
     output.seek(0)
     
-    filename = f"defective_assets_{list_type or 'all'}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.pdf"
+    filename = f"defective_assets_{list_type or 'all'}_{now_ist().strftime('%Y%m%d_%H%M')}.pdf"
     return StreamingResponse(
         output,
         media_type="application/pdf",

@@ -9,7 +9,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -62,7 +62,7 @@ async def create_department(dept: DepartmentCreate, current_user_id: Optional[st
         "name": dept.name,
         "code": dept.code,
         "description": dept.description,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now_ist()
     }
     try:
         result = await departments_collection.insert_one(doc)

@@ -1,9 +1,22 @@
 import os
+from datetime import datetime, timedelta, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "railway_asset_inspection")
+
+# ─── INDIAN STANDARD TIME (IST) ─────────────────────────────────────────────
+# This system operates exclusively in IST. All datetimes — entered, stored,
+# returned, and displayed — are treated as naive IST literals (no UTC offset
+# conversion). `now_ist()` returns the current IST wall-clock time as a naive
+# datetime.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def now_ist() -> datetime:
+    """Current Indian Standard Time as a naive datetime (no tzinfo)."""
+    return datetime.now(IST).replace(tzinfo=None)
 
 # Async client for FastAPI
 client = AsyncIOMotorClient(MONGO_URL)
@@ -35,17 +48,15 @@ def get_db():
 
 def _dt_to_iso(dt) -> str:
     """
-    Serialize a datetime to an ISO 8601 string with an explicit UTC marker.
-    Naive datetimes (stored by legacy datetime.utcnow() calls) are treated
-    as UTC and get a trailing 'Z'.  Timezone-aware datetimes already carry
-    offset information and are serialised via isoformat().
+    Serialize a datetime to a bare ISO 8601 string (no 'Z', no offset).
 
-    JavaScript parses bare "2026-05-07T09:21:19" as **local time**, which
-    renders wrong for every non-UTC user.  Adding 'Z' (or '+00:00') forces
-    correct UTC interpretation so the browser converts to local time properly.
+    The whole system operates in IST — we never convert across timezones.
+    Whatever wall-clock time was stored is exactly what gets returned.
+    Aware datetimes are projected into IST and stripped of tzinfo so the
+    output is a clean literal like "2026-05-07T14:51:19".
     """
-    if dt.tzinfo is None:
-        return dt.isoformat() + "Z"
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(IST).replace(tzinfo=None)
     return dt.isoformat()
 
 

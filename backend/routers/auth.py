@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from database import (
+from database import (now_ist, 
     serialize_doc,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
@@ -47,7 +47,7 @@ async def login(credentials: UserLogin):
         "user_id": str(user["_id"]),
         "employee_id": user["employee_id"],
         "role": user["role"],
-        "exp": datetime.now(timezone.utc) + timedelta(hours=24)
+        "exp": now_ist() + timedelta(hours=24)
     }
     token = jwt.encode(token_data, os.environ.get("JWT_SECRET", "railway-secret-key"), algorithm="HS256")
     

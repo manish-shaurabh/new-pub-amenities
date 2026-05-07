@@ -83,8 +83,8 @@ function OverviewBlock({ data, userId, mode, stationFilter, deptFilter }) {
 
   const pieData = [
     { name: 'Working', value: data.health.working, color: HEALTH_COLORS.working },
-    { name: 'Orange', value: data.health.orange, color: HEALTH_COLORS.orange },
-    { name: 'Red', value: data.health.red, color: HEALTH_COLORS.red },
+    { name: 'Orange (≤24h)', value: data.health.orange, color: HEALTH_COLORS.orange },
+    { name: 'Red (>24h)', value: data.health.red, color: HEALTH_COLORS.red },
   ].filter((d) => d.value > 0);
 
   const selectedStation = selectedStationId ? data.stations.find((s) => s.station_id === selectedStationId) : null;
@@ -250,6 +250,27 @@ function OverviewBlock({ data, userId, mode, stationFilter, deptFilter }) {
   // ----- Default Overview view -----
   return (
     <div className="space-y-6">
+      {/* Health tiles row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="oversight-health-tiles-row">
+        <div className="rounded-xl border bg-emerald-50/60 px-4 py-3" data-testid="oversight-health-tile-working">
+          <p className="text-xs text-emerald-700/80 font-medium">Working</p>
+          <p className="text-2xl font-semibold text-emerald-700 mt-1">{data.health.working || 0}</p>
+        </div>
+        <div className="rounded-xl border bg-orange-50/60 px-4 py-3" data-testid="oversight-health-tile-orange">
+          <p className="text-xs text-orange-700/80 font-medium">Orange (Active ≤ 24h)</p>
+          <p className="text-2xl font-semibold text-orange-700 mt-1">{data.health.orange || 0}</p>
+        </div>
+        <div className="rounded-xl border bg-red-50/60 px-4 py-3" data-testid="oversight-health-tile-red">
+          <p className="text-xs text-red-700/80 font-medium">Red (Active &gt; 24h)</p>
+          <p className="text-2xl font-semibold text-red-700 mt-1">{data.health.red || 0}</p>
+        </div>
+        <div className="rounded-xl border bg-yellow-50/60 px-4 py-3" data-testid="oversight-health-tile-pending-verification">
+          <p className="text-xs text-yellow-700/80 font-medium">Pending Verification</p>
+          <p className="text-2xl font-semibold text-yellow-700 mt-1">{data.health.yellow || 0}</p>
+          <p className="text-[10px] text-yellow-700/60 mt-0.5">Awaiting verification</p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
