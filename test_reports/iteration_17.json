@@ -1,0 +1,53 @@
+{
+  "summary": "Cross-UI IST consistency end-to-end verified. Injected 7 fresh defects (5 orange ≤24h + 2 red >30h) via POST /api/inspections covering 5 distinct (asset_type x station) buckets + 2 extras. All 13 backend tests pass (5 new IST cross-UI + 7 existing IST/validation + 1 audit list_consistency 9/9 invariants). Frontend Playwright PASSED on Superadmin/SUP/ASUP across all 6 spec items: (a) /orange-list renders every defect as a row with naive-IST literal '<DD MMM YYYY>, <hh:mm AM/PM>' format, (b) zero forbidden tokens (+05:30, GMT, UTC, trailing-Z) on any page, (c) all 4 split health tiles present and non-zero on Superadmin (working 25, orange 10, red 30, pending 9) and matching API exactly, (d) pie chart legend has only Orange/Red/Working — no Yellow slice, (e) sup-health-tile-pending-verification = 8 on SUP dashboard, (f) oversight-health-tile-pending-verification = 9 on ASUP dashboard, (g) cross-page byte-identical timestamp: OL row shows '07 May 2026, 05:43 AM' and the same string appears identically inside the expanded Remarks drawer for the same asset.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "OrangeListPage tab badges",
+        "issue": "Tab counts on the page header read 'Orange (10) | Red (12) | Yellow List (3)' = 25, but API actually returns orange=10, red=30, pending_approval=9 (49 total). Footer correctly shows 'Showing 25 of 49'. The tab badges appear to count items on the CURRENT PAGE (page-size 25) rather than the totals — so the Red badge under-reports by 18. Suggest using the unfiltered totals for the tab counts.",
+        "selector": "OL page tab badges (visible text 'Red (12)')",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Remarks drawer auto-rectification remark timestamp formatting",
+        "issue": "Auto-generated 'DEFECT REPORTED' remark inside the Remarks drawer shows time as '07 May, 05:13 pm' (no year, lowercase pm) while the row above shows '07 May 2026, 05:43 AM'. Both are naive-IST literals (no offset/Z), so the timezone-fidelity rule still holds, but the format string is inconsistent across surfaces.",
+        "selector": "Remarks drawer event timestamp (top-right of remark card)",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ist_cross_ui_consistency.py",
+    "/app/backend/tests/test_ist_and_validation.py",
+    "/app/backend/tests/test_list_consistency.py",
+    "/app/test_reports/pytest/ist_cross_ui_results.xml"
+  ],
+  "action_items": [
+    "Tab-count badges on OrangeListPage (Orange/Red/Yellow) should use TOTAL list size, not current page slice. API counts: orange=10, red=30, yellow(pending_approval)=9.",
+    "Standardize datetime format inside Remarks drawer auto-events to match the row format '<DD MMM YYYY>, <hh:mm AM/PM>'."
+  ],
+  "critical_code_review_comments": [
+    "TabBadge counts in /app/frontend/src/pages/OrangeListPage.js appear to be derived from the paginated response items, not the total counts returned by /api/orange-list. Either request a counts-only summary or compute from a non-paginated fetch.",
+    "Auto-generated remark timestamp formatter (likely in remark/event renderer) uses a different formatDateTime variant than the row renderer in OL page — consolidate to a single formatDateTime in /app/frontend/src/lib/utils.js.",
+    "test_credentials.md still has no working admin-role password — admin-tile testid was source-verified only in iteration 16; no change since."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ist_cross_ui_consistency.py (NEW — 5 tests: orange-list IST format after injection, superadmin dashboard count consistency, oversight category-assets priority bucket, SUP scope IST format, ASUP scope IST format)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13: 5 new cross-UI + 7 IST/validation + 1 audit)",
+    "frontend": "100% spec items verified — Superadmin OL page IST literal format, 4 health tiles, no Yellow legend, click-into Remarks drawer IST format, SUP pending-verification tile, ASUP oversight pending-verification tile, byte-identical cross-page timestamp"
+  },
+  "test_credentials": "SA001/admin123 (verified), SSE001/admin123 (verified), ASUP001/admin123 (verified). All three roles logged in OK during this iteration.",
+  "seed_data_creation": "7 new defective inspections created via POST /api/inspections (5 orange + 2 red) on 7 working assets across 5 distinct (asset_type x station) buckets. All TEST_-prefixed remarks. Persistent in DB; audit still passes 9/9 after injection. Health counts now: working=25, orange=10, red=30, pending=9 (was working=32 pre-injection).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run with: REACT_APP_BACKEND_URL=<url> pytest /app/backend/tests/test_ist_cross_ui_consistency.py /app/backend/tests/test_ist_and_validation.py /app/backend/tests/test_list_consistency.py -v. test_ist_cross_ui_consistency.py needs ≥5 distinct (type x station) working buckets + 2 more working assets (=7 total) — it pytest.skip()s gracefully if not enough. Each run consumes 7 working assets. The OL page tab-badge mismatch (Red(12) vs api red=30) is a separate UI bug worth main-agent attention — the underlying datetime fidelity is correct. Health tile testids: 'health-tile-{working|orange|red|pending-verification}' (Superadmin), 'sup-health-tile-pending-verification' (SUP), 'oversight-health-tile-pending-verification' (ASUP). IST literal regex on UI: r'\\d{1,2}\\s+[A-Z][a-z]{2}\\s+\\d{4},?\\s*\\d{1,2}:\\d{2}\\s*(?:AM|PM)'.",
+  "rca of the issue": "N/A — no IST/timezone issue found. All datetime fields on backend responses are bare-naive ISO (YYYY-MM-DDTHH:MM:SS, no Z, no offset). Frontend formatDateTime parses literal string parts and renders '<DD MMM YYYY>, <hh:mm AM/PM>'. Cross-page timestamp comparison (OL row vs Remarks drawer) is byte-identical for the same asset. Two minor UI-format observations are noted as separate items: (1) OL tab-badge counts reflect current page rather than totals — under-reports Red by ~18 entries, (2) auto-event remark timestamp inside drawer omits year and uses lowercase am/pm — still naive IST but format string differs from the row format."
+}
