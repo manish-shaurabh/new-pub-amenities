@@ -317,16 +317,46 @@ export default function InspectionPage() {
 
       const submitRes = await inspectionsAPI.create(payload);
       const created = submitRes.data;
-      toast.success('Inspection submitted successfully!');
+      const autoRejections = created.auto_rejections || [];
+      if (autoRejections.length > 0) {
+        toast.warning(
+          `Inspection submitted. ⚠ ${autoRejections.length} asset(s) re-reported defective — prior rectification claim auto-rejected.`,
+          { duration: 7000 }
+        );
+      } else {
+        toast.success('Inspection submitted successfully!');
+      }
 
-      // Build asset_lookup for the report
+      // Build asset_lookup for the report. Each entry carries the asset's CURRENT
+      // live state so the PDF can render the correct ORANGE/RED/YELLOW/RESOLVED
+      // badge and the canonical OL.defective_since (the source of truth).
       const lookup = {};
       selectedAssets.forEach((a) => {
         lookup[a._id] = {
           asset_number: a.asset_number,
           asset_type_name: a.asset_type_name,
           location_name: a.location_name,
+          status: a.status,
+          // Canonical defect timestamp from OL (asset.defective_since mirrors OL).
+          ol_defective_since: a.defective_since,
+          defective_since: a.defective_since,
         };
+      });
+      // For items that just transitioned to defective in this submission, the
+      // selectedAsset's `status` is stale — patch it from the inspection items.
+      (created.items || []).forEach((it) => {
+        if (!lookup[it.asset_id]) return;
+        if (it.status === 'not_ok' || it.status === 'needs_repair') {
+          lookup[it.asset_id].status = 'defective';
+          // If asset wasn't already defective, the new OL.defective_since equals what
+          // the inspector typed (or now). Use the item's defective_since as canonical.
+          if (!lookup[it.asset_id].ol_defective_since && it.defective_since) {
+            lookup[it.asset_id].ol_defective_since = it.defective_since;
+            lookup[it.asset_id].defective_since = it.defective_since;
+          }
+        } else if (it.status === 'ok' && lookup[it.asset_id].status === 'defective') {
+          lookup[it.asset_id].status = 'pending_approval';
+        }
       });
       const station = stations.find((s) => s._id === selectedStation);
       // Open the report in a new tab/window so user can print/save as PDF

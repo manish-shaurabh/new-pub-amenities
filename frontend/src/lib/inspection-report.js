@@ -7,8 +7,53 @@ const escapeHtml = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+// IST literal date formatter — must match /app/frontend/src/lib/utils.js
+const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function _fmtIST(ts) {
+  if (!ts) return '';
+  const s = String(ts).replace('Z','').replace(/[+-]\d{2}:?\d{2}$/, '');
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m) return String(ts);
+  const [, y, mo, d, hh = '00', mm = '00'] = m;
+  const h = parseInt(hh, 10);
+  const h12 = ((h + 11) % 12) + 1;
+  const ap = h < 12 ? 'AM' : 'PM';
+  return `${d} ${_MONTHS[parseInt(mo,10)-1]} ${y}, ${String(h12).padStart(2,'0')}:${mm} ${ap}`;
+}
+
+// Live list classification — mirrors backend _classify_health
+function _classifyItem(it, asset) {
+  const itemStatus = it?.status || 'ok';
+  if (itemStatus === 'ok') {
+    return { cls: 'badge-resolved', label: 'PASS' };
+  }
+  // For NOT_OK / NEEDS_REPAIR, check the asset's CURRENT live state
+  const assetStatus = asset?.status;
+  if (assetStatus === 'pending_approval') {
+    return { cls: 'badge-yellow', label: 'YELLOW LIST · PENDING VERIFICATION' };
+  }
+  if (assetStatus === 'working') {
+    return { cls: 'badge-resolved', label: 'RESOLVED' };
+  }
+  // status defective (or unknown) → orange/red based on hours since OL.defective_since
+  const ds = asset?.ol_defective_since || asset?.defective_since || it.defective_since;
+  if (ds) {
+    const dsParsed = String(ds).replace('Z','').replace(/[+-]\d{2}:?\d{2}$/, '');
+    const m = dsParsed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+    if (m) {
+      const dt = new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]),
+                          parseInt(m[4]||'0'), parseInt(m[5]||'0'));
+      const now = new Date();
+      const hours = (now - dt) / (1000 * 60 * 60);
+      return hours > 24
+        ? { cls: 'badge-red', label: 'RED LIST · DEFECTIVE > 24h' }
+        : { cls: 'badge-orange', label: 'ORANGE LIST · DEFECTIVE ≤ 24h' };
+    }
+  }
+  return { cls: 'badge-orange', label: 'DEFECT LOGGED' };
+}
+
 export function buildReportHtml({ inspection, asset_lookup, station_name, app_name = 'Asset Track Rail' }) {
-  const created = inspection.created_at ? new Date(inspection.created_at) : new Date();
   const items = inspection.items || [];
   const participants = inspection.participants || [];
   const itemsHtml = items.map((it, idx) => {
@@ -21,9 +66,28 @@ export function buildReportHtml({ inspection, asset_lookup, station_name, app_na
         <td><span class="status status-${escapeHtml(c.status || 'pass')}">${escapeHtml((c.status || 'pass').toUpperCase())}</span></td>
       </tr>
     `).join('');
-    const approval = it.approval_status === 'approved' ? '<span class="badge badge-pass">PASSED</span>'
-                   : it.approval_status === 'rejected' ? '<span class="badge badge-fail">FAILED</span>'
-                   : '<span class="badge badge-pending">PENDING APPROVAL</span>';
+
+    const cls = _classifyItem(it, a);
+    const liveBadge = `<span class="badge ${cls.cls}">${escapeHtml(cls.label)}</span>`;
+
+    // Defective-since rendering: when the asset's canonical OL.defective_since differs
+    // from what was reported in this inspection item, show BOTH so the auditor sees
+    // the full picture. OL is the source of truth.
+    let defLine = '';
+    if (it.defective_since || a?.ol_defective_since || a?.defective_since) {
+      const reported = it.defective_since ? _fmtIST(it.defective_since) : null;
+      const canonical = (a?.ol_defective_since || a?.defective_since)
+        ? _fmtIST(a.ol_defective_since || a.defective_since) : null;
+      if (canonical && reported && canonical !== reported) {
+        defLine = `
+          <p><strong>Defective since (canonical):</strong> ${escapeHtml(canonical)}</p>
+          <p class="muted" style="margin-top:-4px"><strong>Reported in this inspection:</strong> ${escapeHtml(reported)}</p>`;
+      } else {
+        const v = canonical || reported;
+        defLine = `<p><strong>Defective since:</strong> ${escapeHtml(v)}</p>`;
+      }
+    }
+
     return `
       <div class="item">
         <div class="item-head">
@@ -33,11 +97,11 @@ export function buildReportHtml({ inspection, asset_lookup, station_name, app_na
           </div>
           <div class="item-status">
             <span class="badge badge-${escapeHtml(it.status || 'ok')}">${escapeHtml((it.status || 'ok').replace(/_/g, ' ').toUpperCase())}</span>
-            ${approval}
+            ${liveBadge}
           </div>
         </div>
-        ${it.defective_since ? `<p><strong>Defective since:</strong> ${new Date(it.defective_since).toLocaleString('en-IN')}</p>` : ''}
-        ${it.rectified_on ? `<p><strong>Rectified on:</strong> ${new Date(it.rectified_on).toLocaleString('en-IN')}</p>` : ''}
+        ${defLine}
+        ${it.rectified_on ? `<p><strong>Rectified on:</strong> ${escapeHtml(_fmtIST(it.rectified_on))}</p>` : ''}
         ${checklist ? `<table class="checklist"><thead><tr><th>Item</th><th>Reading</th><th>Status</th></tr></thead><tbody>${checklist}</tbody></table>` : ''}
         ${it.remarks ? `<p class="remarks"><strong>${escapeHtml(it.remarks_by ? it.remarks_by + ': ' : 'Remarks: ')}</strong>${escapeHtml(it.remarks)}</p>` : ''}
         ${it.reviewer_remarks ? `<p class="remarks"><strong>Reviewer remarks: </strong>${escapeHtml(it.reviewer_remarks)}</p>` : ''}
@@ -75,6 +139,10 @@ export function buildReportHtml({ inspection, asset_lookup, station_name, app_na
   .badge-pass { background: #d1fae5; color: #065f46; }
   .badge-fail { background: #fee2e2; color: #991b1b; }
   .badge-pending { background: #fef3c7; color: #92400e; }
+  .badge-orange { background: #ffedd5; color: #9a3412; }
+  .badge-red { background: #fee2e2; color: #991b1b; }
+  .badge-yellow { background: #fef9c3; color: #854d0e; }
+  .badge-resolved { background: #d1fae5; color: #065f46; }
   .checklist { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 11px; }
   .checklist th, .checklist td { border: 1px solid #e5e7eb; padding: 4px 8px; text-align: left; }
   .checklist th { background: #f9fafb; font-weight: 600; }
@@ -102,7 +170,7 @@ export function buildReportHtml({ inspection, asset_lookup, station_name, app_na
 </header>
 <div class="meta">
   <div><strong>Type:</strong> ${escapeHtml((inspection.inspection_type || 'individual').toUpperCase())}</div>
-  <div><strong>Submitted:</strong> ${created.toLocaleString('en-IN')}</div>
+  <div><strong>Submitted:</strong> ${escapeHtml(_fmtIST(inspection.created_at))}</div>
   <div><strong>Station:</strong> ${escapeHtml(station_name || inspection.station_name || '-')}</div>
   <div><strong>Inspector:</strong> ${escapeHtml(inspection.inspector_name || '-')}</div>
 </div>
@@ -110,7 +178,7 @@ ${participantsHtml}
 ${inspection.overall_remarks ? `<div class="meta-block"><p><strong>Overall remarks:</strong> ${escapeHtml(inspection.overall_remarks)}</p></div>` : ''}
 <h2 style="font-size:14px;margin-top:18px;border-bottom:1px solid #ddd;padding-bottom:4px;">Items (${items.length})</h2>
 ${itemsHtml}
-<footer>Generated on ${new Date().toLocaleString('en-IN')} · ${escapeHtml(app_name)}</footer>
+<footer>Generated on ${escapeHtml(_fmtIST(new Date().toISOString()))} · ${escapeHtml(app_name)}</footer>
 </body></html>`;
 }
 

@@ -1,23 +1,23 @@
 {
-  "run_at": "2026-05-07T11:51:22.823209",
+  "run_at": "2026-05-07T14:13:51.288244",
   "summary": {
-    "total_checks": 9,
-    "pass": 9,
+    "total_checks": 10,
+    "pass": 10,
     "fail": 0,
     "warn": 0
   },
   "dataset": {
     "assets_total": 74,
-    "assets_working": 25,
-    "assets_defective": 40,
-    "assets_pending_approval": 9,
-    "ol_entries_total": 71,
-    "ol_open_defective": 40,
-    "ol_open_pending_approval": 9,
+    "assets_working": 16,
+    "assets_defective": 55,
+    "assets_pending_approval": 3,
+    "ol_entries_total": 80,
+    "ol_open_defective": 55,
+    "ol_open_pending_approval": 3,
     "ol_resolved": 22,
-    "list_orange_count": 13,
-    "list_red_count": 27,
-    "list_yellow_count": 9
+    "list_orange_count": 24,
+    "list_red_count": 31,
+    "list_yellow_count": 3
   },
   "violations": []
 }

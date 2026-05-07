@@ -113,6 +113,9 @@ async def create_inspection(inspection: InspectionCreate):
     for item in items_data:
         await _apply_inspection_item_effects(doc, item, inspection.inspector_id)
 
+    # Surface auto-rejections so the frontend can toast them
+    auto_rejections = doc.pop("_auto_rejections", [])
+
     # Notify ASUP and Admins that a new inspection was submitted (informational)
     station_doc = await stations_collection.find_one({"_id": ObjectId(inspection.station_id)})
     station_name = station_doc.get("name") if station_doc else "Unknown station"
@@ -163,7 +166,7 @@ async def create_inspection(inspection: InspectionCreate):
         "created_at": now_ist()
     })
 
-    return serialize_doc(doc)
+    return {**serialize_doc(doc), "auto_rejections": auto_rejections}
 
 
 # ===== Approval helpers =====
@@ -192,19 +195,126 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
         else:
             defective_since_dt = now_ist()
 
-        await assets_collection.update_one(
-            {"_id": ObjectId(asset_id)},
-            {"$set": {
-                "status": AssetStatus.DEFECTIVE.value,
-                "defective_since": defective_since_dt,
-            }}
-        )
-
         existing = await orange_list_collection.find_one({
             "asset_id": asset_id,
             "status": {"$ne": OrangeListStatus.RESOLVED.value}
         })
-        if not existing:
+
+        # OL.defective_since is the SINGLE SOURCE OF TRUTH for "when did this defect start?".
+        # On re-inspection of an asset that already has an open OL we MUST NOT overwrite it
+        # — otherwise the clock resets and the orange/red threshold becomes gameable.
+        canonical_defective_since = (
+            existing.get("defective_since") if existing else defective_since_dt
+        )
+        if isinstance(canonical_defective_since, str):
+            try:
+                canonical_defective_since = datetime.fromisoformat(
+                    canonical_defective_since.replace('Z', '+00:00').replace('+00:00', '')
+                )
+            except (ValueError, AttributeError):
+                canonical_defective_since = defective_since_dt
+
+        new_orange_list_id: Optional[str] = None
+        auto_rejected = False
+
+        if existing and existing.get("status") == OrangeListStatus.PENDING_APPROVAL.value:
+            # ── AUTO-REJECT path: re-inspection invalidates a pending rectification claim ──
+            now_n = now_ist()
+            auto_remark_text = (
+                f"AUTO-REJECTED via re-inspection by "
+                f"{inspection_doc.get('inspector_name','Inspector')}: "
+                f"{(item.get('remarks') or 'Asset re-reported defective').strip()[:240]}"
+            )
+            await orange_list_collection.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {
+                    "status": OrangeListStatus.DEFECTIVE.value,
+                    "last_marked_working_by": existing.get("marked_working_by"),
+                    "marked_working_by": None,
+                    "marked_working_at": None,
+                    "working_remarks": None,
+                    "rejection_remarks": auto_remark_text,
+                    "rejected_by": inspector_id,
+                    "rejected_at": now_n,
+                }}
+            )
+            new_orange_list_id = str(existing["_id"])
+            auto_rejected = True
+
+            # Notify the SUP whose rectification got auto-rejected
+            if existing.get("marked_working_by") and existing.get("marked_working_by") != inspector_id:
+                asset_for_msg = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+                await notifications_collection.insert_one({
+                    "user_id": existing["marked_working_by"],
+                    "title": "Rectification Auto-Rejected",
+                    "message": (
+                        f"Your rectification of asset "
+                        f"{asset_for_msg.get('asset_number','Unknown') if asset_for_msg else 'Unknown'} "
+                        f"was auto-rejected — re-inspection found it defective again."
+                    ),
+                    "notification_type": "alert",
+                    "related_entity_type": "orange_list",
+                    "related_entity_id": str(existing["_id"]),
+                    "is_read": False,
+                    "created_at": now_n,
+                })
+
+            # Audit log
+            await audit_log_collection.insert_one({
+                "entity_type": "orange_list",
+                "entity_id": str(existing["_id"]),
+                "action": "re_inspection_auto_rejected",
+                "performed_by": inspector_id,
+                "details": {
+                    "inspection_id": inspection_id,
+                    "asset_id": asset_id,
+                    "previous_marked_working_by": existing.get("marked_working_by"),
+                },
+                "created_at": now_n,
+            })
+
+            # Auto-remark
+            try:
+                from routers.remarks import add_auto_remark
+                inspector_doc = await users_collection.find_one({"_id": ObjectId(inspector_id)}) if inspector_id else None
+                await add_auto_remark(
+                    orange_list_id=str(existing["_id"]),
+                    asset_id=asset_id,
+                    type="rejection",
+                    text=auto_remark_text[:300],
+                    author_id=inspector_id,
+                    author_name=(inspector_doc.get("name") if inspector_doc else "Inspector"),
+                    author_role=(inspector_doc.get("role") if inspector_doc else None),
+                )
+            except Exception as e:
+                print(f"[inspections] auto-remark (auto-reject) failed: {e}")
+
+            # Track for response
+            inspection_doc.setdefault("_auto_rejections", []).append({
+                "asset_id": asset_id,
+                "ol_id": str(existing["_id"]),
+            })
+
+        elif existing:
+            # ── Existing DEFECTIVE OL: ongoing defect — DO NOT reset the clock. ──
+            new_orange_list_id = str(existing["_id"])
+            try:
+                from routers.remarks import add_auto_remark
+                inspector_doc = await users_collection.find_one({"_id": ObjectId(inspector_id)}) if inspector_id else None
+                await add_auto_remark(
+                    orange_list_id=str(existing["_id"]),
+                    asset_id=asset_id,
+                    type="defect_report",
+                    text=(item.get("remarks") or "Re-inspection confirms ongoing defect")[:300],
+                    author_id=inspector_id,
+                    author_name=(inspector_doc.get("name") if inspector_doc else "Inspector"),
+                    author_role=(inspector_doc.get("role") if inspector_doc else None),
+                )
+            except Exception as e:
+                print(f"[inspections] auto-remark (re-inspection ongoing) failed: {e}")
+
+        else:
+            # ── Fresh defect: create new OL ──
             remarks_text = item.get("remarks") or "Marked defective during inspection"
             ins = await orange_list_collection.insert_one({
                 "asset_id": asset_id,
@@ -220,26 +330,32 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                 "created_at": now_ist()
             })
             new_orange_list_id = str(ins.inserted_id)
-            # Auto-log first remark (defect_report)
             try:
                 from routers.remarks import add_auto_remark
-                inspector = await users_collection.find_one({"_id": ObjectId(inspector_id)}) if inspector_id else None
-                # Pass event_at=defective_since_dt so the remarks thread can distinguish
-                # "logged at T" from "defect started at T-N" for backdated entries.
+                inspector_doc = await users_collection.find_one({"_id": ObjectId(inspector_id)}) if inspector_id else None
                 await add_auto_remark(
                     orange_list_id=new_orange_list_id,
                     asset_id=asset_id,
                     type="defect_report",
                     text=remarks_text[:300],
                     author_id=inspector_id,
-                    author_name=(inspector.get("name") if inspector else "Inspector"),
-                    author_role=(inspector.get("role") if inspector else None),
+                    author_name=(inspector_doc.get("name") if inspector_doc else "Inspector"),
+                    author_role=(inspector_doc.get("role") if inspector_doc else None),
                     event_at=defective_since_dt,
                 )
             except Exception as e:
                 print(f"[inspections] auto-remark (defect_report) failed: {e}")
 
-        # Notify supervisors / ROs / ASUPs
+        # Sync asset state to OL canonical values (asset.defective_since must mirror OL).
+        await assets_collection.update_one(
+            {"_id": ObjectId(asset_id)},
+            {"$set": {
+                "status": AssetStatus.DEFECTIVE.value,
+                "defective_since": canonical_defective_since,
+            }}
+        )
+
+        # Notify supervisors / ROs / ASUPs — message uses OL canonical defective_since
         asset = await assets_collection.find_one({"_id": ObjectId(asset_id)})
         if asset:
             asset_type = await asset_types_collection.find_one({"_id": ObjectId(asset["asset_type_id"])})
@@ -254,6 +370,9 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                     "role": UserRole.REPORTING_OFFICER.value, "department_id": dept_id, "assigned_stations": station_id
                 }).to_list(100)
             seen = set()
+            event_word = "re-confirmed defective" if (existing and not auto_rejected) else (
+                "auto-reverted to defective" if auto_rejected else "marked defective"
+            )
             for t in targets:
                 tid = str(t["_id"])
                 if tid in seen or tid == inspector_id:
@@ -261,8 +380,13 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                 seen.add(tid)
                 await notifications_collection.insert_one({
                     "user_id": tid,
-                    "title": "Asset Marked Defective",
-                    "message": f"Asset {asset.get('asset_number','Unknown')} ({asset_type['name'] if asset_type else 'Unknown'}) marked defective since {defective_since_dt.strftime('%d-%b-%Y %H:%M')}.",
+                    "title": "Asset Marked Defective" if not auto_rejected else "Asset Auto-Reverted to Defective",
+                    "message": (
+                        f"Asset {asset.get('asset_number','Unknown')} "
+                        f"({asset_type['name'] if asset_type else 'Unknown'}) "
+                        f"{event_word} since "
+                        f"{canonical_defective_since.strftime('%d-%b-%Y %H:%M')}."
+                    ),
                     "notification_type": "alert",
                     "related_entity_type": "orange_list",
                     "related_entity_id": asset_id,

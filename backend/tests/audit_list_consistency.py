@@ -347,6 +347,30 @@ def main():
         log_pass("I7: no orphans across orange_list and remarks")
 
     # =========================================================================
+    # I9. asset.defective_since must match the canonical OL.defective_since
+    # =========================================================================
+    print("\n─── I9. asset.defective_since == OL.defective_since (canonical) ───")
+    f0 = FAIL_COUNT
+    for a in assets_defective + assets_pending:
+        aid = str(a["_id"])
+        opens = ol_by_asset_open.get(aid, [])
+        if not opens:
+            continue  # already flagged in I1/I2
+        ol = opens[0]
+        a_ds = _to_dt(a.get("defective_since"))
+        o_ds = _to_dt(ol.get("defective_since"))
+        if a_ds is None or o_ds is None:
+            continue
+        # Allow microsecond drift (Mongo can serialize differently)
+        delta = abs((a_ds - o_ds).total_seconds())
+        if delta > 1:
+            log_fail("I9", "asset.defective_since drifts from canonical OL.defective_since",
+                     f"asset={a.get('asset_number')} a.ds={a_ds} ol.ds={o_ds} delta={delta:.1f}s",
+                     asset_id=aid, ol_id=str(ol["_id"]))
+    if FAIL_COUNT == f0:
+        log_pass("I9: asset.defective_since matches canonical OL value across all defective/pending assets")
+
+    # =========================================================================
     # Bonus: list `list_type` self-consistency (orange ≤24h, red >24h)
     # =========================================================================
     print("\n─── Bonus: defective_since vs implicit list_type bucket ───")

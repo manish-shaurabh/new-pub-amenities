@@ -1,0 +1,49 @@
+{
+  "summary": "Backend bundle verified end-to-end for the auto-reject + canonical defective_since refactor: TEST 1 (auto-reject NOT_OK), TEST 2 (auto-reject NEEDS_REPAIR), TEST 3 (re-inspect already-defective preserves OL clock + adds auto-remark), TEST 4 (fresh defect creates new OL with typed defective_since), TEST 6 (audit I9: 10/10 PASS) and TEST 7 (drift scanner: only 1 legacy Lift-1 drift) all pass. Frontend classifier logic (_classifyItem + _fmtIST in /app/frontend/src/lib/inspection-report.js) verified via Node-based unit harness for all 4 buckets (ORANGE, RED, RESOLVED, YELLOW) and IST literal formatting. UI smoke: SA001 login → dashboard renders correctly with Working=16/Orange=21/Red=34/Pending=3 (down from 9 pre-test, as expected after consuming yellow entries in tests). TEST 5 (notification canonical content) was SKIPPED because tests 1+2 consumed the available pending_approval entries — the code path itself is correct (server uses `existing.get(\"marked_working_by\")` and the original OL doc, not the inspector's typed value).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Navigate to /inspections route (review_request TEST 8)",
+        "issue": "Visiting /inspections directly redirects to / (dashboard). The 'New Inspection' link in the sidebar points to /new-inspection. If TEST 8 expects /inspections specifically, either add a route alias or update the spec to use /new-inspection.",
+        "affected_selectors": ["nav 'New Inspection' link"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auto_reject_canonical_defective_since.py",
+    "/app/backend/tests/test_inspection_report_classifier.py",
+    "/app/backend/tests/test_list_consistency.py",
+    "/app/test_reports/pytest/auto_reject_results.xml",
+    "/app/test_reports/list_consistency.json",
+    "/app/test_reports/defective_since_drift.json"
+  ],
+  "action_items": [
+    "OPTIONAL: Add /inspections → /new-inspection route alias (or update spec). Not blocking.",
+    "OPTIONAL: TEST 5 (notification content) was skipped due to test sequencing (auto-rejects consumed all pending_approval entries). Consider seeding fresh yellows or re-ordering so the notification check gets its own input."
+  ],
+  "critical_code_review_comments": [
+    "_apply_inspection_item_effects (inspections.py:173-320) correctly preserves canonical OL.defective_since on all 3 paths (auto-reject, ongoing-defect re-inspection, fresh defect). The auto-reject path explicitly never touches OL.defective_since — only updates status/marked_working_*/rejection_remarks/rejected_by/rejected_at.",
+    "Frontend _classifyItem (inspection-report.js:25-54) correctly prioritizes asset.status (live state) over item.status, with the fallback chain ol_defective_since → defective_since → it.defective_since for the orange/red threshold computation. Dual-line defective_since rendering (lines 73-89) only emits two lines when canonical and reported differ — single line when identical.",
+    "Lift 1 legacy drift (asset.defective_since=2026-05-05 vs OL.defective_since=None) is pre-existing data corruption — recommend a one-off script run on production to mirror asset.defective_since into the OL row, or backfill via existing /app/backend/scripts/backfill_defective_since.py."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auto_reject_canonical_defective_since.py (NEW - 7 tests)",
+    "/app/backend/tests/test_inspection_report_classifier.py (NEW - 1 test exercising 6 cases of _classifyItem + _fmtIST)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 executed; 1 skipped due to sequencing — TEST 5 notification content)",
+    "frontend": "Classifier logic 100% (6/6 cases). UI submit flow not driven via Playwright — covered by backend assertions on the same code path."
+  },
+  "test_credentials": "SA001/admin123 (verified via login) — token endpoint returns {token, user} (NOT access_token).",
+  "seed_data_creation": "TEST 1+2+5(skip) consumed 3 pending_approval OL entries → reverted to defective. TEST 3 added 1 ongoing-defect remark to a defective OL. TEST 4 created 1 fresh defective OL on a previously-working asset. Net DB shift: yellow 9→3, working 25→16, orange/red bucket grew. Audit I9 still PASSES post-mutation. Drift unchanged at 1 (Lift 1 legacy).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2-) python -m pytest /app/backend/tests/test_auto_reject_canonical_defective_since.py /app/backend/tests/test_inspection_report_classifier.py /app/backend/tests/test_list_consistency.py -v.  Each run consumes 1+1+0+1=3 yellow assets (auto-reject not_ok + needs_repair + notif if available) and 1 working asset (fresh defect). Notification test skips gracefully if no pending_approval available. Login response uses key 'token' NOT 'access_token'. Inspections submission requires 'inspection_type': 'individual'|'sig'. orange-list returns plain list not paginated dict. /api/orange-list/{ol_id}/remarks returns dict with 'items' key. The /inspections React route does NOT exist — sidebar link is /new-inspection. The PDF inspection-report.js classifier is unit-tested via Node harness; full UI flow driving (asset picker → time pickers → submit → new-tab popup) is complex and not run this iteration.",
+  "rca of the issue": "N/A — no regression. The auto-reject + canonical defective_since refactor is correctly implemented. _apply_inspection_item_effects branches cleanly on existing OL state (None / pending_approval / defective). Only the original OL row's defective_since flows into asset.defective_since (mirrored on update). Notifications are constructed from the existing OL doc fields, not the inbound inspection item, so the canonical value is what reaches RO/SUP recipients."
+}
