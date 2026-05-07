@@ -36,7 +36,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 import { ScrollArea } from '../ui/scroll-area';
 import AdminPerformanceMatrix from '../AdminPerformanceMatrix';
 
-const HEALTH_COLORS = { working: '#0e7c6b', orange: '#f97316', red: '#dc2626' };
+const HEALTH_COLORS = { working: '#0e7c6b', orange: '#f97316', red: '#dc2626', yellow: '#eab308' };
 
 // ----------------------------------------------------------------------------
 // Multi-station filter (popover with checkboxes)
@@ -125,7 +125,7 @@ function StationsMultiSelect({ stations, selected, onChange }) {
 // Reusable health badges
 // ----------------------------------------------------------------------------
 function HealthBadges({ row }) {
-  const issues = (row.orange || 0) + (row.red || 0);
+  const issues = (row.orange || 0) + (row.red || 0) + (row.yellow || 0);
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
@@ -139,6 +139,11 @@ function HealthBadges({ row }) {
       {row.red > 0 && (
         <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px]">
           {row.red} red
+        </Badge>
+      )}
+      {row.yellow > 0 && (
+        <Badge className="bg-yellow-50 text-yellow-700 border-yellow-200 text-[10px]">
+          {row.yellow} yellow
         </Badge>
       )}
       {issues === 0 && row.asset_count > 0 && (
@@ -230,6 +235,7 @@ function DrillDownView({ title, subtitle, payload, loading, onBack }) {
         <div className={`h-7 w-7 rounded-md flex items-center justify-center ${
           a.health_class === 'red' ? 'bg-red-50 text-red-600' :
           a.health_class === 'orange' ? 'bg-orange-50 text-orange-600' :
+          a.health_class === 'yellow' ? 'bg-yellow-50 text-yellow-600' :
           'bg-emerald-50 text-emerald-600'
         }`}>
           {isPriority ? <Wrench className="h-3.5 w-3.5" /> : <Box className="h-3.5 w-3.5" />}
@@ -252,9 +258,11 @@ function DrillDownView({ title, subtitle, payload, loading, onBack }) {
         <Badge className={
           a.health_class === 'red' ? 'bg-red-100 text-red-700 border-red-200 text-[10px]' :
           a.health_class === 'orange' ? 'bg-orange-100 text-orange-700 border-orange-200 text-[10px]' :
+          a.health_class === 'yellow' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 text-[10px]' :
           'bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]'
         }>
           {a.status === 'needs_repair' ? 'NEEDS REPAIR'
+            : a.status === 'pending_approval' ? 'YELLOW'
             : a.status === 'not_ok' ? 'NOT OK'
             : a.health_class === 'working' ? 'OK' : a.health_class.toUpperCase()}
         </Badge>
@@ -782,6 +790,7 @@ export default function SuperadminDashboard() {
     { name: 'Working', value: data.health.working, color: HEALTH_COLORS.working },
     { name: 'Orange', value: data.health.orange, color: HEALTH_COLORS.orange },
     { name: 'Red', value: data.health.red, color: HEALTH_COLORS.red },
+    { name: 'Yellow', value: data.health.yellow || 0, color: HEALTH_COLORS.yellow },
   ].filter((d) => d.value > 0);
 
   return (

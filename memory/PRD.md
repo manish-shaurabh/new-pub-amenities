@@ -143,7 +143,14 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
   1. **Read-side (option A):** `_classify_health(asset, now, open_ol_entry=None)` now treats orange_list as the canonical source. New `_open_ol_entry(history)` helper picks the most-recent non-resolved entry. All 5 dashboard endpoints (admin/superadmin/asup/ro/dashboards) now pre-fetch OL history and pass the open entry.
   2. **Write-side (option B-lite):** `orange_list.reject_working` now also restores `asset.defective_since` from the OL entry.
   3. **Backfill:** `/app/backend/scripts/backfill_defective_since.py` (idempotent) — sync existing assets where the two sources disagree. Ran once: 2 assets fixed, 12 unchanged, 0 stale-working.
-- **Verified:** `/api/dashboard/superadmin` health and `/api/orange-list` now both report `orange=1, red=13`. 54/54 regression tests still pass.
+- **Verified:** `/api/dashboard/superadmin` health and `/api/orange-list` now both report consistent counts. 54/54 regression tests still pass.
+
+### Yellow Slice & Inspection Enum Audit (May 2026)
+- **Yellow slice in dashboard pie chart:**
+  - `_classify_health()` now returns `'yellow'` for `status='pending_approval'` (rectified, awaiting ASUP verification) — separate from `'orange'`/`'red'` age-classification of active defects.
+  - All dashboard accumulator dicts in `dashboards.py` now include `"yellow": 0`.
+  - Frontend `SuperadminDashboard.js` pie chart adds 4th yellow slice (`#eab308`); `HealthBadges` shows yellow count badge; `DrillDownView` row badge styling handles yellow class.
+- **Inspection enum audit:** Backend, frontend, and DB all consistently use lowercase `ok`/`not_ok`/`needs_repair` and `individual`/`sig`. Added explicit docstrings to `InspectionType` and `InspectionItemStatus` enums in `models.py` to prevent future testing-agent confusion.
 
 ### Future / Backlog
 - SMS/WhatsApp notification integration (infrastructure present, needs API keys)

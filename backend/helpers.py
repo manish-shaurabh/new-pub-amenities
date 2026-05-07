@@ -309,8 +309,23 @@ def _open_ol_entry(history: list) -> dict:
 
 
 def _classify_health(asset: dict, now: datetime, open_ol_entry: dict = None) -> str:
-    if asset.get("status") == "working":
+    """Return 'working', 'yellow', 'orange', or 'red'.
+
+    Classification:
+      - 'working'  → asset.status == 'working'
+      - 'yellow'   → asset.status == 'pending_approval' (rectified, awaiting ASUP verification)
+      - 'red'      → defective for > RED_THRESHOLD_HOURS
+      - 'orange'   → defective for ≤ RED_THRESHOLD_HOURS
+
+    The orange_list collection is the canonical record of defects. If an
+    `open_ol_entry` is supplied for this asset, its `defective_since` takes
+    precedence over `asset.defective_since`.
+    """
+    status = asset.get("status")
+    if status == "working":
         return "working"
+    if status == "pending_approval":
+        return "yellow"
     ds = None
     if open_ol_entry:
         ds = open_ol_entry.get("defective_since") or open_ol_entry.get("created_at")

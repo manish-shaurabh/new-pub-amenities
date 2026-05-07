@@ -21,11 +21,22 @@ class AssetStatus(str, Enum):
 
 
 class InspectionType(str, Enum):
+    """Inspection type. Wire/DB representation is the lowercase `value` ('individual', 'sig')."""
     INDIVIDUAL = "individual"
     SIG = "sig"  # Station Inspection Group
 
 
 class InspectionItemStatus(str, Enum):
+    """Per-item inspection result.
+
+    Wire/DB representation is the lowercase `value`:
+      - 'ok'
+      - 'not_ok'
+      - 'needs_repair'
+
+    The Python enum NAMES are uppercase (idiomatic) but never serialized.
+    Frontend should always send lowercase strings.
+    """
     OK = "ok"
     NOT_OK = "not_ok"
     NEEDS_REPAIR = "needs_repair"

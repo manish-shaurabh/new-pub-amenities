@@ -178,7 +178,7 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
 
     now = datetime.utcnow()
     grouped: dict = {}
-    health_counts = {"working": 0, "orange": 0, "red": 0}
+    health_counts = {"working": 0, "orange": 0, "red": 0, "yellow": 0}
 
     # Pre-fetch orange list history for asset uptime computation
     asset_id_strs = [str(a["_id"]) for a in assets]
@@ -199,7 +199,7 @@ async def supervisor_dashboard(user_id: str, station_id: Optional[str] = None):
             "asset_type_id": type_id,
             "asset_type_name": type_name,
             "asset_count": 0,
-            "working": 0, "orange": 0, "red": 0,
+            "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "_pct_sum": 0.0,
         })
         bucket["asset_count"] += 1
@@ -347,7 +347,7 @@ async def _build_oversight_dashboard(
             "selected_station_id": None,
             "selected_department_id": department_filter_id,
             "total_assets": 0,
-            "health": {"working": 0, "orange": 0, "red": 0},
+            "health": {"working": 0, "orange": 0, "red": 0, "yellow": 0},
             "categories": [],
             "stations": [],
         }
@@ -399,7 +399,7 @@ async def _build_oversight_dashboard(
         available_departments.sort(key=lambda x: x["name"] or "")
 
     now = datetime.utcnow()
-    health = {"working": 0, "orange": 0, "red": 0}
+    health = {"working": 0, "orange": 0, "red": 0, "yellow": 0}
     by_category: dict = {}
     by_station: dict = {}
 
@@ -422,7 +422,7 @@ async def _build_oversight_dashboard(
         type_name = types_map.get(type_id, {}).get("name", "Unknown")
         c = by_category.setdefault(type_id, {
             "asset_type_id": type_id, "asset_type_name": type_name,
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "_pct_sum": 0.0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0, "_pct_sum": 0.0,
         })
         c["asset_count"] += 1
         c[cls] += 1
@@ -433,7 +433,7 @@ async def _build_oversight_dashboard(
         s_name = stations_map.get(sid, {}).get("name", "Unknown")
         s = by_station.setdefault(sid, {
             "station_id": sid, "station_name": s_name,
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "categories": {},  # nested
         })
         s["asset_count"] += 1
@@ -442,7 +442,7 @@ async def _build_oversight_dashboard(
         # Per-category nested per-station
         sc = s["categories"].setdefault(type_id, {
             "asset_type_id": type_id, "asset_type_name": type_name,
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "assets": [],
         })
         sc["asset_count"] += 1
@@ -618,7 +618,7 @@ async def superadmin_full_dashboard(
             "_id": type_id, "name": type_name,
             "asset_type_id": type_id, "asset_type_name": type_name,
             "department_id": type_info.get("department_id"),
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "_pct_sum": 0.0,
         })
         c["asset_count"] += 1
@@ -636,7 +636,7 @@ async def superadmin_full_dashboard(
         s_info = stations_map.get(sid, {})
         s = station_acc.setdefault(sid, {
             "_id": sid, "name": s_info.get("name", "Unknown"),
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "_pct_sum": 0.0,
             "approving_supervisor_id": s_info.get("approving_supervisor_id"),
         })
@@ -650,7 +650,7 @@ async def superadmin_full_dashboard(
         if sid_str not in station_acc:
             station_acc[sid_str] = {
                 "_id": sid_str, "name": s_info.get("name", "Unknown"),
-                "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+                "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
                 "_pct_sum": 0.0,
                 "approving_supervisor_id": s_info.get("approving_supervisor_id"),
             }
@@ -667,7 +667,7 @@ async def superadmin_full_dashboard(
         d_info = departments_map.get(dept_id, {})
         d = dept_acc.setdefault(dept_id, {
             "_id": dept_id, "name": d_info.get("name", "Unknown"),
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "_pct_sum": 0.0,
         })
         d["asset_count"] += 1
@@ -677,7 +677,7 @@ async def superadmin_full_dashboard(
         if did_str not in dept_acc:
             dept_acc[did_str] = {
                 "_id": did_str, "name": d_info.get("name", "Unknown"),
-                "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+                "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
                 "_pct_sum": 0.0,
             }
     for d in dept_acc.values():
@@ -752,6 +752,7 @@ async def superadmin_full_dashboard(
         "working": sum(1 for (_, c, _, _) in classed if c == "working"),
         "orange":  sum(1 for (_, c, _, _) in classed if c == "orange"),
         "red":     sum(1 for (_, c, _, _) in classed if c == "red"),
+        "yellow":  sum(1 for (_, c, _, _) in classed if c == "yellow"),
     }
 
     available_stations = [{"_id": str(s["_id"]), "name": s.get("name")} for s in stations_docs]
@@ -841,7 +842,7 @@ async def admin_full_dashboard(
             "_id": type_id, "name": type_name,
             "asset_type_id": type_id, "asset_type_name": type_name,
             "department_id": type_info.get("department_id"),
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "_pct_sum": 0.0,
         })
         c["asset_count"] += 1
@@ -859,7 +860,7 @@ async def admin_full_dashboard(
         s_info = stations_map.get(sid, {})
         s = station_acc.setdefault(sid, {
             "_id": sid, "name": s_info.get("name", "Unknown"),
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "_pct_sum": 0.0,
         })
         s["asset_count"] += 1
@@ -881,7 +882,7 @@ async def admin_full_dashboard(
         dept_info = departments_map.get(did, {})
         d = dept_acc.setdefault(did, {
             "_id": did, "name": dept_info.get("name", "Unknown"),
-            "asset_count": 0, "working": 0, "orange": 0, "red": 0,
+            "asset_count": 0, "working": 0, "orange": 0, "red": 0, "yellow": 0,
             "_pct_sum": 0.0,
         })
         d["asset_count"] += 1
@@ -915,6 +916,7 @@ async def admin_full_dashboard(
         "working": sum(1 for (_, c, _, _) in classed if c == "working"),
         "orange":  sum(1 for (_, c, _, _) in classed if c == "orange"),
         "red":     sum(1 for (_, c, _, _) in classed if c == "red"),
+        "yellow":  sum(1 for (_, c, _, _) in classed if c == "yellow"),
     }
 
     available_stations = [{"_id": str(s["_id"]), "name": s.get("name")} for s in stations_docs]
