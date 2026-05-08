@@ -101,19 +101,27 @@ async def _load_universe():
     stations = await stations_collection.find({}).to_list(2000)
     locations = await locations_collection.find({}).to_list(2000)
     depts = await departments_collection.find({}).to_list(500)
-    ols = await orange_list_collection.find({"status": {"$ne": "resolved"}}).to_list(20000)
+    open_ols = await orange_list_collection.find({"status": {"$ne": "resolved"}}).to_list(20000)
+    # ALL OLs (incl. resolved) — needed for 30-day trend reconstruction
+    all_ols = await orange_list_collection.find({}).to_list(50000)
     users = await users_collection.find({"role": {"$in": ["supervisor", "reporting_officer", "approving_supervisor"]}}).to_list(2000)
     type_by_id = {str(t["_id"]): t for t in types}
     station_by_id = {str(s["_id"]): s for s in stations}
     location_by_id = {str(l["_id"]): l for l in locations}
     dept_by_id = {str(d["_id"]): d for d in depts}
     user_by_id = {str(u["_id"]): u for u in users}
-    ol_by_asset = {ol["asset_id"]: ol for ol in ols}
+    ol_by_asset = {ol["asset_id"]: ol for ol in open_ols}
+    # Group ALL ols by asset_id (list, since multiple resolved entries can exist)
+    all_ols_by_asset: Dict[str, list] = defaultdict(list)
+    for ol in all_ols:
+        if ol.get("asset_id"):
+            all_ols_by_asset[ol["asset_id"]].append(ol)
     return {
         "assets": assets, "types": types, "stations": stations, "locations": locations,
         "type_by_id": type_by_id, "station_by_id": station_by_id,
         "location_by_id": location_by_id, "dept_by_id": dept_by_id,
         "user_by_id": user_by_id, "ol_by_asset": ol_by_asset,
+        "all_ols_by_asset": all_ols_by_asset,
     }
 
 
