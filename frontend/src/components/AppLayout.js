@@ -5,7 +5,7 @@ import { notificationsAPI } from '../lib/api';
 import { useEffect } from 'react';
 import {
   LayoutDashboard, Box, ClipboardCheck, AlertTriangle,
-  Users, Settings, Calendar, History, Menu, X, Bell, LogOut, ChevronDown, UserCircle
+  Users, Settings, Calendar, History, Menu, X, Bell, LogOut, ChevronDown, UserCircle, FileBarChart
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -29,6 +29,7 @@ const navItems = [
     roles: ['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor']
   },
   { path: '/schedules', label: 'Schedules', icon: Calendar, roles: 'all' },
+  { path: '/reports', label: 'Reports', icon: FileBarChart, roles: 'all' },
   { path: '/notifications', label: 'Notifications', icon: Bell, roles: 'all' },
   { path: '/admin', label: 'Admin Panel', icon: Settings, roles: ['superadmin', 'admin'] },
   {

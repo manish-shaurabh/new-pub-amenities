@@ -28,6 +28,21 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Reports Module (PDF + Excel)
+- **New route `/reports`** added to all roles' nav. Role-aware view:
+  - **SUP**: per-station cards with concentric asset-type rings + location bars (worst-first)
+  - **RO / ASUP**: per-supervisor mini-cards → click drills into drawer with that SUP's station cards
+  - **Admin / SuperAdmin**: per-RO cards with concentric department rings + supervisor bars → drill chain
+- **Center % design**: smooth gradient (≤80% deep red → 100% pure green). Shared between backend `health_color()` and frontend `gradientColor()`.
+- **% formula**: `(working + yellow) / total` per user spec.
+- **Concentric rings**: each ring = one asset_type (SUP) or department (Admin/SA). W shown as light grey, Y/O/R emphasized.
+- **G13/G14**: 0-asset stations hidden; 0-defect stations show "✓ ALL CLEAR" badge.
+- **PDF export** (ReportLab, A4 portrait): cover + per-card pages with summary tables and color-coded % cells.
+- **Excel export** (openpyxl): multi-sheet (Summary, view-specific, flat Assets per F12).
+- **Drill-down**: dialog/drawer with nested drills (RO → SUP → station), each level has its own export buttons.
+- **Files**: `/app/backend/routers/reports.py`, `/app/frontend/src/pages/ReportsPage.js`. Wired into `server.py` + `App.js` + nav.
+- **Verified**: SA endpoint returns `view: ros` with 3 RO cards; PDF generates valid `%PDF-1.4` (6.1KB); Excel generates valid `.xlsx`. E2E lifecycle 0 discrepancies. Audit 10/10 PASS.
+
 ### Feb 2026 — Input focus-loss bug fix (asset/user creation, 1-char-per-click typing)
 - **Bug**: Typing in asset_number / employee_id / name / description fields captured only 1 character per click. Even slow typing failed.
 - **Root cause**: `AssetForm` and `UserForm` were defined **inside** their parent components as nested arrow-function components. Every parent re-render created a new component identity, causing React's reconciler to unmount+remount the form on every keystroke — the `<Input>` lost focus each time.

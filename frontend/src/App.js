@@ -11,6 +11,7 @@ import InspectionHistoryPage from './pages/InspectionHistoryPage';
 import SchedulesPage from './pages/SchedulesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
+import ReportsPage from './pages/ReportsPage';
 import AppLayout from './components/AppLayout';
 import './App.css';
 
@@ -94,6 +95,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <AppLayout>
             <ProfilePage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/reports" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ReportsPage />
           </AppLayout>
         </ProtectedRoute>
       } />
