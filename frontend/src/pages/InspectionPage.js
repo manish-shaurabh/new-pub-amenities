@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { ClipboardCheck, Camera, Users, CalendarIcon, Clock, AlertTriangle, ChevronDown, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
+import { useLightbox } from '../components/PhotoLightbox';
 
 export default function InspectionPage() {
   const { user } = useAuth();
@@ -44,6 +45,7 @@ export default function InspectionPage() {
   const [assetHistory, setAssetHistory] = useState(null);
   const [inspectionDate, setInspectionDate] = useState(new Date());
   const [inspectionTime, setInspectionTime] = useState(format(new Date(), 'HH:mm'));
+  const { open: openLightbox, lightbox } = useLightbox();
 
   useEffect(() => {
     loadStations();
@@ -742,23 +744,52 @@ export default function InspectionPage() {
                   <div className="mt-1 flex items-center gap-2 flex-wrap">
                     {item.photo_urls.map((url, pidx) => (
                       <div key={pidx} className="relative h-16 w-16 rounded-lg overflow-hidden border group">
-                        <img src={`${process.env.REACT_APP_BACKEND_URL}${url}`} alt="" className="h-full w-full object-cover" />
+                        <img
+                          src={`${process.env.REACT_APP_BACKEND_URL}${url}`}
+                          alt=""
+                          className="h-full w-full object-cover cursor-zoom-in"
+                          onClick={() => openLightbox(item.photo_urls, pidx)}
+                          data-testid={`inspection-photo-thumb-${item.asset_id}-${pidx}`}
+                        />
                         <button
                           onClick={() => handlePhotoDelete(item.asset_id, url)}
-                          className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-0.5 right-0.5 h-5 w-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Remove photo"
                         >
-                          <Trash2 className="h-4 w-4 text-white" />
+                          <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
                     ))}
-                    <label className="h-16 w-16 rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-muted/40">
-                      <Camera className="h-5 w-5 text-muted-foreground" />
+                    {/* Take photo (camera) */}
+                    <label
+                      className="h-16 w-16 rounded-lg border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/40 gap-0.5"
+                      title="Take photo with camera"
+                    >
+                      <Camera className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-[9px] text-muted-foreground">Camera</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => handlePhotoUpload(item.asset_id, Array.from(e.target.files))}
+                        data-testid={`inspection-photo-camera-${item.asset_id}`}
+                      />
+                    </label>
+                    {/* Choose files (gallery / file picker) */}
+                    <label
+                      className="h-16 w-16 rounded-lg border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/40 gap-0.5"
+                      title="Choose from files"
+                    >
+                      <span className="text-[18px] leading-none text-muted-foreground">+</span>
+                      <span className="text-[9px] text-muted-foreground">Files</span>
                       <input
                         type="file"
                         accept="image/*"
                         multiple
                         className="hidden"
                         onChange={(e) => handlePhotoUpload(item.asset_id, Array.from(e.target.files))}
+                        data-testid={`inspection-photo-files-${item.asset_id}`}
                       />
                     </label>
                   </div>
@@ -807,6 +838,7 @@ export default function InspectionPage() {
         open={!!assetHistory}
         onOpenChange={(open) => !open && setAssetHistory(null)}
       />
+      {lightbox}
     </div>
   );
 }

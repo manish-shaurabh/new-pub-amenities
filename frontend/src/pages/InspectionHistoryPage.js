@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { ClipboardCheck, Users, Calendar, ChevronDown, User, FileText, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
+import { useLightbox } from '../components/PhotoLightbox';
 import Pagination from '../components/Pagination';
 
 const PAGE_SIZE = 25;
@@ -29,6 +30,7 @@ export default function InspectionHistoryPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [selectedInspection, setSelectedInspection] = useState(null);
   const [assetHistory, setAssetHistory] = useState(null);
+  const { open: openLightbox, lightbox } = useLightbox();
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -468,7 +470,9 @@ export default function InspectionHistoryPage() {
                                 <img
                                   src={`${process.env.REACT_APP_BACKEND_URL}${url}`}
                                   alt={`Photo ${pi + 1}`}
-                                  className="w-full h-full object-cover"
+                                  className="w-full h-full object-cover cursor-zoom-in"
+                                  onClick={() => openLightbox(item.photo_urls, pi)}
+                                  data-testid={`history-photo-${pi}`}
                                 />
                               </div>
                             ))}
@@ -521,7 +525,9 @@ export default function InspectionHistoryPage() {
                               <img
                                 src={`${process.env.REACT_APP_BACKEND_URL}${url}`}
                                 alt={`Inspection ${idx + 1}`}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover cursor-zoom-in"
+                                onClick={() => openLightbox(selectedInspection.assetItem.photo_urls, idx)}
+                                data-testid={`history-detail-photo-${idx}`}
                               />
                             </div>
                           ))}
@@ -550,6 +556,7 @@ export default function InspectionHistoryPage() {
         open={!!assetHistory}
         onOpenChange={(open) => !open && setAssetHistory(null)}
       />
+      {lightbox}
     </div>
   );
 }

@@ -5,10 +5,12 @@ import { Badge } from './ui/badge';
 import { Skeleton } from './ui/skeleton';
 import { ScrollArea } from './ui/scroll-area';
 import { ClipboardCheck, Calendar, User, FileText } from 'lucide-react';
+import { useLightbox } from './PhotoLightbox';
 
 export default function AssetHistoryDrawer({ assetId, assetNumber, open, onOpenChange }) {
   const [inspections, setInspections] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { open: openLightbox, lightbox } = useLightbox();
 
   useEffect(() => {
     if (open && assetId) {
@@ -108,11 +110,18 @@ export default function AssetHistoryDrawer({ assetId, assetNumber, open, onOpenC
                     <div className="mt-2 flex gap-1">
                       {insp.items[0].photo_urls.slice(0, 3).map((url, idx) => (
                         <div key={idx} className="h-12 w-12 rounded border overflow-hidden">
-                          <img src={`${process.env.REACT_APP_BACKEND_URL}${url}`} alt="" className="h-full w-full object-cover" />
+                          <img
+                            src={`${process.env.REACT_APP_BACKEND_URL}${url}`}
+                            alt=""
+                            className="h-full w-full object-cover cursor-zoom-in"
+                            onClick={() => openLightbox(insp.items[0].photo_urls, idx)}
+                            data-testid={`asset-history-photo-${idx}`}
+                          />
                         </div>
                       ))}
                       {insp.items[0].photo_urls.length > 3 && (
-                        <div className="h-12 w-12 rounded border flex items-center justify-center bg-muted text-[10px] text-muted-foreground">
+                        <div className="h-12 w-12 rounded border flex items-center justify-center bg-muted text-[10px] text-muted-foreground cursor-zoom-in"
+                             onClick={() => openLightbox(insp.items[0].photo_urls, 3)}>
                           +{insp.items[0].photo_urls.length - 3}
                         </div>
                       )}
@@ -124,6 +133,7 @@ export default function AssetHistoryDrawer({ assetId, assetNumber, open, onOpenC
           )}
         </ScrollArea>
       </SheetContent>
+      {lightbox}
     </Sheet>
   );
 }

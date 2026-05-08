@@ -27,6 +27,7 @@ import { toIstLiteral } from '../../lib/utils';
 import { useAuth } from '../../lib/auth-context';
 import { assetsAPI, uploadAPI, usersAPI, stationsAPI } from '../../lib/api';
 import { errString } from '../../lib/err';
+import { useLightbox } from '../PhotoLightbox';
 
 // Build a value for <input type="datetime-local"> from a Date — local time, no seconds.
 function toLocalInputValue(d) {
@@ -42,6 +43,7 @@ export default function MarkDefectiveDialog({ open, onOpenChange, asset, onMarke
   const [photos, setPhotos] = useState([]);  // [{ url, name }]
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const { open: openLightbox, lightbox } = useLightbox();
 
   // Recipient preview
   const [recipients, setRecipients] = useState({ loading: true, items: [] });
@@ -270,16 +272,31 @@ export default function MarkDefectiveDialog({ open, onOpenChange, asset, onMarke
           <Label className="text-sm flex items-center gap-1.5">
             <ImageIcon className="h-3.5 w-3.5" /> Photos (optional)
           </Label>
-          <div>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handlePhotoUpload}
-              disabled={uploading}
-              className="block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-primary/10 file:text-primary file:cursor-pointer file:text-xs"
-              data-testid="mark-photo-input"
-            />
+          <div className="flex flex-wrap gap-2">
+            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-primary/30 bg-primary/5 hover:bg-primary/10 cursor-pointer text-xs text-primary font-medium" title="Take photo with camera">
+              <ImageIcon className="h-3.5 w-3.5" /> Camera
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoUpload}
+                disabled={uploading}
+                className="hidden"
+                data-testid="mark-photo-camera"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 cursor-pointer text-xs font-medium" title="Choose from files">
+              <span className="text-base leading-none">+</span> Files
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoUpload}
+                disabled={uploading}
+                className="hidden"
+                data-testid="mark-photo-input"
+              />
+            </label>
           </div>
           {photos.length > 0 && (
             <div className="grid grid-cols-4 gap-2 mt-2">
@@ -288,7 +305,9 @@ export default function MarkDefectiveDialog({ open, onOpenChange, asset, onMarke
                   <img
                     src={`${process.env.REACT_APP_BACKEND_URL}${p.url}`}
                     alt={p.name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover cursor-zoom-in"
+                    onClick={() => openLightbox(photos.map((x) => x.url), i)}
+                    data-testid={`mark-photo-thumb-${i}`}
                   />
                   <button
                     type="button"
@@ -338,6 +357,7 @@ export default function MarkDefectiveDialog({ open, onOpenChange, asset, onMarke
           </Button>
         </div>
       </DialogContent>
+      {lightbox}
     </Dialog>
   );
 }

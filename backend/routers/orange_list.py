@@ -584,39 +584,117 @@ async def approve_working(item_id: str, request: ApproveWorkingRequest):
 
 
 # Change 4: Export Orange/Red List as Excel
+async def _last_insp_remarks_by_asset(items: List[dict]) -> dict:
+    """Fetch the latest inspection comment per asset for the given OL items.
+
+    Returns: { asset_id: {"at": "yyyy-mm-dd hh:mm", "by": emp_id, "remarks": "..."} }
+    """
+    asset_ids = list({(it.get("asset_id") or "") for it in items if it.get("asset_id")})
+    if not asset_ids:
+        return {}
+    inspections = await inspections_collection.find(
+        {"items.asset_id": {"$in": asset_ids}}
+    ).sort("inspection_at", -1).to_list(20000)
+    # Map inspector_id -> employee_id
+    inspector_ids = list({i.get("inspector_id") for i in inspections if i.get("inspector_id")})
+    inspector_map = {}
+    if inspector_ids:
+        users = await users_collection.find({
+            "_id": {"$in": [ObjectId(x) for x in inspector_ids if x]}
+        }).to_list(2000)
+        inspector_map = {str(u["_id"]): u for u in users}
+
+    last: dict = {}
+    for ins in inspections:
+        ins_at = ins.get("inspection_at") or ""
+        # Format datetime compactly
+        ins_at_fmt = ""
+        if ins_at:
+            try:
+                if isinstance(ins_at, str):
+                    dt = datetime.fromisoformat(ins_at.replace("Z", "").replace("+00:00", ""))
+                else:
+                    dt = ins_at
+                ins_at_fmt = dt.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                ins_at_fmt = str(ins_at)[:16]
+        for it in ins.get("items", []):
+            aid = it.get("asset_id")
+            if aid not in asset_ids or aid in last:
+                continue
+            inspector = inspector_map.get(ins.get("inspector_id")) or {}
+            last[aid] = {
+                "at": ins_at_fmt,
+                "by": inspector.get("employee_id", ""),
+                "status": (it.get("status") or "").upper(),
+                "remarks": it.get("remarks") or ins.get("overall_remarks") or "",
+            }
+    return last
+
+
 @router.get("/api/orange-list/export/excel")
 async def export_orange_list_excel(list_type: Optional[str] = None):
     import openpyxl
-    
+    from openpyxl.styles import Font, PatternFill, Alignment
+
     items = await list_orange_items(list_type=list_type)
-    
+    last_insp = await _last_insp_remarks_by_asset(items)
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Defective Assets"
-    
-    # Headers
-    headers = ["Asset Number", "Asset Type", "Station", "Location", "Status", "List Type", 
-               "Defective Since", "Hours Defective", "Reported By", "Remarks"]
+
+    # Compact, clean headers — defect details first, then last-inspection details.
+    headers = [
+        "Asset #", "Asset Type", "Station", "Location",
+        "List", "Status", "Defective Since", "Hrs",
+        "Reporter", "Defect Remarks",
+        "Last Inspected", "Inspector", "Last Insp. Status", "Last Inspection Remarks",
+    ]
     ws.append(headers)
-    
+    # Header styling
+    teal_fill = PatternFill("solid", fgColor="0E7C6B")
+    bold_white = Font(bold=True, color="FFFFFF")
+    for c in ws[1]:
+        c.fill = teal_fill
+        c.font = bold_white
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.freeze_panes = "A2"
+
     for item in items:
+        li = last_insp.get(item.get("asset_id")) or {}
         ws.append([
             item.get("asset_info", {}).get("asset_number", ""),
             item.get("asset_info", {}).get("asset_type_name", ""),
             item.get("asset_info", {}).get("station_name", ""),
             item.get("asset_info", {}).get("location_name", ""),
+            (item.get("list_type") or "").upper(),
             item.get("status", ""),
-            item.get("list_type", "").upper(),
-            item.get("defective_since", ""),
+            (item.get("defective_since") or "")[:16],
             item.get("hours_defective", 0),
             item.get("reporter_name", ""),
-            item.get("remarks", "")
+            item.get("remarks", ""),
+            li.get("at", ""),
+            li.get("by", ""),
+            li.get("status", ""),
+            li.get("remarks", ""),
         ])
-    
+
+    # Column widths + wrap-text on remark columns
+    widths = [("A", 14), ("B", 16), ("C", 14), ("D", 22), ("E", 8), ("F", 14),
+              ("G", 18), ("H", 8), ("I", 18), ("J", 40),
+              ("K", 18), ("L", 12), ("M", 14), ("N", 50)]
+    for col, w in widths:
+        ws.column_dimensions[col].width = w
+    # wrap-text on Defect Remarks (J) + Last Inspection Remarks (N)
+    for row in ws.iter_rows(min_row=2):
+        row[9].alignment = Alignment(wrap_text=True, vertical="top")
+        row[13].alignment = Alignment(wrap_text=True, vertical="top")
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    
+
     filename = f"defective_assets_{list_type or 'all'}_{now_ist().strftime('%Y%m%d_%H%M')}.xlsx"
     return StreamingResponse(
         output,
@@ -630,54 +708,106 @@ async def export_orange_list_excel(list_type: Optional[str] = None):
 async def export_orange_list_pdf(list_type: Optional[str] = None):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet
-    
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
     items = await list_orange_items(list_type=list_type)
-    
+    last_insp = await _last_insp_remarks_by_asset(items)
+
     output = io.BytesIO()
-    doc = SimpleDocTemplate(output, pagesize=landscape(A4))
+    doc = SimpleDocTemplate(output, pagesize=landscape(A4),
+                            leftMargin=10*mm, rightMargin=10*mm,
+                            topMargin=10*mm, bottomMargin=10*mm,
+                            title="Defective Assets Report")
     elements = []
     styles = getSampleStyleSheet()
-    
-    # Title
-    title = f"{'Red' if list_type == 'red' else 'Orange' if list_type == 'orange' else 'Defective'} List Report - {now_ist().strftime('%d %b %Y')}"
-    elements.append(Paragraph(title, styles['Title']))
-    elements.append(Spacer(1, 20))
-    
-    # Table data
-    data = [["Asset No.", "Type", "Station", "Location", "List", "Defective Since", "Hours", "Reporter"]]
+    title_style = ParagraphStyle("title", parent=styles["Heading1"], fontSize=14,
+                                 textColor=colors.HexColor("#0e7c6b"), spaceAfter=4)
+    sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=8,
+                               textColor=colors.HexColor("#64748b"))
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=7, leading=8,
+                                textColor=colors.HexColor("#0f172a"))
+    cell_strong = ParagraphStyle("cellB", parent=cell_style, fontName="Helvetica-Bold")
+
+    def _wrap(text, style=cell_style):
+        t = (str(text) if text is not None else "").replace("\n", "<br/>")
+        # Escape angle-brackets that aren't already part of the <br/>
+        return Paragraph(t, style)
+
+    title = f"{'Red' if list_type == 'red' else 'Orange' if list_type == 'orange' else 'Yellow' if list_type == 'yellow' else 'Defective Assets'} List · {now_ist().strftime('%d %b %Y, %H:%M')}"
+    elements.append(Paragraph(title, title_style))
+    elements.append(Paragraph(f"{len(items)} asset(s)", sub_style))
+    elements.append(Spacer(1, 6))
+
+    headers = ["Asset", "Type / Loc", "Station", "List", "Defective Since",
+               "Hrs", "Reporter / Defect Remarks",
+               "Last Inspected", "Last Insp. Remarks"]
+    data = [headers]
     for item in items:
+        li = last_insp.get(item.get("asset_id")) or {}
+        info = item.get("asset_info", {}) or {}
+        defective_since = (item.get("defective_since") or "")[:16]
+        rep_blob = (item.get("reporter_name") or "—")
+        defect_rem = item.get("remarks") or ""
+        if defect_rem:
+            rep_blob += f"<br/><font size=6 color=\"#64748b\">{defect_rem}</font>"
+        # Last inspection block
+        if li.get("at"):
+            li_blob = f"{li.get('at')}"
+            if li.get("by"):
+                li_blob += f"<br/><font size=6 color=\"#64748b\">by {li.get('by')} · {li.get('status', '')}</font>"
+        else:
+            li_blob = "—"
+        type_loc = info.get("asset_type_name", "")
+        if info.get("location_name"):
+            type_loc += f"<br/><font size=6 color=\"#64748b\">{info.get('location_name')}</font>"
         data.append([
-            item.get("asset_info", {}).get("asset_number", ""),
-            item.get("asset_info", {}).get("asset_type_name", ""),
-            item.get("asset_info", {}).get("station_name", ""),
-            item.get("asset_info", {}).get("location_name", ""),
-            item.get("list_type", "").upper(),
-            item.get("defective_since", "")[:16] if item.get("defective_since") else "",
-            str(item.get("hours_defective", 0)),
-            item.get("reporter_name", "")
+            _wrap(info.get("asset_number", ""), cell_strong),
+            _wrap(type_loc),
+            _wrap(info.get("station_name", "")),
+            _wrap((item.get("list_type") or "").upper(), cell_strong),
+            _wrap(defective_since),
+            _wrap(str(item.get("hours_defective", 0))),
+            _wrap(rep_blob),
+            _wrap(li_blob),
+            _wrap(li.get("remarks", "—")),
         ])
-    
+
     if len(data) > 1:
-        table = Table(data)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0e7c6b')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f5f5')]),
-        ]))
+        # Total inner width (landscape A4 ~277mm)
+        col_widths = [22*mm, 30*mm, 22*mm, 14*mm, 24*mm, 10*mm, 50*mm, 24*mm, 81*mm]
+        # List-type cell color map
+        list_color = {"RED": "#dc2626", "ORANGE": "#f97316", "YELLOW": "#eab308"}
+        ts = [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0e7c6b")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#cbd5e1")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#f8fafc")]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]
+        # Color the List column per row
+        for ridx, item in enumerate(items, start=1):
+            lt = (item.get("list_type") or "").upper()
+            if lt in list_color:
+                ts.append(("BACKGROUND", (3, ridx), (3, ridx), colors.HexColor(list_color[lt])))
+                ts.append(("TEXTCOLOR", (3, ridx), (3, ridx), colors.white))
+        table = Table(data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle(ts))
         elements.append(table)
     else:
         elements.append(Paragraph("No defective assets found.", styles['Normal']))
-    
+
     doc.build(elements)
     output.seek(0)
-    
+
     filename = f"defective_assets_{list_type or 'all'}_{now_ist().strftime('%Y%m%d_%H%M')}.pdf"
     return StreamingResponse(
         output,
