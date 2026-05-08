@@ -72,3 +72,41 @@ export function formatDuration(hours) {
   }
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
+
+// ─── IST naive literal builders ───────────────────────────────────────────────
+// The backend stores all datetimes as naive Indian Standard Time literals
+// (no timezone conversion). When the user types "20 Feb 2026, 23:30" we must
+// send "2026-02-20T23:30:00" verbatim — NEVER use .toISOString() because that
+// shifts to UTC and silently subtracts 5h30m.
+//
+// `dateInput` may be a Date object OR an ISO string (e.g. from shadcn Calendar).
+// Either way, we read the LOCAL Y/M/D since the user lives in IST.
+
+const _pad = (n) => String(n).padStart(2, '0');
+
+/**
+ * Build "YYYY-MM-DDTHH:mm:00" from a Date|ISO and an optional "HH:mm" time string.
+ * Returns null if dateInput is missing.
+ */
+export function toIstLiteral(dateInput, timeStr) {
+  if (!dateInput) return null;
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = _pad(d.getMonth() + 1);
+  const dd = _pad(d.getDate());
+  let hh = _pad(d.getHours());
+  let mi = _pad(d.getMinutes());
+  if (typeof timeStr === 'string' && /^\d{1,2}:\d{2}$/.test(timeStr)) {
+    const [h, m] = timeStr.split(':');
+    hh = _pad(parseInt(h, 10));
+    mi = _pad(parseInt(m, 10));
+  }
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}:00`;
+}
+
+/** Build "YYYY-MM-DDTHH:mm:00" from "now" — the user's current IST wall clock. */
+export function nowIstLiteral() {
+  const d = new Date();
+  return `${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}T${_pad(d.getHours())}:${_pad(d.getMinutes())}:${_pad(d.getSeconds())}`;
+}

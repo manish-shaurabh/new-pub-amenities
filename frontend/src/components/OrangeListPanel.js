@@ -22,7 +22,7 @@ import { Calendar } from './ui/calendar';
 import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle, Clock, RefreshCw, CalendarIcon, XCircle, Wrench, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
-import { formatDateTimeCompact, formatDateTime, formatDuration } from '../lib/utils';
+import { formatDateTimeCompact, formatDateTime, formatDuration, toIstLiteral } from '../lib/utils';
 import RemarksThread from './RemarksThread';
 
 export default function OrangeListPanel({ userId, mode = 'sup' }) {
@@ -71,15 +71,9 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
     if (!actionDialog?.item) return;
     setSubmitting(true);
     try {
-      let marked_working_at = null;
-      if (markedWorkingDate) {
-        const date = new Date(markedWorkingDate);
-        if (markedWorkingTime) {
-          const [h, m] = markedWorkingTime.split(':');
-          date.setHours(parseInt(h), parseInt(m));
-        }
-        marked_working_at = date.toISOString();
-      }
+      const marked_working_at = markedWorkingDate
+        ? toIstLiteral(markedWorkingDate, markedWorkingTime)
+        : null;
       await orangeListAPI.markWorking(actionDialog.item._id, {
         marked_by: user._id,
         remarks,

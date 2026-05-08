@@ -28,6 +28,17 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Frontend `.toISOString()` IST→UTC roundtrip bug fix
+- **Bug**: User types "20 Feb 2026, 23:30" → `.setHours(23,30)` + `.toISOString()` shifts to UTC → backend stores `2026-02-20T18:00:00` as naive IST → PDF/dashboards render as 6 PM (5h30m off). Affected 4 user-input datetime flows.
+- **Fix**: New `toIstLiteral(dateInput, timeStr)` in `/app/frontend/src/lib/utils.js` extracts LOCAL Y/M/D from the picker's Date and applies the user's typed `HH:mm` directly — no UTC roundtrip.
+- **Applied to all 4 places**:
+  1. `InspectionPage.js` — `inspection_at`, `defective_since`, `rectified_on`
+  2. `OrangeListPage.js` — `marked_working_at`
+  3. `OrangeListPanel.js` — `marked_working_at`
+  4. `MarkDefectiveDialog.js` — `defective_at`
+- **Self-heal added in backend**: `_apply_inspection_item_effects()` now back-fills null `OL.defective_since` with the canonical value on next inspection, preventing the legacy-data 500 that surfaced earlier.
+- **Verified**: E2E lifecycle 0 discrepancies; manual test shows user input "20 Feb 2026 23:30" now stored and rendered as "20 Feb 2026, 11:30 PM" everywhere.
+
 ### Feb 2026 — Comprehensive E2E Lifecycle Test Harness
 - **`/app/backend/tests/e2e_full_lifecycle.py`**: 10-phase orchestrator that creates a full org slice (1 station, 3 users — RO/ASUP/SUP, 2 asset types, 5 assets across Electrical+Commercial), runs the entire defect lifecycle (inspection → orange/red → mark working → approve/reject → re-inspect → auto-reject), exercises remarks from all 4 roles, validates IST literal format on every API response, runs the 10-invariant audit, and **guarantees full cleanup** via `try/finally` (deletes by tracked _ids + tag-prefix sweep + asset/user link sweep).
 - **Verified on preview**: RUN_ID=5D02488A — 0 discrepancies. All 10 phases passed:

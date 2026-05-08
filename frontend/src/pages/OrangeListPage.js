@@ -17,7 +17,7 @@ import { AlertTriangle, CheckCircle, Clock, FileText, FileSpreadsheet, RefreshCw
 import { format } from 'date-fns';
 import Pagination from '../components/Pagination';
 import RemarksThread from '../components/RemarksThread';
-import { formatDateTime, formatDuration } from '../lib/utils';
+import { formatDateTime, formatDuration, toIstLiteral } from '../lib/utils';
 
 const PAGE_SIZE = 25;
 
@@ -83,15 +83,9 @@ export default function OrangeListPage() {
     if (!actionDialog?.item) return;
     setSubmitting(true);
     try {
-      let marked_working_at = null;
-      if (markedWorkingDate) {
-        const date = new Date(markedWorkingDate);
-        if (markedWorkingTime) {
-          const [h, m] = markedWorkingTime.split(':');
-          date.setHours(parseInt(h), parseInt(m));
-        }
-        marked_working_at = date.toISOString();
-      }
+      const marked_working_at = markedWorkingDate
+        ? toIstLiteral(markedWorkingDate, markedWorkingTime)
+        : null;
       await orangeListAPI.markWorking(actionDialog.item._id, {
         marked_by: user._id,
         remarks,

@@ -4,6 +4,7 @@ import { assetsAPI, stationsAPI, locationsAPI, inspectionsAPI, usersAPI, uploadA
 import { errString } from '../lib/err';
 import { openInspectionReport } from '../lib/inspection-report';
 import { useAuth } from '../lib/auth-context';
+import { toIstLiteral } from '../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -265,39 +266,27 @@ export default function InspectionPage() {
 
     setSubmitting(true);
     try {
-      // Build inspection_at from inspectionDate and inspectionTime
-      const inspectionDateTime = new Date(inspectionDate);
-      if (inspectionTime) {
-        const [hours, minutes] = inspectionTime.split(':');
-        inspectionDateTime.setHours(parseInt(hours), parseInt(minutes));
-      }
+      // ── Build naive IST literal payloads. NEVER use .toISOString() — it
+      // converts to UTC and silently shifts time by 5h30m, then backend
+      // re-reads the wrong number as IST. The whole system is naive IST.
+      const inspectionAtLiteral = toIstLiteral(inspectionDate, inspectionTime);
 
       const payload = {
         inspection_type: inspectionType,
         station_id: selectedStation,
         inspector_id: user._id,
-        inspection_at: inspectionDateTime.toISOString(),
+        inspection_at: inspectionAtLiteral,
         items: inspectionItems.map(item => {
           let defective_since = null;
           if (item.status === 'not_ok' || item.status === 'needs_repair') {
             if (item.defective_since_date) {
-              const date = new Date(item.defective_since_date);
-              if (item.defective_since_time) {
-                const [hours, minutes] = item.defective_since_time.split(':');
-                date.setHours(parseInt(hours), parseInt(minutes));
-              }
-              defective_since = date.toISOString();
+              defective_since = toIstLiteral(item.defective_since_date, item.defective_since_time);
             }
           }
-          
+
           let rectified_on = null;
           if (item.status === 'ok' && item.rectified_on_date) {
-            const date = new Date(item.rectified_on_date);
-            if (item.rectified_on_time) {
-              const [hours, minutes] = item.rectified_on_time.split(':');
-              date.setHours(parseInt(hours), parseInt(minutes));
-            }
-            rectified_on = date.toISOString();
+            rectified_on = toIstLiteral(item.rectified_on_date, item.rectified_on_time);
           }
           
           return {

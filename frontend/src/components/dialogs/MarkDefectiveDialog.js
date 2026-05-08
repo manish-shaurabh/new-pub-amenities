@@ -23,6 +23,7 @@ import { Badge } from '../ui/badge';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { AlertTriangle, Image as ImageIcon, X, CalendarClock, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { toIstLiteral } from '../../lib/utils';
 import { useAuth } from '../../lib/auth-context';
 import { assetsAPI, uploadAPI, usersAPI, stationsAPI } from '../../lib/api';
 import { errString } from '../../lib/err';
@@ -155,9 +156,13 @@ export default function MarkDefectiveDialog({ open, onOpenChange, asset, onMarke
     if (!canSubmit || !asset) return;
     setSubmitting(true);
     try {
-      // Convert local datetime-local string to ISO (treat as local time)
-      const localDate = new Date(defectiveAt);
-      const isoDefectiveAt = localDate.toISOString();
+      // Treat the user-typed datetime-local string as a naive IST literal.
+      // datetime-local inputs already give "YYYY-MM-DDTHH:mm" — append seconds
+      // and pass through. Never use new Date(...).toISOString() — that shifts
+      // by 5h30m for IST users.
+      const isoDefectiveAt = defectiveAt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(defectiveAt)
+        ? (defectiveAt.length === 16 ? `${defectiveAt}:00` : defectiveAt)
+        : toIstLiteral(defectiveAt);
       const r = await assetsAPI.markDefective(asset._id, {
         status,
         remarks: remarks.trim(),

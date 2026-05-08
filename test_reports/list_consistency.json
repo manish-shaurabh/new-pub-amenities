@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-05-08T11:54:12.328406",
+  "run_at": "2026-05-08T12:55:04.225022",
   "summary": {
     "total_checks": 12,
     "pass": 10,
@@ -32,7 +32,7 @@
       "severity": "WARN",
       "check": "approved_at is in the future",
       "asset_id": null,
-      "detail": "OL._id=69fdcee0179c44328aebe51b ap=2026-05-08 17:24:10.299000"
+      "detail": "OL._id=69fddd2442f97b1e1c4335af ap=2026-05-08 18:25:01.847000"
     }
   ]
 }
