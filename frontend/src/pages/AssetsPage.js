@@ -196,7 +196,10 @@ export default function AssetsPage() {
     return <Badge className={styles[status] || ''}>{status?.replace('_', ' ')}</Badge>;
   };
 
-  const AssetForm = ({ isEdit }) => (
+  // ─── FIX: defined as a function CALL (not a React component) so it doesn't
+  // get a new component identity on every parent re-render, which was causing
+  // <Input> elements to lose focus after each keystroke.
+  const renderAssetForm = (isEdit) => (
     <div className="space-y-4">
       <div>
         <Label>Asset Type *</Label>
@@ -344,7 +347,7 @@ export default function AssetsPage() {
             </DialogTrigger>
             <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Create New Asset</DialogTitle></DialogHeader>
-              <AssetForm isEdit={false} />
+              {renderAssetForm(false)}
             </DialogContent>
           </Dialog>
         )}
@@ -429,7 +432,7 @@ export default function AssetsPage() {
       <Dialog open={showEdit} onOpenChange={(open) => { setShowEdit(open); if (!open) { setEditingAsset(null); resetForm(); } }}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Edit Asset</DialogTitle></DialogHeader>
-          <AssetForm isEdit={true} />
+          {renderAssetForm(true)}
         </DialogContent>
       </Dialog>
 

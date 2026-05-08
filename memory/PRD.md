@@ -28,6 +28,13 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Input focus-loss bug fix (asset/user creation, 1-char-per-click typing)
+- **Bug**: Typing in asset_number / employee_id / name / description fields captured only 1 character per click. Even slow typing failed.
+- **Root cause**: `AssetForm` and `UserForm` were defined **inside** their parent components as nested arrow-function components. Every parent re-render created a new component identity, causing React's reconciler to unmount+remount the form on every keystroke — the `<Input>` lost focus each time.
+- **Fix**: Renamed to `renderAssetForm` / `renderUserForm` (lowercase) and invoked as function calls `{renderAssetForm(false)}` instead of as components `<AssetForm isEdit={false} />`. This makes the returned JSX part of the parent's render tree — no component identity change, no unmount, focus is preserved.
+- **Files changed**: `AssetsPage.js:199`, `UsersPage.js:174` + 4 call sites.
+- **Expected: typing "TEST-ASSET-12345" now captures all 16 characters in one flow.**
+
 ### Feb 2026 — Frontend `.toISOString()` IST→UTC roundtrip bug fix
 - **Bug**: User types "20 Feb 2026, 23:30" → `.setHours(23,30)` + `.toISOString()` shifts to UTC → backend stores `2026-02-20T18:00:00` as naive IST → PDF/dashboards render as 6 PM (5h30m off). Affected 4 user-input datetime flows.
 - **Fix**: New `toIstLiteral(dateInput, timeStr)` in `/app/frontend/src/lib/utils.js` extracts LOCAL Y/M/D from the picker's Date and applies the user's typed `HH:mm` directly — no UTC roundtrip.

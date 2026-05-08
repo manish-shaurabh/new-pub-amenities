@@ -171,7 +171,10 @@ export default function UsersPage() {
   // No department users
   const noDepartmentUsers = filteredUsers.filter(u => !u.department_id);
 
-  const UserForm = ({ isEdit }) => (
+  // ─── FIX: defined as a function CALL (not a React component) so it doesn't
+  // get a new component identity on every parent re-render, which was causing
+  // <Input> elements to lose focus after each keystroke.
+  const renderUserForm = (isEdit) => (
     <div className="space-y-4">
       <div>
         <Label>Employee ID *</Label>
@@ -308,7 +311,7 @@ export default function UsersPage() {
             <DialogHeader>
               <DialogTitle>Create New User</DialogTitle>
             </DialogHeader>
-            <UserForm isEdit={false} />
+            {renderUserForm(false)}
           </DialogContent>
         </Dialog>
       </div>
@@ -405,7 +408,7 @@ export default function UsersPage() {
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
           </DialogHeader>
-          <UserForm isEdit={true} />
+          {renderUserForm(true)}
         </DialogContent>
       </Dialog>
 
