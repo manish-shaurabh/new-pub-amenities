@@ -9,6 +9,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Loader2, FileDown, FileSpreadsheet, ArrowLeft, ChevronRight } from 'lucide-react';
+import { Switch } from '../components/ui/switch';
 import { formatDateTime } from '../lib/utils';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -343,7 +344,7 @@ function ROCard({ ro, onDrill }) {
 }
 
 // ─── Drill-down drawer (modal) ────────────────────────────────────────────
-function DrillDrawer({ open, onClose, viewerId, target, depth = 0 }) {
+function DrillDrawer({ open, onClose, viewerId, target, depth = 0, defectiveOnly = false }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [innerDrill, setInnerDrill] = useState(null);
@@ -367,10 +368,10 @@ function DrillDrawer({ open, onClose, viewerId, target, depth = 0 }) {
               <span className="text-xs text-slate-500 font-normal ml-2">({target?.role})</span>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => downloadPdf(viewerId, target.user_id)} data-testid="drill-export-pdf">
+              <Button size="sm" variant="outline" onClick={() => downloadPdf(viewerId, target.user_id, defectiveOnly)} data-testid="drill-export-pdf">
                 <FileDown className="h-4 w-4 mr-1" /> PDF
               </Button>
-              <Button size="sm" variant="outline" onClick={() => downloadExcel(viewerId, target.user_id)} data-testid="drill-export-xlsx">
+              <Button size="sm" variant="outline" onClick={() => downloadExcel(viewerId, target.user_id, defectiveOnly)} data-testid="drill-export-xlsx">
                 <FileSpreadsheet className="h-4 w-4 mr-1" /> Excel
               </Button>
             </div>
@@ -393,7 +394,8 @@ function DrillDrawer({ open, onClose, viewerId, target, depth = 0 }) {
         {/* Nested drill (RO drilling into a SUP) */}
         {innerDrill && (
           <DrillDrawer open={!!innerDrill} onClose={() => setInnerDrill(null)}
-                       viewerId={viewerId} target={innerDrill} depth={depth + 1} />
+                       viewerId={viewerId} target={innerDrill} depth={depth + 1}
+                       defectiveOnly={defectiveOnly} />
         )}
       </DialogContent>
     </Dialog>
@@ -414,12 +416,18 @@ async function _download(url, fname) {
     toast.error('Download failed');
   }
 }
-async function downloadPdf(viewerId, drillUserId) {
-  const q = drillUserId ? `?drill_user_id=${drillUserId}` : '';
+async function downloadPdf(viewerId, drillUserId, defectiveOnly = false) {
+  const params = new URLSearchParams();
+  if (drillUserId) params.set('drill_user_id', drillUserId);
+  if (defectiveOnly) params.set('defective_only', 'true');
+  const q = params.toString() ? `?${params.toString()}` : '';
   await _download(`${BACKEND}/api/reports/export/pdf/${viewerId}${q}`, `report-${Date.now()}.pdf`);
 }
-async function downloadExcel(viewerId, drillUserId) {
-  const q = drillUserId ? `?drill_user_id=${drillUserId}` : '';
+async function downloadExcel(viewerId, drillUserId, defectiveOnly = false) {
+  const params = new URLSearchParams();
+  if (drillUserId) params.set('drill_user_id', drillUserId);
+  if (defectiveOnly) params.set('defective_only', 'true');
+  const q = params.toString() ? `?${params.toString()}` : '';
   await _download(`${BACKEND}/api/reports/export/excel/${viewerId}${q}`, `report-${Date.now()}.xlsx`);
 }
 
@@ -429,6 +437,7 @@ export default function ReportsPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [drillTarget, setDrillTarget] = useState(null);
+  const [defectiveOnly, setDefectiveOnly] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?._id) return;
@@ -459,11 +468,17 @@ export default function ReportsPage() {
             Generated: {formatDateTime(data.generated_at)} · Viewer role: <b>{data.viewer.role}</b>
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => downloadPdf(user._id)} data-testid="export-pdf-btn">
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none"
+                 data-testid="defective-only-toggle-label">
+            <Switch checked={defectiveOnly} onCheckedChange={setDefectiveOnly}
+                    data-testid="defective-only-toggle" />
+            <span>Defective only<span className="text-slate-400 ml-1">(in exports)</span></span>
+          </label>
+          <Button variant="outline" onClick={() => downloadPdf(user._id, null, defectiveOnly)} data-testid="export-pdf-btn">
             <FileDown className="h-4 w-4 mr-2" /> Export PDF
           </Button>
-          <Button variant="outline" onClick={() => downloadExcel(user._id)} data-testid="export-xlsx-btn">
+          <Button variant="outline" onClick={() => downloadExcel(user._id, null, defectiveOnly)} data-testid="export-xlsx-btn">
             <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
           </Button>
         </div>
@@ -491,7 +506,7 @@ export default function ReportsPage() {
       )}
 
       <DrillDrawer open={!!drillTarget} onClose={() => setDrillTarget(null)}
-                   viewerId={user._id} target={drillTarget} />
+                   viewerId={user._id} target={drillTarget} defectiveOnly={defectiveOnly} />
     </div>
   );
 }

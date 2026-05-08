@@ -461,6 +461,120 @@ async def reports_health(user_id: str, drill_user_id: Optional[str] = Query(None
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Per-asset detail rows — shared by PDF appendix + Excel Assets sheet
+# ════════════════════════════════════════════════════════════════════════════
+ASSET_DETAIL_COLUMNS = [
+    "Asset #", "Asset Type", "Department", "Station", "Location",
+    "Status", "Defective Since", "Hours Defective",
+    "Last Inspected At", "Last Inspector ID", "Last Inspector Name",
+    "Last Inspection Status", "Last Inspection Remarks",
+    "Other Remarks (RO/ASUP/Admin/SA)",
+]
+
+
+async def _build_asset_detail_rows(U: dict, asset_pool: List[dict],
+                                   defective_only: bool = False) -> List[List[Any]]:
+    """Build a uniform list of per-asset rows for export (PDF appendix + Excel)."""
+    asset_pool_ids = {str(a["_id"]) for a in asset_pool}
+    if not asset_pool_ids:
+        return []
+
+    # 1. Latest inspection per asset (sorted desc by inspection_at).
+    inspections = await inspections_collection.find(
+        {"items.asset_id": {"$in": list(asset_pool_ids)}}
+    ).sort("inspection_at", -1).to_list(20000)
+    last_insp_by_asset: Dict[str, dict] = {}
+    for ins in inspections:
+        ins_at = ins.get("inspection_at") or ""
+        for it in ins.get("items", []):
+            aid = it.get("asset_id")
+            if aid not in asset_pool_ids or aid in last_insp_by_asset:
+                continue
+            inspector = U["user_by_id"].get(ins.get("inspector_id")) or {}
+            last_insp_by_asset[aid] = {
+                "inspection_at": ins_at,
+                "inspector_emp_id": inspector.get("employee_id", ""),
+                "inspector_name": inspector.get("name", ""),
+                "item_remarks": it.get("remarks") or "",
+                "overall_remarks": ins.get("overall_remarks") or "",
+                "item_status": it.get("status") or "",
+            }
+
+    # 2. "BO" remarks — RO + ASUP + Admin + SuperAdmin (clubbed per asset).
+    BO_ROLES = {"reporting_officer", "approving_supervisor", "admin", "superadmin"}
+    ROLE_LABEL = {
+        "reporting_officer": "RO", "approving_supervisor": "ASUP",
+        "admin": "Admin", "superadmin": "SA", "supervisor": "SUP",
+    }
+    ol_id_to_asset: Dict[str, str] = {}
+    for aid in asset_pool_ids:
+        for ol in U["all_ols_by_asset"].get(aid, []):
+            ol_id_to_asset[str(ol["_id"])] = aid
+    bo_remarks_by_asset: Dict[str, list] = defaultdict(list)
+    if ol_id_to_asset:
+        all_remarks = await remarks_collection.find(
+            {"orange_list_id": {"$in": list(ol_id_to_asset.keys())},
+             "role": {"$in": list(BO_ROLES)}}
+        ).sort("created_at", 1).to_list(20000)
+        for r in all_remarks:
+            aid = ol_id_to_asset.get(r.get("orange_list_id"))
+            if not aid:
+                continue
+            author = U["user_by_id"].get(r.get("author_id")) or {}
+            label = ROLE_LABEL.get(r.get("role"), (r.get("role") or "").upper())
+            who = author.get("name") or author.get("employee_id") or "—"
+            text = (r.get("text") or "").strip()
+            ts = r.get("created_at") or ""
+            ts_str = ""
+            if ts:
+                ts_dt = _parse_dt(ts) if isinstance(ts, str) else (
+                    ts.replace(tzinfo=None) if hasattr(ts, "tzinfo") and ts.tzinfo else ts)
+                if isinstance(ts_dt, datetime):
+                    ts_str = ts_dt.strftime("%Y-%m-%d %H:%M")
+            bo_remarks_by_asset[aid].append(
+                f"[{label} · {who}{' · ' + ts_str if ts_str else ''}] {text}"
+            )
+
+    rows: List[List[Any]] = []
+    for a in asset_pool:
+        aid = str(a["_id"])
+        ol_open = U["ol_by_asset"].get(aid)
+        cls = _classify(a, ol_open)
+        if defective_only and cls == "working":
+            continue
+        t = U["type_by_id"].get(a.get("asset_type_id"), {})
+        d = U["dept_by_id"].get(t.get("department_id"), {})
+        s = U["station_by_id"].get(a.get("station_id"), {})
+        l = U["location_by_id"].get(a.get("location_id"), {})
+        ds = ol_open.get("defective_since") if ol_open else a.get("defective_since")
+        hours = ""
+        if ds:
+            ds_dt = _parse_dt(ds) if isinstance(ds, str) else (
+                ds.replace(tzinfo=None) if hasattr(ds, "tzinfo") and ds.tzinfo else ds)
+            if isinstance(ds_dt, datetime):
+                hours = round((now_ist() - ds_dt).total_seconds() / 3600, 1)
+
+        li = last_insp_by_asset.get(aid) or {}
+        li_at_dt = _parse_dt(li.get("inspection_at") or "") if li.get("inspection_at") else None
+        li_at_fmt = li_at_dt.strftime("%Y-%m-%d %H:%M") if li_at_dt else (li.get("inspection_at") or "")
+        li_remarks = li.get("item_remarks") or li.get("overall_remarks") or ""
+        bo_clubbed = "\n".join(bo_remarks_by_asset.get(aid, []))
+
+        rows.append([
+            a.get("asset_number") or "", t.get("name") or "", d.get("name") or "",
+            s.get("name") or "", l.get("name") or "", cls.upper(),
+            str(ds) if ds else "", hours,
+            li_at_fmt, li.get("inspector_emp_id", ""), li.get("inspector_name", ""),
+            (li.get("item_status") or "").upper(),
+            li_remarks, bo_clubbed,
+        ])
+    # Sort: defective first (red → orange → yellow → working), then by asset #
+    SEV = {"RED": 0, "ORANGE": 1, "YELLOW": 2, "WORKING": 3, "": 4}
+    rows.sort(key=lambda r: (SEV.get(r[5], 9), str(r[0])))
+    return rows
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # EXPORTS — PDF & EXCEL
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -470,22 +584,42 @@ def _pdf_color(hex_str: str):
 
 
 @router.get("/api/reports/export/pdf/{user_id}")
-async def export_pdf(user_id: str, drill_user_id: Optional[str] = Query(None)):
-    """Server-side PDF (ReportLab). Cover summary + per-card pages."""
-    from reportlab.lib.pagesizes import A4
+async def export_pdf(user_id: str, drill_user_id: Optional[str] = Query(None),
+                     defective_only: bool = Query(False)):
+    """Server-side PDF (ReportLab). Cover summary + per-card pages + per-asset appendix."""
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors as rl_colors
     from reportlab.lib.units import mm
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        BaseDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+        NextPageTemplate, PageTemplate, Frame
     )
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
     data = await reports_health(user_id, drill_user_id)
 
+    # Resolve viewer/target user for asset filtering (same logic as Excel)
+    user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    target_user = user
+    if drill_user_id:
+        target_user = await users_collection.find_one({"_id": ObjectId(drill_user_id)}) or user
+    U = await _load_universe()
+    asset_pool = _filter_assets_for_user(U, target_user)
+
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm,
-                            topMargin=18*mm, bottomMargin=18*mm,
-                            title="Asset Health Report")
+    # Two page templates: portrait (body) and landscape (appendix table)
+    landscape_size = landscape(A4)
+    portrait_frame = Frame(18*mm, 18*mm, A4[0] - 36*mm, A4[1] - 36*mm,
+                           id="portrait_frame")
+    landscape_frame = Frame(12*mm, 12*mm, landscape_size[0] - 24*mm,
+                            landscape_size[1] - 24*mm, id="landscape_frame")
+    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm,
+                          topMargin=18*mm, bottomMargin=18*mm,
+                          title="Asset Health Report")
+    doc.addPageTemplates([
+        PageTemplate(id="portrait", frames=[portrait_frame], pagesize=A4),
+        PageTemplate(id="landscape", frames=[landscape_frame], pagesize=landscape_size),
+    ])
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("title", parent=styles["Heading1"], textColor=_pdf_color("#0e7c6b"), fontSize=18)
     h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=13, textColor=_pdf_color("#0f172a"))
@@ -596,6 +730,76 @@ async def export_pdf(user_id: str, drill_user_id: Optional[str] = Query(None)):
                 ])))
             elements.append(PageBreak())
 
+    # ── Appendix: per-asset detail table (landscape) ───────────────────────
+    asset_rows = await _build_asset_detail_rows(U, asset_pool, defective_only=defective_only)
+    if asset_rows:
+        elements.append(NextPageTemplate("landscape"))
+        elements.append(PageBreak())
+        appendix_label = "Appendix · Asset details" + (
+            "  (defective only)" if defective_only else "  (all assets in scope)"
+        )
+        elements.append(Paragraph(appendix_label, h2))
+        elements.append(Paragraph(
+            f"{len(asset_rows)} rows · sorted by severity (Red → Orange → Yellow → Working)",
+            small,
+        ))
+        elements.append(Spacer(1, 6))
+
+        # Compact appendix headers
+        appendix_headers = [
+            "Asset #", "Type", "Dept", "Station", "Location",
+            "Status", "Defective Since", "Hrs",
+            "Last Inspected", "Insp. ID", "Insp. Status",
+            "Insp. Remarks", "Other Remarks (RO/ASUP/Admin/SA)",
+        ]
+        # Wrap long-text cells via Paragraph for word-wrap inside the table
+        wrap_style = ParagraphStyle("wrap", parent=styles["Normal"], fontSize=7,
+                                    leading=8, textColor=_pdf_color("#1e293b"))
+        def _wrap(text):
+            t = (str(text) if text is not None else "").replace("\n", "<br/>")
+            return Paragraph(t, wrap_style)
+
+        body = [appendix_headers]
+        for r in asset_rows:
+            body.append([
+                _wrap(r[0]), _wrap(r[1]), _wrap(r[2]), _wrap(r[3]), _wrap(r[4]),
+                _wrap(r[5]), _wrap(r[6]), _wrap(r[7]),
+                _wrap(r[8]), _wrap(r[9]),
+                _wrap(r[11]), _wrap(r[12]), _wrap(r[13]),
+            ])
+        # Status colors: Red, Orange, Yellow, Working
+        status_color_map = {
+            "RED": "#dc2626", "ORANGE": "#f97316",
+            "YELLOW": "#eab308", "WORKING": "#10b981",
+        }
+        # mm widths totalling ~273mm (landscape A4 inner ~273mm)
+        col_widths = [22*mm, 18*mm, 16*mm, 18*mm, 26*mm, 14*mm, 22*mm, 10*mm,
+                      22*mm, 14*mm, 14*mm, 35*mm, 42*mm]
+        ts = [
+            ("BACKGROUND", (0, 0), (-1, 0), _pdf_color("#0e7c6b")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), _pdf_color("#ffffff")),
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+            ("FONTSIZE", (0, 1), (-1, -1), 7),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("GRID", (0, 0), (-1, -1), 0.3, _pdf_color("#cbd5e1")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [_pdf_color("#ffffff"), _pdf_color("#f8fafc")]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]
+        # Color the Status cell
+        for ridx, r in enumerate(asset_rows, start=1):
+            color = status_color_map.get(r[5])
+            if color:
+                ts.append(("BACKGROUND", (5, ridx), (5, ridx), _pdf_color(color)))
+                ts.append(("TEXTCOLOR", (5, ridx), (5, ridx), _pdf_color("#ffffff")))
+        appendix_table = Table(body, colWidths=col_widths, repeatRows=1)
+        appendix_table.setStyle(TableStyle(ts))
+        elements.append(appendix_table)
+
     doc.build(elements)
     buf.seek(0)
     fname = f"asset-health-report-{now_ist().strftime('%Y%m%d-%H%M')}.pdf"
@@ -604,7 +808,8 @@ async def export_pdf(user_id: str, drill_user_id: Optional[str] = Query(None)):
 
 
 @router.get("/api/reports/export/excel/{user_id}")
-async def export_excel(user_id: str, drill_user_id: Optional[str] = Query(None)):
+async def export_excel(user_id: str, drill_user_id: Optional[str] = Query(None),
+                       defective_only: bool = Query(False)):
     """Multi-sheet xlsx: Summary, Departments, Stations, Locations, Assets (flat)."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
@@ -684,128 +889,14 @@ async def export_excel(user_id: str, drill_user_id: Optional[str] = Query(None))
             for r in ro["rings"]:
                 ws3.append([ro["name"], r["name"], r["total"], r["working"], r["yellow"], r["orange"], r["red"], r["pct_working"]])
 
-    # ── Pre-compute per-asset enrichment for the Assets sheet ───────────────
-    asset_pool_ids = {str(a["_id"]) for a in asset_pool}
-
-    # 1. Latest inspection per asset (across all inspections in the system).
-    #    Filter to inspections whose items contain any asset in our pool.
-    inspections = await inspections_collection.find(
-        {"items.asset_id": {"$in": list(asset_pool_ids)}}
-    ).sort("inspection_at", -1).to_list(20000)
-
-    # asset_id -> {inspection_at, inspector_id, inspector_name, inspector_emp_id,
-    #              item_remarks, overall_remarks}
-    last_insp_by_asset: Dict[str, dict] = {}
-    for ins in inspections:
-        ins_at = ins.get("inspection_at") or ""
-        for it in ins.get("items", []):
-            aid = it.get("asset_id")
-            if aid not in asset_pool_ids:
-                continue
-            if aid in last_insp_by_asset:
-                continue  # already have the latest one (sorted desc)
-            inspector = U["user_by_id"].get(ins.get("inspector_id")) or {}
-            last_insp_by_asset[aid] = {
-                "inspection_at": ins_at,
-                "inspector_id": ins.get("inspector_id"),
-                "inspector_emp_id": inspector.get("employee_id", ""),
-                "inspector_name": inspector.get("name", ""),
-                "item_remarks": it.get("remarks") or "",
-                "overall_remarks": ins.get("overall_remarks") or "",
-                "item_status": it.get("status") or "",
-            }
-
-    # 2. "BO" remarks (RO + ASUP + Admin + SuperAdmin), clubbed per asset.
-    #    Remarks live on orange_list entries — we reach them via OL ids.
-    BO_ROLES = {"reporting_officer", "approving_supervisor", "admin", "superadmin"}
-    ROLE_LABEL = {
-        "reporting_officer": "RO",
-        "approving_supervisor": "ASUP",
-        "admin": "Admin",
-        "superadmin": "SA",
-        "supervisor": "SUP",
-    }
-    # Build OL_id -> asset_id index (across all OL entries for assets in pool)
-    ol_id_to_asset: Dict[str, str] = {}
-    for aid in asset_pool_ids:
-        for ol in U["all_ols_by_asset"].get(aid, []):
-            ol_id_to_asset[str(ol["_id"])] = aid
-    bo_remarks_by_asset: Dict[str, list] = defaultdict(list)
-    if ol_id_to_asset:
-        all_remarks = await remarks_collection.find(
-            {"orange_list_id": {"$in": list(ol_id_to_asset.keys())},
-             "role": {"$in": list(BO_ROLES)}}
-        ).sort("created_at", 1).to_list(20000)
-        for r in all_remarks:
-            aid = ol_id_to_asset.get(r.get("orange_list_id"))
-            if not aid:
-                continue
-            author = U["user_by_id"].get(r.get("author_id")) or {}
-            label = ROLE_LABEL.get(r.get("role"), (r.get("role") or "").upper())
-            who = author.get("name") or author.get("employee_id") or "—"
-            text = (r.get("text") or "").strip()
-            ts = r.get("created_at") or ""
-            ts_str = ""
-            if ts:
-                ts_dt = _parse_dt(ts) if isinstance(ts, str) else (ts.replace(tzinfo=None) if hasattr(ts, "tzinfo") and ts.tzinfo else ts)
-                if isinstance(ts_dt, datetime):
-                    ts_str = ts_dt.strftime("%Y-%m-%d %H:%M")
-            line = f"[{label} · {who}{' · ' + ts_str if ts_str else ''}] {text}"
-            bo_remarks_by_asset[aid].append(line)
+    # ── Per-asset detail rows (shared with PDF appendix) ────────────────────
+    asset_rows = await _build_asset_detail_rows(U, asset_pool, defective_only=defective_only)
 
     # Flat assets sheet (drill to per-asset rows — F12)
     ws_assets = wb.create_sheet("Assets")
-    _hdr(ws_assets, [
-        "Asset #", "Asset Type", "Department", "Station", "Location",
-        "Status", "Defective Since", "Hours Defective",
-        "Last Inspected At", "Last Inspector ID", "Last Inspector Name",
-        "Last Inspection Status", "Last Inspection Remarks",
-        "Other Remarks (RO/ASUP/Admin/SA)",
-    ])
-    for a in asset_pool:
-        t = U["type_by_id"].get(a.get("asset_type_id"), {})
-        d = U["dept_by_id"].get(t.get("department_id"), {})
-        s = U["station_by_id"].get(a.get("station_id"), {})
-        l = U["location_by_id"].get(a.get("location_id"), {})
-        ol_open = U["ol_by_asset"].get(str(a["_id"]))
-        cls = _classify(a, ol_open)
-        ds = ol_open.get("defective_since") if ol_open else a.get("defective_since")
-        hours = ""
-        if ds:
-            if isinstance(ds, str):
-                try:
-                    ds_dt = datetime.fromisoformat(ds.replace("Z", "").replace("+00:00", ""))
-                except Exception:
-                    ds_dt = None
-            else:
-                ds_dt = ds.replace(tzinfo=None) if ds.tzinfo else ds
-            if ds_dt:
-                hours = round((now_ist() - ds_dt).total_seconds() / 3600, 1)
-
-        li = last_insp_by_asset.get(str(a["_id"])) or {}
-        # Format last inspected at
-        li_at_raw = li.get("inspection_at") or ""
-        li_at_fmt = ""
-        if li_at_raw:
-            li_at_dt = _parse_dt(li_at_raw)
-            li_at_fmt = li_at_dt.strftime("%Y-%m-%d %H:%M") if li_at_dt else str(li_at_raw)
-        # Last inspection remarks: prefer per-item remarks, else overall_remarks
-        li_remarks = li.get("item_remarks") or li.get("overall_remarks") or ""
-
-        bo_lines = bo_remarks_by_asset.get(str(a["_id"]), [])
-        bo_clubbed = "\n".join(bo_lines)
-
-        ws_assets.append([
-            a.get("asset_number"), t.get("name"), d.get("name"),
-            s.get("name"), l.get("name"), cls.upper(),
-            str(ds) if ds else "", hours,
-            li_at_fmt,
-            li.get("inspector_emp_id", ""),
-            li.get("inspector_name", ""),
-            (li.get("item_status") or "").upper(),
-            li_remarks,
-            bo_clubbed,
-        ])
+    _hdr(ws_assets, ASSET_DETAIL_COLUMNS)
+    for r in asset_rows:
+        ws_assets.append(r)
     # Wider columns + wrap-text for the two remarks columns
     from openpyxl.styles import Alignment as _Align
     for col_letter, width in [("A", 14), ("B", 16), ("C", 14), ("D", 16),
