@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reports Module — Visual Mockups</title>
+<style>
+  :root {
+    --working: #10b981;
+    --orange:  #f97316;
+    --red:     #dc2626;
+    --yellow:  #eab308;
+    --teal:    #0e7c6b;
+    --bg:      #f8fafc;
+    --card:    #ffffff;
+    --ink:     #0f172a;
+    --muted:   #64748b;
+    --line:    #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  header {
+    background: var(--teal);
+    color: white;
+    padding: 18px 32px;
+  }
+  header h1 { margin: 0; font-size: 22px; font-weight: 700; }
+  header p { margin: 4px 0 0; opacity: 0.85; font-size: 13px; }
+  .container { max-width: 1280px; margin: 0 auto; padding: 28px; }
+  .section {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 32px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .section h2 {
+    margin: 0 0 6px;
+    font-size: 17px;
+    color: var(--teal);
+    font-weight: 700;
+    letter-spacing: 0.2px;
+  }
+  .section h2 small {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 12px;
+    margin-left: 8px;
+  }
+  .section .desc {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 20px;
+    max-width: 880px;
+  }
+  .legend {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i {
+    width: 12px; height: 12px; border-radius: 2px; display: inline-block;
+  }
+  .charts-row {
+    display: flex; gap: 24px; flex-wrap: wrap;
+    align-items: flex-start; justify-content: flex-start;
+  }
+  .chart-card {
+    background: #fafbfc;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    width: 280px;
+  }
+  .chart-card .title {
+    font-size: 13px; font-weight: 600; margin-bottom: 4px;
+  }
+  .chart-card .sub {
+    font-size: 11px; color: var(--muted); margin-bottom: 12px;
+  }
+  .chart-card .total {
+    font-size: 11px; color: var(--muted); margin-top: 10px;
+  }
+  .chart-card .total b { color: var(--ink); font-weight: 600; }
+  .chart-svg-wrap { position: relative; }
+  .chart-center-label {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .chart-center-label .big {
+    font-size: 22px; font-weight: 700; color: var(--ink);
+  }
+  .chart-center-label .small {
+    font-size: 10px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .ring-info {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .ring-info b { color: var(--ink); font-weight: 600; }
+
+  /* Stacked bar (asset cross-station) */
+  .stack-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+  .stack-row .label {
+    width: 110px; text-align: right;
+    font-weight: 600;
+  }
+  .stack-row .bar {
+    flex: 1; height: 22px; display: flex;
+    border-radius: 4px; overflow: hidden;
+    border: 1px solid #e5e7eb;
+  }
+  .stack-row .bar > div {
+    height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 10px; font-weight: 600;
+  }
+  .stack-row .meta {
+    width: 60px; text-align: left;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .toggle {
+    display: inline-flex; gap: 0; background: var(--card);
+    border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden;
+  }
+  .toggle button {
+    padding: 8px 16px; background: transparent; border: 0;
+    cursor: pointer; font-size: 12px; font-weight: 600;
+    color: var(--muted);
+  }
+  .toggle button.active {
+    background: var(--teal); color: white;
+  }
+  .expand-note {
+    background: #fef9e7; border-left: 3px solid var(--yellow);
+    padding: 10px 16px; border-radius: 4px;
+    margin: 16px 0; font-size: 12px;
+  }
+  .expand-note b { color: var(--ink); }
+
+  .note {
+    background: #f0fdf4; border-left: 3px solid var(--working);
+    padding: 10px 16px; border-radius: 4px;
+    font-size: 12px; margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Asset Track Rail — Reports Module Mockup</h1>
+  <p>Visual samples for ring/donut visualizations across roles. Pure HTML/SVG — no live data.</p>
+</header>
+
+<div class="container">
+
+  <!-- Common legend -->
+  <div class="section" style="padding: 18px 28px;">
+    <div class="legend">
+      <span><i style="background:var(--working)"></i> Working</span>
+      <span><i style="background:var(--orange)"></i> Orange (Defective ≤ 24h)</span>
+      <span><i style="background:var(--red)"></i> Red (Defective &gt; 24h)</span>
+      <span><i style="background:var(--yellow)"></i> Pending Verification</span>
+      <span style="margin-left:auto; color:var(--muted)">Same color codes used in app dashboards</span>
+    </div>
+  </div>
+
+  <!-- ───── SECTION 1: SUPERVISOR VIEW ──────────────────────────────── -->
+  <div class="section">
+    <h2>1. Supervisor View <small>per assigned station</small></h2>
+    <p class="desc">
+      Each station the supervisor is assigned to gets <b>one card</b>. The donut has
+      <b>two concentric rings</b>: inner = the supervisor's department health for that station;
+      outer = breakdown by location within that station. Station name above the chart.
+    </p>
+
+    <div class="charts-row">
+      <!-- Donut: DHANBAD -->
+      <div class="chart-card">
+        <div class="title">DHANBAD</div>
+        <div class="sub">Electrical Dept · 24 assets</div>
+        <div class="chart-svg-wrap" style="width:240px; height:240px; margin:0 auto;">
+          <svg viewBox="0 0 240 240" width="240" height="240">
+            <!-- INNER RING: Dept-level health -->
+            <!-- 18 working / 4 orange / 1 red / 1 yellow of 24 (Electrical at Dhanbad) -->
+            <g transform="translate(120,120)">
+              <!-- Inner ring (radius 50 outer, 32 inner) -->
+              <circle r="42" fill="none" stroke="#e5e7eb" stroke-width="20"/>
+              <!-- 18/24 = 270° working (start at -90) -->
+              <path d="M 0,-42 A 42,42 0 1,1 -42,0 L -23,0 A 23,23 0 1,0 0,-23 Z" fill="#10b981" stroke="white" stroke-width="0.5" opacity="0"/>
+              <!-- Use path-based pie slices -->
+              <g>
+                <!-- 18/24 = 0.75 → 270° → end at angle 180° (start -90°) -->
+                <path d="M 120,120 m 0,-42 a 42,42 0 1,1 -42,42 L -23,0 m -42,0 a 42,42 0 1,1 42,42 Z" fill="none"/>
+              </g>
+
+              <!-- Use SVG arcs for each segment of inner ring (radius 50 outer, 30 inner) -->
+              <!-- Inner ring segments: working 18, orange 4, red 1, yellow 1 -->
+              <!-- 18/24 → 270°, 4/24 → 60°, 1/24 → 15°, 1/24 → 15° -->
+
+              <!-- Working: 0° to 270° -->
+              <path d="
+                M 0 -50
+                A 50 50 0 1 1 -50 0
+                L -30 0
+                A 30 30 0 1 0 0 -30
+                Z" fill="#10b981"/>
+              <!-- Orange: 270° to 330° (60°) -->
+              <path d="
+                M -50 0
+                A 50 50 0 0 1 -25 43.30
+                L -15 25.98
+                A 30 30 0 0 0 -30 0
+                Z" fill="#f97316"/>
+              <!-- Red: 330° to 345° (15°) -->
+              <path d="
+                M -25 43.30
+                A 50 50 0 0 1 -12.94 48.30
+                L -7.76 28.98
+                A 30 30 0 0 0 -15 25.98
+                Z" fill="#dc2626"/>
+              <!-- Yellow: 345° to 360° (15°) -->
+              <path d="
+                M -12.94 48.30
+                A 50 50 0 0 1 0 50
+                L 0 30
+                A 30 30 0 0 0 -7.76 28.98
+                Z" fill="#eab308"/>
+
+              <!-- OUTER RING: Location-wise breakdown (radius 80 outer, 55 inner) -->
+              <!-- 4 locations: Platform 1 (8), Platform 2 (7), Concourse (5), Office (4) -->
+              <!-- Each location segment is sized by asset count, colored as DOMINANT health -->
+              <!-- Platform 1: 8 assets, 6W/2O → 8/24=120° (mostly working) -->
+              <path d="
+                M 0 -80
+                A 80 80 0 0 1 69.28 -40
+                L 47.63 -27.50
+                A 55 55 0 0 0 0 -55
+                Z" fill="#10b981" opacity="0.85"/>
+              <!-- Platform 2: 7 assets, 5W/2O → 7/24=105° -->
+              <path d="
+                M 69.28 -40
+                A 80 80 0 0 1 79.63 7.62
+                L 54.74 5.24
+                A 55 55 0 0 0 47.63 -27.50
+                Z" fill="#10b981" opacity="0.7"/>
+              <!-- Concourse: 5 assets, 4W/1R → 5/24=75° -->
+              <path d="
+                M 79.63 7.62
+                A 80 80 0 0 1 47.02 64.66
+                L 32.32 44.45
+                A 55 55 0 0 0 54.74 5.24
+                Z" fill="#10b981" opacity="0.55"/>
+              <!-- Booking Office: 4 assets, 3W/1Y → 4/24=60° -->
+              <path d="
+                M 47.02 64.66
+                A 80 80 0 0 1 -27.78 75.04
+                L -19.10 51.59
+                A 55 55 0 0 0 32.32 44.45
+                Z" fill="#eab308" opacity="0.6"/>
+            </g>
+          </svg>
+          <div class="chart-center-label">
+            <div class="big">75%</div>
+            <div class="small">Working</div>
+          </div>
+        </div>
+        <div class="ring-info">
+          <span><b>Inner ring:</b> Dept Electrical health</span>
+          <span><b>Outer ring:</b> 4 locations</span>
+        </div>
+        <div class="total">
+          <b style="color:var(--working)">●</b> 18 W &nbsp;
+          <b style="color:var(--orange)">●</b> 4 O &nbsp;
+          <b style="color:var(--red)">●</b> 1 R &nbsp;
+          <b style="color:var(--yellow)">●</b> 1 Y
+        </div>
+      </div>
+
+      <!-- Donut: BARKAKANA -->
+      <div class="chart-card">
+        <div class="title">BARKAKANA</div>
+        <div class="sub">Electrical Dept · 12 assets</div>
+        <div class="chart-svg-wrap" style="width:240px; height:240px; margin:0 auto;">
+          <svg viewBox="0 0 240 240" width="240" height="240">
+            <g transform="translate(120,120)">
+              <!-- Inner ring: 10W/0O/2R/0Y -->
+              <!-- Working: 10/12 = 300° -->
+              <path d="
+                M 0 -50
+                A 50 50 0 1 1 25 43.30
+                L 15 25.98
+                A 30 30 0 1 0 0 -30
+                Z" fill="#10b981"/>
+              <!-- Red: 300° to 360° -->
+              <path d="
+                M 25 43.30
+                A 50 50 0 0 1 0 50
+                L 0 30
+                A 30 30 0 0 0 15 25.98
+                Z" fill="#dc2626"/>
+
+              <!-- Outer ring: 3 locations -->
+              <!-- Loc A: 5 assets all working → 150° -->
+              <path d="
+                M 0 -80
+                A 80 80 0 0 1 79.63 7.62
+                L 54.74 5.24
+                A 55 55 0 0 0 0 -55
+                Z" fill="#10b981" opacity="0.85"/>
+              <!-- Loc B: 4 assets 3W/1R → 120° -->
+              <path d="
+                M 79.63 7.62
+                A 80 80 0 0 1 -27.78 75.04
+                L -19.10 51.59
+                A 55 55 0 0 0 54.74 5.24
+                Z" fill="#10b981" opacity="0.6"/>
+              <!-- Loc C: 3 assets 2W/1R → 90° -->
+              <path d="
+                M -27.78 75.04
+                A 80 80 0 0 1 -69.28 -40
+                L -47.63 -27.50
+                A 55 55 0 0 0 -19.10 51.59
+                Z" fill="#dc2626" opacity="0.55"/>
+            </g>
+          </svg>
+          <div class="chart-center-label">
+            <div class="big">83%</div>
+            <div class="small">Working</div>
+          </div>
+        </div>
+        <div class="ring-info">
+          <span><b>Inner ring:</b> Dept Electrical health</span>
+          <span><b>Outer ring:</b> 3 locations</span>
+        </div>
+        <div class="total">
+          <b style="color:var(--working)">●</b> 10 W &nbsp;
+          <b style="color:var(--red)">●</b> 2 R
+        </div>
+      </div>
+
+      <!-- Donut: PARASNATH -->
+      <div class="chart-card">
+        <div class="title">PARASNATH</div>
+        <div class="sub">Electrical Dept · 8 assets</div>
+        <div class="chart-svg-wrap" style="width:240px; height:240px; margin:0 auto;">
+          <svg viewBox="0 0 240 240" width="240" height="240">
+            <g transform="translate(120,120)">
+              <!-- 5W / 2O / 0R / 1Y of 8 -->
+              <!-- Working: 5/8 = 225° -->
+              <path d="
+                M 0 -50
+                A 50 50 0 0 1 35.36 35.36
+                L 21.21 21.21
+                A 30 30 0 0 0 0 -30
+                Z" fill="#10b981"/>
+              <!-- Orange: 225 to 315 (90°) -->
+              <path d="
+                M 35.36 35.36
+                A 50 50 0 0 1 -35.36 35.36
+                L -21.21 21.21
+                A 30 30 0 0 0 21.21 21.21
+                Z" fill="#f97316"/>
+              <!-- Yellow: 315 to 360 (45°) -->
+              <path d="
+                M -35.36 35.36
+                A 50 50 0 0 1 0 50
+                L 0 30
+                A 30 30 0 0 0 -21.21 21.21
+                Z" fill="#eab308"/>
+
+              <!-- Outer: 2 locations -->
+              <path d="
+                M 0 -80
+                A 80 80 0 0 1 0 80
+                L 0 55
+                A 55 55 0 0 0 0 -55
+                Z" fill="#f97316" opacity="0.7"/>
+              <path d="
+                M 0 80
+                A 80 80 0 0 1 0 -80
+                L 0 -55
+                A 55 55 0 0 0 0 55
+                Z" fill="#10b981" opacity="0.85"/>
+            </g>
+          </svg>
+          <div class="chart-center-label">
+            <div class="big">63%</div>
+            <div class="small">Working</div>
+          </div>
+        </div>
+        <div class="ring-info">
+          <span><b>Inner ring:</b> Dept Electrical health</span>
+          <span><b>Outer ring:</b> 2 locations</span>
+        </div>
+        <div class="total">
+          <b style="color:var(--working)">●</b> 5 W &nbsp;
+          <b style="color:var(--orange)">●</b> 2 O &nbsp;
+          <b style="color:var(--yellow)">●</b> 1 Y
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>What you see:</b> SSE001 (SUP, Electrical) is assigned to 3 stations. Each station has its own donut — inner ring shows their dept's health summary, outer ring breaks it down by location within that station.
+      <br><b>Click any ring slice → opens the hierarchical list filtered to that location.</b>
+    </div>
+  </div>
+
+  <!-- ───── SECTION 2: RO VIEW ──────────────────────────────────────── -->
+  <div class="section">
+    <h2>2. Reporting Officer (RO) View <small>supervisor-wise summary, expandable</small></h2>
+    <p class="desc">
+      Top-level view shows <b>one donut per supervisor</b> who reports to this RO. Each donut summarizes
+      <b>that supervisor's full coverage</b> (all their stations combined). Clicking a supervisor's
+      donut <b>expands</b> into the SUP view from Section 1.
+    </p>
+
+    <div class="charts-row">
+      <!-- SUP A -->
+      <div class="chart-card">
+        <div class="title">SSE001 — Aditya</div>
+        <div class="sub">3 stations · Electrical · 44 total assets</div>
+        <div class="chart-svg-wrap" style="width:240px; height:240px; margin:0 auto;">
+          <svg viewBox="0 0 240 240" width="240" height="240">
+            <g transform="translate(120,120)">
+              <!-- Inner: aggregate health 33W / 6O / 3R / 2Y of 44 -->
+              <!-- Working 33/44 = 270° -->
+              <path d="
+                M 0 -50
+                A 50 50 0 1 1 -50 0
+                L -30 0
+                A 30 30 0 1 0 0 -30
+                Z" fill="#10b981"/>
+              <!-- Orange: 270 to 320 (50°) -->
+              <path d="
+                M -50 0
+                A 50 50 0 0 1 -32.14 38.30
+                L -19.28 22.98
+                A 30 30 0 0 0 -30 0
+                Z" fill="#f97316"/>
+              <!-- Red: 320 to 345 (25°) -->
+              <path d="
+                M -32.14 38.30
+                A 50 50 0 0 1 -12.94 48.30
+                L -7.76 28.98
+                A 30 30 0 0 0 -19.28 22.98
+                Z" fill="#dc2626"/>
+              <!-- Yellow: 345 to 360 (15°) -->
+              <path d="
+                M -12.94 48.30
+                A 50 50 0 0 1 0 50
+                L 0 30
+                A 30 30 0 0 0 -7.76 28.98
+                Z" fill="#eab308"/>
+
+              <!-- Outer ring: 3 stations split by asset count -->
+              <!-- Dhanbad: 24/44 = 196° -->
+              <path d="
+                M 0 -80
+                A 80 80 0 0 1 70.36 38.27
+                L 48.37 26.31
+                A 55 55 0 0 0 0 -55
+                Z" fill="#10b981" opacity="0.7"/>
+              <!-- Barkakana: 12/44 = 98° -->
+              <path d="
+                M 70.36 38.27
+                A 80 80 0 0 1 -38.27 70.36
+                L -26.31 48.37
+                A 55 55 0 0 0 48.37 26.31
+                Z" fill="#10b981" opacity="0.55"/>
+              <!-- Parasnath: 8/44 = 65° -->
+              <path d="
+                M -38.27 70.36
+                A 80 80 0 0 1 -75.30 -27.13
+                L -51.77 -18.65
+                A 55 55 0 0 0 -26.31 48.37
+                Z" fill="#f97316" opacity="0.5"/>
+            </g>
+          </svg>
+          <div class="chart-center-label">
+            <div class="big">75%</div>
+            <div class="small">Working</div>
+          </div>
+        </div>
+        <div class="ring-info">
+          <span><b>Inner ring:</b> All-station health</span>
+          <span><b>Outer ring:</b> 3 stations</span>
+        </div>
+        <div class="total">
+          <b style="color:var(--working)">●</b> 33 W &nbsp;
+          <b style="color:var(--orange)">●</b> 6 O &nbsp;
+          <b style="color:var(--red)">●</b> 3 R &nbsp;
+          <b style="color:var(--yellow)">●</b> 2 Y
+        </div>
+      </div>
+
+      <!-- SUP B -->
+      <div class="chart-card">
+        <div class="title">SSE002 — Pragya</div>
+        <div class="sub">2 stations · Electrical · 27 total assets</div>
+        <div class="chart-svg-wrap" style="width:240px; height:240px; margin:0 auto;">
+          <svg viewBox="0 0 240 240" width="240" height="240">
+            <g transform="translate(120,120)">
+              <!-- 24W/2O/1R of 27 -->
+              <!-- Working 24/27 = 320° -->
+              <path d="
+                M 0 -50
+                A 50 50 0 1 1 32.14 38.30
+                L 19.28 22.98
+                A 30 30 0 1 0 0 -30
+                Z" fill="#10b981"/>
+              <!-- Orange: 320 to 347 (27°) -->
+              <path d="
+                M 32.14 38.30
+                A 50 50 0 0 1 -11.21 48.73
+                L -6.73 29.24
+                A 30 30 0 0 0 19.28 22.98
+                Z" fill="#f97316"/>
+              <!-- Red: 347 to 360 (13°) -->
+              <path d="
+                M -11.21 48.73
+                A 50 50 0 0 1 0 50
+                L 0 30
+                A 30 30 0 0 0 -6.73 29.24
+                Z" fill="#dc2626"/>
+
+              <!-- Outer: 2 stations -->
+              <path d="
+                M 0 -80
+                A 80 80 0 0 1 0 80
+                L 0 55
+                A 55 55 0 0 0 0 -55
+                Z" fill="#10b981" opacity="0.85"/>
+              <path d="
+                M 0 80
+                A 80 80 0 0 1 0 -80
+                L 0 -55
+                A 55 55 0 0 0 0 55
+                Z" fill="#10b981" opacity="0.65"/>
+            </g>
+          </svg>
+          <div class="chart-center-label">
+            <div class="big">89%</div>
+            <div class="small">Working</div>
+          </div>
+        </div>
+        <div class="ring-info">
+          <span><b>Inner ring:</b> All-station health</span>
+          <span><b>Outer ring:</b> 2 stations</span>
+        </div>
+        <div class="total">
+          <b style="color:var(--working)">●</b> 24 W &nbsp;
+          <b style="color:var(--orange)">●</b> 2 O &nbsp;
+          <b style="color:var(--red)">●</b> 1 R
+        </div>
+      </div>
+
+      <!-- SUP C -->
+      <div class="chart-card">
+        <div class="title">SSE003 — Karan</div>
+        <div class="sub">1 station · Electrical · 18 total assets</div>
+        <div class="chart-svg-wrap" style="width:240px; height:240px; margin:0 auto;">
+          <svg viewBox="0 0 240 240" width="240" height="240">
+            <g transform="translate(120,120)">
+              <!-- 13W/3O/2R of 18 = 72%, 17%, 11% -->
+              <path d="
+                M 0 -50
+                A 50 50 0 1 1 -47.55 15.45
+                L -28.53 9.27
+                A 30 30 0 1 0 0 -30
+                Z" fill="#10b981"/>
+              <path d="
+                M -47.55 15.45
+                A 50 50 0 0 1 -15.45 47.55
+                L -9.27 28.53
+                A 30 30 0 0 0 -28.53 9.27
+                Z" fill="#f97316"/>
+              <path d="
+                M -15.45 47.55
+                A 50 50 0 0 1 0 50
+                L 0 30
+                A 30 30 0 0 0 -9.27 28.53
+                Z" fill="#dc2626"/>
+
+              <!-- Outer: 1 station, split by location: 4 locations -->
+              <path d="
+                M 0 -80
+                A 80 80 0 0 1 80 0
+                L 55 0
+                A 55 55 0 0 0 0 -55
+                Z" fill="#10b981" opacity="0.85"/>
+              <path d="
+                M 80 0
+                A 80 80 0 0 1 0 80
+                L 0 55
+                A 55 55 0 0 0 55 0
+                Z" fill="#10b981" opacity="0.7"/>
+              <path d="
+                M 0 80
+                A 80 80 0 0 1 -80 0
+                L -55 0
+                A 55 55 0 0 0 0 55
+                Z" fill="#f97316" opacity="0.6"/>
+              <path d="
+                M -80 0
+                A 80 80 0 0 1 0 -80
+                L 0 -55
+                A 55 55 0 0 0 -55 0
+                Z" fill="#dc2626" opacity="0.55"/>
+            </g>
+          </svg>
+          <div class="chart-center-label">
+            <div class="big">72%</div>
+            <div class="small">Working</div>
+          </div>
+        </div>
+        <div class="ring-info">
+          <span><b>Inner ring:</b> Station health</span>
+          <span><b>Outer ring:</b> 4 locations</span>
+        </div>
+        <div class="total">
+          <b style="color:var(--working)">●</b> 13 W &nbsp;
+          <b style="color:var(--orange)">●</b> 3 O &nbsp;
+          <b style="color:var(--red)">●</b> 2 R
+        </div>
+      </div>
+    </div>
+
+    <div class="expand-note">
+      <b>Click → expand:</b> Tapping any supervisor's donut drills into the full SUP view from Section 1
+      (per-station donuts for that one supervisor). Same UX pattern repeats for SuperAdmin →
+      Department → RO → Supervisor → Station → Location.
+    </div>
+  </div>
+
+  <!-- ───── SECTION 3: ASSET-TYPE CROSS-STATION ─────────────────────── -->
+  <div class="section">
+    <h2>3. Asset-type Cross-station Health <small>same asset type compared across stations</small></h2>
+    <p class="desc">
+      For an asset class (e.g., FANs, LIFTs, AC UNITS) — show how it's performing
+      <b>across all stations in one view</b>. Two formats — pick what you prefer:
+    </p>
+
+    <div style="display: flex; gap: 32px; flex-wrap: wrap;">
+      <!-- Format 1: Stacked bars -->
+      <div style="flex: 1; min-width: 480px;">
+        <h3 style="font-size: 13px; margin: 0 0 12px; color: var(--ink);">Format A — Stacked Bars (recommended for comparing across stations)</h3>
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Asset Type: <b>FAN</b></div>
+
+        <div class="stack-row">
+          <div class="label">DHANBAD</div>
+          <div class="bar">
+            <div style="background:var(--working); width:75%">75%</div>
+            <div style="background:var(--orange); width:12%">12%</div>
+            <div style="background:var(--red); width:8%">8%</div>
+            <div style="background:var(--yellow); width:5%">5%</div>
+          </div>
+          <div class="meta">24 fans</div>
+        </div>
+        <div class="stack-row">
+          <div class="label">BARKAKANA</div>
+          <div class="bar">
+            <div style="background:var(--working); width:90%">90%</div>
+            <div style="background:var(--red); width:10%">10%</div>
+          </div>
+          <div class="meta">10 fans</div>
+        </div>
+        <div class="stack-row">
+          <div class="label">PARASNATH</div>
+          <div class="bar">
+            <div style="background:var(--working); width:50%">50%</div>
+            <div style="background:var(--orange); width:30%">30%</div>
+            <div style="background:var(--yellow); width:20%">20%</div>
+          </div>
+          <div class="meta">10 fans</div>
+        </div>
+        <div class="stack-row">
+          <div class="label">GUMIA</div>
+          <div class="bar">
+            <div style="background:var(--working); width:100%">100%</div>
+          </div>
+          <div class="meta">6 fans</div>
+        </div>
+        <div class="stack-row">
+          <div class="label">CHANDWAR</div>
+          <div class="bar">
+            <div style="background:var(--working); width:40%">40%</div>
+            <div style="background:var(--red); width:60%">60%</div>
+          </div>
+          <div class="meta">5 fans</div>
+        </div>
+      </div>
+
+      <!-- Format 2: Concentric donuts grouped -->
+      <div style="flex: 1; min-width: 480px;">
+        <h3 style="font-size: 13px; margin: 0 0 12px; color: var(--ink);">Format B — Concentric per station, side by side</h3>
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Same data — <b>FAN</b> across 5 stations as mini donuts</div>
+
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <div style="text-align:center;">
+            <svg viewBox="0 0 100 100" width="80" height="80">
+              <g transform="translate(50,50)">
+                <path d="M 0 -35 A 35 35 0 1 1 -35 0 L -20 0 A 20 20 0 1 0 0 -20 Z" fill="#10b981"/>
+                <path d="M -35 0 A 35 35 0 0 1 -28 21 L -16 12 A 20 20 0 0 0 -20 0 Z" fill="#f97316"/>
+                <path d="M -28 21 A 35 35 0 0 1 -10.8 33.3 L -6.18 19 A 20 20 0 0 0 -16 12 Z" fill="#dc2626"/>
+                <path d="M -10.8 33.3 A 35 35 0 0 1 0 35 L 0 20 A 20 20 0 0 0 -6.18 19 Z" fill="#eab308"/>
+              </g>
+            </svg>
+            <div style="font-size:10px;">DHANBAD<br><span style="color:var(--muted)">24 fans</span></div>
+          </div>
+          <div style="text-align:center;">
+            <svg viewBox="0 0 100 100" width="80" height="80">
+              <g transform="translate(50,50)">
+                <path d="M 0 -35 A 35 35 0 1 1 14 32.1 L 8 18.36 A 20 20 0 1 0 0 -20 Z" fill="#10b981"/>
+                <path d="M 14 32.1 A 35 35 0 0 1 0 35 L 0 20 A 20 20 0 0 0 8 18.36 Z" fill="#dc2626"/>
+              </g>
+            </svg>
+            <div style="font-size:10px;">BARKAKANA<br><span style="color:var(--muted)">10 fans</span></div>
+          </div>
+          <div style="text-align:center;">
+            <svg viewBox="0 0 100 100" width="80" height="80">
+              <g transform="translate(50,50)">
+                <path d="M 0 -35 A 35 35 0 0 1 35 0 L 20 0 A 20 20 0 0 0 0 -20 Z" fill="#10b981"/>
+                <path d="M 35 0 A 35 35 0 0 1 -10.8 33.3 L -6.18 19 A 20 20 0 0 0 20 0 Z" fill="#f97316"/>
+                <path d="M -10.8 33.3 A 35 35 0 0 1 0 35 L 0 20 A 20 20 0 0 0 -6.18 19 Z" fill="#eab308"/>
+              </g>
+            </svg>
+            <div style="font-size:10px;">PARASNATH<br><span style="color:var(--muted)">10 fans</span></div>
+          </div>
+          <div style="text-align:center;">
+            <svg viewBox="0 0 100 100" width="80" height="80">
+              <circle cx="50" cy="50" r="35" fill="#10b981"/>
+              <circle cx="50" cy="50" r="20" fill="white"/>
+            </svg>
+            <div style="font-size:10px;">GUMIA<br><span style="color:var(--muted)">6 fans</span></div>
+          </div>
+          <div style="text-align:center;">
+            <svg viewBox="0 0 100 100" width="80" height="80">
+              <g transform="translate(50,50)">
+                <path d="M 0 -35 A 35 35 0 0 1 33.3 10.8 L 19 6.18 A 20 20 0 0 0 0 -20 Z" fill="#10b981"/>
+                <path d="M 33.3 10.8 A 35 35 0 1 1 0 -35 L 0 -20 A 20 20 0 1 0 19 6.18 Z" fill="#dc2626"/>
+              </g>
+            </svg>
+            <div style="font-size:10px;">CHANDWAR<br><span style="color:var(--muted)">5 fans</span></div>
+          </div>
+        </div>
+
+        <div class="note" style="margin-top: 28px;">
+          <b>Format A (stacked bars)</b> is easier to compare numbers at a glance.<br>
+          <b>Format B (concentric donuts)</b> is more visual — better for printing in a glossy report.<br>
+          Recommend: <b>Format A on screen</b>, <b>Format B in PDF</b>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───── SECTION 4: HIERARCHY LIST PREVIEW ───────────────────────── -->
+  <div class="section">
+    <h2>4. Hierarchical List <small>your specified ordering</small></h2>
+    <p class="desc">Sortable, expandable. PDF and Excel exports both follow this exact tree.</p>
+
+    <pre style="background:#f8fafc; padding:18px; border-radius:8px; font-size:12px; line-height:1.7; overflow-x:auto; margin:0;">
+▼ <b>ELECTRICAL</b> · 74 assets · 50 W / 11 O / 6 R / 7 Y
+   ▼ <b>DHANBAD</b> · 24 assets · 18 W / 4 O / 1 R / 1 Y
+      ▼ <b>PLATFORM 1</b> · 8 assets
+         ▼ <b>FAN</b> · 6 assets · 5 W / 1 R
+            <span style="color:#10b981">●</span> FAN-P1-001 · WORKING
+            <span style="color:#10b981">●</span> FAN-P1-002 · WORKING
+            <span style="color:#10b981">●</span> FAN-P1-003 · WORKING
+            <span style="color:#10b981">●</span> FAN-P1-004 · WORKING
+            <span style="color:#10b981">●</span> FAN-P1-005 · WORKING
+            <span style="color:#dc2626">●</span> FAN-P1-006 · <b>RED</b> · defective since 05 May 2026, 09:31 (76h)
+         ▼ <b>LIFT</b> · 2 assets · 1 W / 1 O
+            <span style="color:#10b981">●</span> LIFT-P1-A · WORKING
+            <span style="color:#f97316">●</span> LIFT-P1-B · <b>ORANGE</b> · defective since 08 May 2026, 14:29 (3h)
+      ▶ <b>PLATFORM 2</b> · 7 assets
+      ▶ <b>CONCOURSE</b> · 5 assets
+      ▶ <b>BOOKING OFFICE</b> · 4 assets · 3 W / 1 Y
+   ▶ <b>BARKAKANA</b> · 12 assets
+   ▶ <b>PARASNATH</b> · 8 assets
+▶ <b>COMMERCIAL</b> · 18 assets
+▶ <b>CIVIL</b> · 32 assets
+    </pre>
+
+    <div class="note">
+      Each ▼ section in the PDF starts a new page; in Excel it becomes its own row group.
+      Each ● is colored to its current health state. Tail of each row shows
+      <b>defective_since (IST literal)</b> and <b>hours defective</b>.
+    </div>
+  </div>
+
+  <!-- ───── SECTION 5: SUMMARY OF TODO ──────────────────────────────── -->
+  <div class="section" style="background:#fefce8; border-color:#facc15;">
+    <h2 style="color:#854d0e;">📋 Confirmed Choices Summary</h2>
+    <p class="desc" style="color:#713f12;">Here's what I read from your message — please confirm before I build.</p>
+    <ul style="font-size: 13px; color: #713f12; line-height: 2;">
+      <li>✅ <b>SUP view</b>: One donut per assigned station; inner = department health, outer = location-wise</li>
+      <li>✅ <b>RO view</b>: One donut per supervisor; click to expand into that SUP's stations view</li>
+      <li>✅ <b>Asset-type cross-station</b>: same asset type across stations grouped together (your call: stacked bars, donut grid, or both)</li>
+      <li>✅ <b>Station name above the donut</b> with concentric health rings (overall + location-wise)</li>
+      <li>✅ <b>C1 a</b> — A4 portrait PDF, cover + chart + table</li>
+      <li>✅ <b>C3 a</b> — Filters, timestamp, generator user in export</li>
+      <li>✅ <b>D1 a</b> — Role scoping as proposed</li>
+      <li>✅ <b>D2 a</b> — SUP stays within their dept</li>
+      <li>✅ <b>E1 a</b> — Top-level "Reports" nav item</li>
+      <li>✅ <b>E2 a</b> — On-demand only (no scheduling)</li>
+      <li>✅ <b>F1 a</b> — Server-side ReportLab</li>
+      <li>✅ <b>F2 a</b> — Server-side openpyxl multi-sheet</li>
+    </ul>
+  </div>
+
+</div>
+
+</body>
+</html>
