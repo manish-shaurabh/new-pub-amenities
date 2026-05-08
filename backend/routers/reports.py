@@ -24,7 +24,7 @@ from fastapi.responses import StreamingResponse
 from database import (
     users_collection, assets_collection, asset_types_collection,
     stations_collection, locations_collection, departments_collection,
-    orange_list_collection, now_ist,
+    orange_list_collection, inspections_collection, remarks_collection, now_ist,
 )
 
 router = APIRouter()
@@ -165,7 +165,7 @@ async def _load_universe():
     open_ols = await orange_list_collection.find({"status": {"$ne": "resolved"}}).to_list(20000)
     # ALL OLs (incl. resolved) — needed for 30-day trend reconstruction
     all_ols = await orange_list_collection.find({}).to_list(50000)
-    users = await users_collection.find({"role": {"$in": ["supervisor", "reporting_officer", "approving_supervisor"]}}).to_list(2000)
+    users = await users_collection.find({}).to_list(5000)
     type_by_id = {str(t["_id"]): t for t in types}
     station_by_id = {str(s["_id"]): s for s in stations}
     location_by_id = {str(l["_id"]): l for l in locations}
@@ -684,9 +684,84 @@ async def export_excel(user_id: str, drill_user_id: Optional[str] = Query(None))
             for r in ro["rings"]:
                 ws3.append([ro["name"], r["name"], r["total"], r["working"], r["yellow"], r["orange"], r["red"], r["pct_working"]])
 
+    # ── Pre-compute per-asset enrichment for the Assets sheet ───────────────
+    asset_pool_ids = {str(a["_id"]) for a in asset_pool}
+
+    # 1. Latest inspection per asset (across all inspections in the system).
+    #    Filter to inspections whose items contain any asset in our pool.
+    inspections = await inspections_collection.find(
+        {"items.asset_id": {"$in": list(asset_pool_ids)}}
+    ).sort("inspection_at", -1).to_list(20000)
+
+    # asset_id -> {inspection_at, inspector_id, inspector_name, inspector_emp_id,
+    #              item_remarks, overall_remarks}
+    last_insp_by_asset: Dict[str, dict] = {}
+    for ins in inspections:
+        ins_at = ins.get("inspection_at") or ""
+        for it in ins.get("items", []):
+            aid = it.get("asset_id")
+            if aid not in asset_pool_ids:
+                continue
+            if aid in last_insp_by_asset:
+                continue  # already have the latest one (sorted desc)
+            inspector = U["user_by_id"].get(ins.get("inspector_id")) or {}
+            last_insp_by_asset[aid] = {
+                "inspection_at": ins_at,
+                "inspector_id": ins.get("inspector_id"),
+                "inspector_emp_id": inspector.get("employee_id", ""),
+                "inspector_name": inspector.get("name", ""),
+                "item_remarks": it.get("remarks") or "",
+                "overall_remarks": ins.get("overall_remarks") or "",
+                "item_status": it.get("status") or "",
+            }
+
+    # 2. "BO" remarks (RO + ASUP + Admin + SuperAdmin), clubbed per asset.
+    #    Remarks live on orange_list entries — we reach them via OL ids.
+    BO_ROLES = {"reporting_officer", "approving_supervisor", "admin", "superadmin"}
+    ROLE_LABEL = {
+        "reporting_officer": "RO",
+        "approving_supervisor": "ASUP",
+        "admin": "Admin",
+        "superadmin": "SA",
+        "supervisor": "SUP",
+    }
+    # Build OL_id -> asset_id index (across all OL entries for assets in pool)
+    ol_id_to_asset: Dict[str, str] = {}
+    for aid in asset_pool_ids:
+        for ol in U["all_ols_by_asset"].get(aid, []):
+            ol_id_to_asset[str(ol["_id"])] = aid
+    bo_remarks_by_asset: Dict[str, list] = defaultdict(list)
+    if ol_id_to_asset:
+        all_remarks = await remarks_collection.find(
+            {"orange_list_id": {"$in": list(ol_id_to_asset.keys())},
+             "role": {"$in": list(BO_ROLES)}}
+        ).sort("created_at", 1).to_list(20000)
+        for r in all_remarks:
+            aid = ol_id_to_asset.get(r.get("orange_list_id"))
+            if not aid:
+                continue
+            author = U["user_by_id"].get(r.get("author_id")) or {}
+            label = ROLE_LABEL.get(r.get("role"), (r.get("role") or "").upper())
+            who = author.get("name") or author.get("employee_id") or "—"
+            text = (r.get("text") or "").strip()
+            ts = r.get("created_at") or ""
+            ts_str = ""
+            if ts:
+                ts_dt = _parse_dt(ts) if isinstance(ts, str) else (ts.replace(tzinfo=None) if hasattr(ts, "tzinfo") and ts.tzinfo else ts)
+                if isinstance(ts_dt, datetime):
+                    ts_str = ts_dt.strftime("%Y-%m-%d %H:%M")
+            line = f"[{label} · {who}{' · ' + ts_str if ts_str else ''}] {text}"
+            bo_remarks_by_asset[aid].append(line)
+
     # Flat assets sheet (drill to per-asset rows — F12)
     ws_assets = wb.create_sheet("Assets")
-    _hdr(ws_assets, ["Asset #", "Asset Type", "Department", "Station", "Location", "Status", "Defective Since", "Hours Defective"])
+    _hdr(ws_assets, [
+        "Asset #", "Asset Type", "Department", "Station", "Location",
+        "Status", "Defective Since", "Hours Defective",
+        "Last Inspected At", "Last Inspector ID", "Last Inspector Name",
+        "Last Inspection Status", "Last Inspection Remarks",
+        "Other Remarks (RO/ASUP/Admin/SA)",
+    ])
     for a in asset_pool:
         t = U["type_by_id"].get(a.get("asset_type_id"), {})
         d = U["dept_by_id"].get(t.get("department_id"), {})
@@ -706,11 +781,41 @@ async def export_excel(user_id: str, drill_user_id: Optional[str] = Query(None))
                 ds_dt = ds.replace(tzinfo=None) if ds.tzinfo else ds
             if ds_dt:
                 hours = round((now_ist() - ds_dt).total_seconds() / 3600, 1)
+
+        li = last_insp_by_asset.get(str(a["_id"])) or {}
+        # Format last inspected at
+        li_at_raw = li.get("inspection_at") or ""
+        li_at_fmt = ""
+        if li_at_raw:
+            li_at_dt = _parse_dt(li_at_raw)
+            li_at_fmt = li_at_dt.strftime("%Y-%m-%d %H:%M") if li_at_dt else str(li_at_raw)
+        # Last inspection remarks: prefer per-item remarks, else overall_remarks
+        li_remarks = li.get("item_remarks") or li.get("overall_remarks") or ""
+
+        bo_lines = bo_remarks_by_asset.get(str(a["_id"]), [])
+        bo_clubbed = "\n".join(bo_lines)
+
         ws_assets.append([
             a.get("asset_number"), t.get("name"), d.get("name"),
             s.get("name"), l.get("name"), cls.upper(),
             str(ds) if ds else "", hours,
+            li_at_fmt,
+            li.get("inspector_emp_id", ""),
+            li.get("inspector_name", ""),
+            (li.get("item_status") or "").upper(),
+            li_remarks,
+            bo_clubbed,
         ])
+    # Wider columns + wrap-text for the two remarks columns
+    from openpyxl.styles import Alignment as _Align
+    for col_letter, width in [("A", 14), ("B", 16), ("C", 14), ("D", 16),
+                              ("E", 22), ("F", 12), ("G", 22), ("H", 14),
+                              ("I", 18), ("J", 14), ("K", 22), ("L", 14),
+                              ("M", 60), ("N", 60)]:
+        ws_assets.column_dimensions[col_letter].width = width
+    for row in ws_assets.iter_rows(min_row=2, min_col=13, max_col=14):
+        for c in row:
+            c.alignment = _Align(wrap_text=True, vertical="top")
 
     out = io.BytesIO()
     wb.save(out)
