@@ -28,7 +28,21 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
-### Feb 2026 — Reports Module (PDF + Excel)
+### Feb 2026 — Per-station 30-day Health Trend sparkline (Reports)
+- **Backend** (`reports.py`):
+  - New `_compute_30day_trend(station_assets, all_ols_by_asset, now_dt)` — computes per-day % working (incl. yellow) for the last 30 days by reconstructing each asset's defective intervals from OL history (defective_since → earliest of marked_working_at/approved_at). Returns 30-element array (idx 0 = 29d ago, idx 29 = today).
+  - `_load_universe()` now also pulls all OL entries (incl. resolved) grouped by asset.
+  - `_build_station_card()` adds `trend_30d: [...]` to its response.
+  - Verified: SUP DHANBAD card returns `[98, 98, ..., 78, 66, 38, 36, 36]` reflecting the recent defect surge.
+- **Frontend** (`ReportsPage.js`):
+  - New `<HealthSparkline>` component — SVG line+area chart with:
+    - Color matched to current % (gradient red→green)
+    - 80% reference line (red dashed)
+    - End-point dot + min-point marker
+    - Header: `30-DAY TREND` + delta indicator (▲/▼ with color)
+    - Footer: `30d ago · X%` / `min Y%` / `today · Z%`
+  - Wired into `StationCard` — appears below LocationBars on every station card (direct SUP view + RO/ASUP/Admin/SA drill drawers).
+- **Verified**: rendered in SUP and SA drill views; audit 10/10 PASS; no regressions.
 - **New route `/reports`** added to all roles' nav. Role-aware view:
   - **SUP**: per-station cards with concentric asset-type rings + location bars (worst-first)
   - **RO / ASUP**: per-supervisor mini-cards → click drills into drawer with that SUP's station cards

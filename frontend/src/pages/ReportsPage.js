@@ -107,6 +107,74 @@ function ConcentricRings({ rings, summary }) {
   );
 }
 
+// ─── HealthSparkline — 30-day % working mini-chart ────────────────────────
+function HealthSparkline({ trend, testid = 'health-sparkline' }) {
+  if (!trend || trend.length === 0) return null;
+  const W = 320, H = 56;
+  const PAD_X = 4, PAD_TOP = 6, PAD_BOTTOM = 12;
+  const innerW = W - PAD_X * 2;
+  const innerH = H - PAD_TOP - PAD_BOTTOM;
+  const n = trend.length;
+
+  // Y-domain: clamp to [0,100]; map 0→bottom, 100→top
+  const yFor = (pct) => PAD_TOP + (1 - Math.max(0, Math.min(100, pct)) / 100) * innerH;
+  const xFor = (i) => PAD_X + (i / (n - 1)) * innerW;
+
+  // Build line + area paths
+  const points = trend.map((v, i) => `${xFor(i).toFixed(1)},${yFor(v).toFixed(1)}`);
+  const linePath = `M ${points.join(' L ')}`;
+  const areaPath = `${linePath} L ${xFor(n - 1).toFixed(1)},${(PAD_TOP + innerH).toFixed(1)} L ${xFor(0).toFixed(1)},${(PAD_TOP + innerH).toFixed(1)} Z`;
+
+  const first = trend[0];
+  const last = trend[n - 1];
+  const delta = +(last - first).toFixed(1);
+  const trendUp = delta > 0.5;
+  const trendDown = delta < -0.5;
+  const trendColor = trendUp ? HEALTH.working : trendDown ? HEALTH.red : '#94a3b8';
+  const lineColor = gradientColor(last);
+  const arrow = trendUp ? '▲' : trendDown ? '▼' : '▬';
+
+  // 80% reference line (deep-red threshold)
+  const refY = yFor(80);
+
+  // Identify min point for highlighting
+  let minIdx = 0;
+  for (let i = 1; i < n; i++) if (trend[i] < trend[minIdx]) minIdx = i;
+
+  return (
+    <div className="mt-3 p-2 bg-white border border-slate-200 rounded-md" data-testid={testid}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] uppercase tracking-wider text-slate-500">30-day trend</span>
+        <span className="text-[10px] font-semibold" style={{ color: trendColor }} data-testid={`${testid}-delta`}>
+          {arrow} {Math.abs(delta).toFixed(1)}% vs 30d ago
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none">
+        {/* 80% threshold reference */}
+        <line x1={PAD_X} y1={refY} x2={W - PAD_X} y2={refY}
+              stroke="#fecaca" strokeWidth="1" strokeDasharray="2,2" />
+        {/* Area fill */}
+        <path d={areaPath} fill={lineColor} fillOpacity="0.12" />
+        {/* Line */}
+        <path d={linePath} fill="none" stroke={lineColor} strokeWidth="1.6"
+              strokeLinejoin="round" strokeLinecap="round" />
+        {/* End-point dot */}
+        <circle cx={xFor(n - 1)} cy={yFor(last)} r="2.5" fill={lineColor} />
+        {/* Min-point marker */}
+        {trend[minIdx] < 95 && (
+          <circle cx={xFor(minIdx)} cy={yFor(trend[minIdx])} r="2"
+                  fill="#fff" stroke={HEALTH.red} strokeWidth="1.2" />
+        )}
+      </svg>
+      <div className="flex justify-between text-[9px] text-slate-400 -mt-1">
+        <span>30d ago · {first.toFixed(0)}%</span>
+        <span>min {trend[minIdx].toFixed(0)}%</span>
+        <span>today · {last.toFixed(0)}%</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── LocationBars — horizontal stacked bars, worst-first ──────────────────
 function LocationBars({ items, label = 'Location', testidPrefix = 'loc-bar' }) {
   if (!items || items.length === 0) return null;
@@ -167,6 +235,7 @@ function StationCard({ card }) {
         </div>
       )}
       <LocationBars items={card.locations} label="Location" testidPrefix={`loc-bar-${card.station_id}`} />
+      <HealthSparkline trend={card.trend_30d} testid={`station-trend-${card.station_id}`} />
     </div>
   );
 }

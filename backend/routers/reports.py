@@ -81,6 +81,67 @@ def _empty_bucket():
     return {"working": 0, "yellow": 0, "orange": 0, "red": 0}
 
 
+def _parse_dt(v):
+    """Parse a stored datetime value (str or datetime) into a naive datetime."""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.replace(tzinfo=None) if v.tzinfo else v
+    if isinstance(v, str):
+        try:
+            return datetime.fromisoformat(v.replace("Z", "").replace("+00:00", ""))
+        except Exception:
+            return None
+    return None
+
+
+def _compute_30day_trend(station_assets: List[dict], all_ols_by_asset: Dict[str, list],
+                        now_dt: datetime) -> List[float]:
+    """Compute per-day % working (incl. yellow) for the last 30 days.
+
+    Returns a list of 30 floats — index 0 = 29 days ago, index 29 = today.
+    An asset is "defective" at time T if any OL entry has:
+        defective_since <= T  AND  end > T   (end = earliest of marked_working_at, approved_at; or open)
+    Yellow & Working both count as "working" in the percentage.
+    """
+    total = len(station_assets)
+    if total == 0:
+        return [100.0] * 30
+
+    # Pre-build intervals per asset: list of (defective_since, end_or_None)
+    intervals_by_asset: Dict[str, list] = {}
+    for a in station_assets:
+        aid = str(a["_id"])
+        ivs = []
+        for ol in all_ols_by_asset.get(aid, []):
+            ds = _parse_dt(ol.get("defective_since"))
+            if not ds:
+                continue
+            mw = _parse_dt(ol.get("marked_working_at"))
+            ap = _parse_dt(ol.get("approved_at"))
+            end = None
+            for cand in (mw, ap):
+                if cand and (end is None or cand < end):
+                    end = cand
+            ivs.append((ds, end))
+        intervals_by_asset[aid] = ivs
+
+    eod_today = now_dt.replace(hour=23, minute=59, second=59, microsecond=0)
+    trend: List[float] = []
+    for offset in range(29, -1, -1):
+        T = eod_today - timedelta(days=offset)
+        defective = 0
+        for a in station_assets:
+            aid = str(a["_id"])
+            for ds, end in intervals_by_asset.get(aid, []):
+                if ds <= T and (end is None or end > T):
+                    defective += 1
+                    break
+        working = total - defective
+        trend.append(round((working / total * 100), 1))
+    return trend
+
+
 def _bucket_pct(b: Dict[str, int]) -> Dict[str, Any]:
     """Center-percent: (working + yellow) / total. Add color and total."""
     total = sum(b.values())
@@ -206,12 +267,14 @@ def _build_station_card(U: dict, station_id: str, scoped_assets: List[dict],
         l.pop("_defect_count", None)
 
     station = U["station_by_id"].get(station_id, {})
+    trend_30d = _compute_30day_trend(station_assets, U["all_ols_by_asset"], now_ist())
     return {
         "station_id": station_id,
         "station_name": station.get("name", "—"),
         "summary": summary_b,
         "rings": ring_list,
         "locations": loc_list,
+        "trend_30d": trend_30d,
     }
 
 
