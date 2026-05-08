@@ -1,13 +1,4 @@
 {
-  "drift_count": 1,
-  "drifts": [
-    {
-      "asset_id": "69f73fb7f498cbe0e1010632",
-      "asset_number": "Lift 1",
-      "issue": "asset.defective_since != OL.defective_since",
-      "asset_defective_since": "2026-05-05 09:31:34.505000",
-      "ol_defective_since": "None",
-      "ol_id": "69f741ccf498cbe0e1010639"
-    }
-  ]
+  "drift_count": 0,
+  "drifts": []
 }

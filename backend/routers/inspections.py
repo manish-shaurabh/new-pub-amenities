@@ -203,8 +203,12 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
         # OL.defective_since is the SINGLE SOURCE OF TRUTH for "when did this defect start?".
         # On re-inspection of an asset that already has an open OL we MUST NOT overwrite it
         # — otherwise the clock resets and the orange/red threshold becomes gameable.
+        # FALLBACK ORDER: existing OL.defective_since → inspector-typed value → now.
+        # The chained `or` handles legacy OL rows where defective_since is None.
         canonical_defective_since = (
-            existing.get("defective_since") if existing else defective_since_dt
+            (existing.get("defective_since") if existing else None)
+            or defective_since_dt
+            or now_ist()
         )
         if isinstance(canonical_defective_since, str):
             try:
@@ -212,7 +216,15 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                     canonical_defective_since.replace('Z', '+00:00').replace('+00:00', '')
                 )
             except (ValueError, AttributeError):
-                canonical_defective_since = defective_since_dt
+                canonical_defective_since = defective_since_dt or now_ist()
+
+        # Self-heal legacy: if the existing OL has a null defective_since,
+        # write the canonical value back to it on this re-inspection.
+        if existing and not existing.get("defective_since"):
+            await orange_list_collection.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"defective_since": canonical_defective_since}}
+            )
 
         new_orange_list_id: Optional[str] = None
         auto_rejected = False
