@@ -210,9 +210,11 @@ function LocationBars({ items, label = 'Location', testidPrefix = 'loc-bar' }) {
             <div className="flex items-center justify-between text-[11px] mb-1">
               <span className="font-semibold text-slate-700 truncate max-w-[60%]" title={it.name}>{it.name}</span>
               <span className="text-[10px] text-slate-500">
-                {it.total} assets · <span className="font-semibold" style={{ color: gradientColor(it.pct_working) }}>
-                  {it.pct_working.toFixed(0)}%
-                </span>
+                {it.total} assets{typeof it.pct_working === 'number' && (
+                  <> · <span className="font-semibold" style={{ color: gradientColor(it.pct_working) }}>
+                    {it.pct_working.toFixed(0)}%
+                  </span></>
+                )}
               </span>
             </div>
             {subs.length === 0 ? (
@@ -331,6 +333,7 @@ function ROCard({ ro, onDrill }) {
       <LocationBars items={ro.supervisor_bars?.map(s => ({
         name: s.name || '—', working: s.working, yellow: s.yellow,
         orange: s.orange, red: s.red, total: s.total,
+        pct_working: s.pct_working,
       })) || []} label="Supervisor" testidPrefix={`ro-sup-bar-${ro.user_id}`} />
       <div className="text-right text-[10px] text-teal-700 font-semibold mt-2">
         Click to drill into supervisors →
