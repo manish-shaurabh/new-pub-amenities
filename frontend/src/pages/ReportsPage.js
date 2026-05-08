@@ -175,33 +175,68 @@ function HealthSparkline({ trend, testid = 'health-sparkline' }) {
   );
 }
 
-// ─── LocationBars — horizontal stacked bars, worst-first ──────────────────
+// ─── LocationBars — locations with per-asset-type sub-bars (worst-first) ──
 function LocationBars({ items, label = 'Location', testidPrefix = 'loc-bar' }) {
   if (!items || items.length === 0) return null;
+
+  const renderBar = (b, key) => {
+    const segs = [
+      { c: b.working, color: HEALTH.working },
+      { c: b.yellow,  color: HEALTH.yellow },
+      { c: b.orange,  color: HEALTH.orange },
+      { c: b.red,     color: HEALTH.red },
+    ].filter(s => s.c > 0);
+    return (
+      <div key={key} className="flex h-full">
+        {segs.map((s, i) => (
+          <div key={i} style={{ background: s.color, width: `${(s.c / b.total) * 100}%` }}
+               className="flex items-center justify-center text-white text-[9px] font-semibold">
+            {Math.round((s.c / b.total) * 100)}%
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-1.5 mt-3 p-3 bg-white border border-slate-200 rounded-md">
-      <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">
-        {label}-wise health (worst first)
+    <div className="space-y-2 mt-3 p-3 bg-white border border-slate-200 rounded-md">
+      <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">
+        {label}-wise health (worst first) · by asset type
       </div>
       {items.map((it, idx) => {
-        const segs = [
-          { c: it.working, color: HEALTH.working },
-          { c: it.yellow,  color: HEALTH.yellow },
-          { c: it.orange,  color: HEALTH.orange },
-          { c: it.red,     color: HEALTH.red },
-        ].filter(s => s.c > 0);
+        const subs = it.by_type || [];
         return (
-          <div key={idx} className="flex items-center gap-2 text-[11px]" data-testid={`${testidPrefix}-${idx}`}>
-            <div className="w-24 text-right font-semibold text-slate-700 truncate">{it.name}</div>
-            <div className="flex-1 h-[18px] flex rounded overflow-hidden border border-slate-200">
-              {segs.map((s, i) => (
-                <div key={i} style={{ background: s.color, width: `${(s.c / it.total) * 100}%` }}
-                     className="flex items-center justify-center text-white text-[9px] font-semibold">
-                  {Math.round((s.c / it.total) * 100)}%
-                </div>
-              ))}
+          <div key={idx} className="border-l-2 border-slate-200 pl-2" data-testid={`${testidPrefix}-${idx}`}>
+            <div className="flex items-center justify-between text-[11px] mb-1">
+              <span className="font-semibold text-slate-700 truncate max-w-[60%]" title={it.name}>{it.name}</span>
+              <span className="text-[10px] text-slate-500">
+                {it.total} assets · <span className="font-semibold" style={{ color: gradientColor(it.pct_working) }}>
+                  {it.pct_working.toFixed(0)}%
+                </span>
+              </span>
             </div>
-            <div className="w-8 text-left text-slate-500">{it.total}</div>
+            {subs.length === 0 ? (
+              <div className="flex items-center gap-2 text-[10px]">
+                <div className="w-24 text-right text-slate-400">—</div>
+                <div className="flex-1 h-[16px] rounded overflow-hidden border border-slate-200">
+                  {renderBar(it, 'fallback')}
+                </div>
+                <div className="w-8 text-left text-slate-500">{it.total}</div>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {subs.map((t, tIdx) => (
+                  <div key={tIdx} className="flex items-center gap-2 text-[10px]"
+                       data-testid={`${testidPrefix}-${idx}-type-${tIdx}`}>
+                    <div className="w-24 text-right text-slate-600 truncate" title={t.name}>{t.name}</div>
+                    <div className="flex-1 h-[14px] rounded overflow-hidden border border-slate-200">
+                      {renderBar(t, tIdx)}
+                    </div>
+                    <div className="w-8 text-left text-slate-500">{t.total}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}

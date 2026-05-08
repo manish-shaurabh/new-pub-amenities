@@ -224,6 +224,8 @@ def _build_station_card(U: dict, station_id: str, scoped_assets: List[dict],
     summary = _empty_bucket()
     rings: Dict[str, Dict[str, int]] = defaultdict(_empty_bucket)
     locations: Dict[str, Dict[str, int]] = defaultdict(_empty_bucket)
+    # location_name -> asset_type_name -> bucket
+    loc_type_breakdown: Dict[str, Dict[str, Dict[str, int]]] = defaultdict(lambda: defaultdict(_empty_bucket))
 
     for a in station_assets:
         cls = _classify(a, U["ol_by_asset"].get(str(a["_id"])))
@@ -244,6 +246,11 @@ def _build_station_card(U: dict, station_id: str, scoped_assets: List[dict],
         loc_name = loc.get("name", "—")
         locations[loc_name][cls] += 1
 
+        # Location × asset-type breakdown
+        t_for_loc = U["type_by_id"].get(a.get("asset_type_id"), {})
+        type_name = t_for_loc.get("name", "—")
+        loc_type_breakdown[loc_name][type_name][cls] += 1
+
     summary_b = _bucket_pct(summary)
 
     # Ring list — keep stable order: most defective first
@@ -256,12 +263,23 @@ def _build_station_card(U: dict, station_id: str, scoped_assets: List[dict],
     for r in ring_list:
         r.pop("_defect_count", None)
 
-    # Location list — worst-first (D8)
+    # Location list — worst-first (D8). Each loc carries `by_type: [...]`
+    # asset-type sub-bars (also worst-first within the location).
     loc_list = []
     for name, b in locations.items():
         bp = _bucket_pct(b)
         defect_count = bp["yellow"] + bp["orange"] + bp["red"]
-        loc_list.append({"name": name, **bp, "_defect_count": defect_count})
+        # Sub-bars by asset type
+        sub = []
+        for t_name, t_b in loc_type_breakdown[name].items():
+            t_bp = _bucket_pct(t_b)
+            sub.append({"name": t_name, **t_bp,
+                        "_d": t_bp["yellow"] + t_bp["orange"] + t_bp["red"]})
+        sub.sort(key=lambda r: (-r["_d"], -r["total"]))
+        for r in sub:
+            r.pop("_d", None)
+        loc_list.append({"name": name, **bp, "by_type": sub,
+                         "_defect_count": defect_count})
     loc_list.sort(key=lambda l: (-l["_defect_count"], -l["total"]))
     for l in loc_list:
         l.pop("_defect_count", None)
