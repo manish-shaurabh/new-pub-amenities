@@ -327,7 +327,15 @@ export default function AssetsPage() {
     </div>
   );
 
-  if (loading) {
+  // Initial-load skeleton only (full-page).
+  // Subsequent reloads (search/filter/page) show a list-only skeleton so the
+  // search input stays mounted and never loses focus mid-keystroke.
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  useEffect(() => {
+    if (!loading && !initialLoadDone) setInitialLoadDone(true);
+  }, [loading, initialLoadDone]);
+
+  if (loading && !initialLoadDone) {
     return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-xl" />)}</div>;
   }
 
@@ -379,7 +387,9 @@ export default function AssetsPage() {
 
       {/* Asset List Grouped by Type */}
       <div className="space-y-3">
-        {filteredAssets.length === 0 ? (
+        {loading ? (
+          [1,2,3].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-xl" />)
+        ) : filteredAssets.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
               <Box className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
