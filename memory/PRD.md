@@ -28,6 +28,23 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Reports Builder v2 (all 6 layers — comprehensive)
+**Backend** (`/app/backend/routers/reports_builder.py`)
+- **Layer 1 — Dimensions** (19 total): + ro · asup · inspector · reporter · list_type · defect_age_band · repair_age_band · hour_of_day · day_of_week · per-asset
+- **Layer 2 — Metrics** (12 total): + first_time_fix_rate · recurrence_rate · backlog_age · throughput · avg_approval_lag · pct_pending · inspection_coverage. MTTR/backlog/avg_approval_lag now expose p25/p75/p90/p99/min/max/mean
+- **Layer 3 — Filters**: + asset_statuses · list_types · repair_cap_hours · recurrence_within_days · include_rejected_in_mttr · hour_from/to · compare_to_previous (returns deltas)
+- **Layer 4 — Output controls**: sort_by/sort_dir · top_n · bucket_other_after · totals_row · n_threshold · viz hint · annotations (title/subtitle/note)
+- **Layer 5 — Multi-section dossiers**: `/dossier/run`, `/dossier/save`, `/dossier/saved`, `/dossier/export/pdf` (cover page + per-section), `/dossier/export/excel` (one sheet per section)
+- **Layer 6 — Run history**: every successful run logged to `report_runs`; `/runs/{user_id}` returns last N. New collections: `report_runs`, `saved_dossiers`
+
+**Frontend** (`/app/frontend/src/pages/ReportsBuilderPage.js`)
+- 3 sub-tabs inside Builder:
+  - **Single Report** — Featured library (8) · Composer with collapsible "advanced" panel exposing all Layer 3-4 controls · Result panel auto-renders Bar / Donut / Line / Heatmap by viz pick · Δ vs previous-period column · "Add to Dossier" button
+  - **Dossier** — Cover editor + sections list (drag up/down, rename, delete) · Save/PDF/Excel · Saved dossiers panel
+  - **History** — Last 20 runs · click any to instantly re-apply
+
+**Verified end-to-end**: backend curl tests all pass (12 metrics, 19 dims, output controls, compare-to deltas, dossier 4-page PDF, dossier 4-sheet Excel); frontend smoke shows all 3 tabs rendering, advanced filters expanded, dossier with 2 sections, 6-row history. Audit 10/10 PASS.
+
 ### Feb 2026 — Reports Builder (Phase 1 + 2 of Option C)
 **Backend** (`/app/backend/routers/reports_builder.py`)
 - Generic engine: 5 metrics (`pct_working`, `mttr`, `defect_frequency`, `rejection_rate`, `inspection_volume`) × 9 dimensions (station, location, dept, asset_type, supervisor, day/week/month/quarter) × 7 time windows (7d/30d/90d/180d/FY/all/custom).
