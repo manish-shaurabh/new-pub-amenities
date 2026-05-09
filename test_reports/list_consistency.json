@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-05-08T20:13:51.223769",
+  "run_at": "2026-05-09T15:00:16.960891",
   "summary": {
     "total_checks": 10,
     "pass": 10,
@@ -15,8 +15,8 @@
     "ol_open_defective": 55,
     "ol_open_pending_approval": 3,
     "ol_resolved": 22,
-    "list_orange_count": 1,
-    "list_red_count": 54,
+    "list_orange_count": 0,
+    "list_red_count": 55,
     "list_yellow_count": 3
   },
   "violations": []

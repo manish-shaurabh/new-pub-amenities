@@ -40,6 +40,7 @@ schedules_collection = db["schedules"]
 audit_log_collection = db["audit_log"]
 remarks_collection = db["remarks"]
 remark_tags_collection = db["remark_tags"]
+saved_reports_collection = db["saved_reports"]
 
 
 def get_db():

@@ -28,6 +28,29 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Reports Builder (Phase 1 + 2 of Option C)
+**Backend** (`/app/backend/routers/reports_builder.py`)
+- Generic engine: 5 metrics (`pct_working`, `mttr`, `defect_frequency`, `rejection_rate`, `inspection_volume`) × 9 dimensions (station, location, dept, asset_type, supervisor, day/week/month/quarter) × 7 time windows (7d/30d/90d/180d/FY/all/custom).
+- 2-dimension cross-tab support → server returns matrix structure consumable as a heatmap.
+- Filters: station_ids, dept_ids, asset_type_ids (multi-select).
+- Endpoints (all SA-only via `_ensure_sa()` gate):
+  - `POST /api/reports/builder/run/{user_id}` — execute config, return rows or matrix
+  - `GET  /api/reports/builder/featured` — 8 ready configs (no-auth list)
+  - `GET  /api/reports/builder/dimensions/{user_id}` — UI metadata
+  - `GET/POST/DELETE /api/reports/builder/saved/{...}` — saved-reports CRUD (per-owner)
+  - `POST /api/reports/builder/export/{csv|excel|pdf}/{user_id}`
+- New collection: `saved_reports`.
+
+**Frontend** (`/app/frontend/src/pages/ReportsBuilderPage.js`)
+- New "Builder" tab inside `/reports` (Tabs wrapper around existing Dashboards view; Builder shown only to SuperAdmin).
+- 3-column layout: Featured library | Composer + Result | Saved reports.
+- Composer: 4 dropdowns (Metric / Group X / Cross Y / Window) + filter multi-selects (Stations/Depts/Asset Types).
+- Result: bar chart + table for single-dim; color-graded heatmap for cross-tab; MTTR shows extra p75/p90/min/max/mean columns.
+- Save current config (named) and one-click apply from featured/saved cards.
+- CSV / Excel / PDF export buttons run the same config server-side.
+
+**Verified**: SA can run, save, delete configs; 8 featured cards apply correctly; heatmap renders for Defect Freq Station×AssetType cross-tab; 403 gate confirmed for non-SA users; audit 10/10 PASS.
+
 ### Feb 2026 — Per-station 30-day Health Trend sparkline (Reports)
 - **Backend** (`reports.py`):
   - New `_compute_30day_trend(station_assets, all_ols_by_asset, now_dt)` — computes per-day % working (incl. yellow) for the last 30 days by reconstructing each asset's defective intervals from OL history (defective_since → earliest of marked_working_at/approved_at). Returns 30-element array (idx 0 = 29d ago, idx 29 = today).

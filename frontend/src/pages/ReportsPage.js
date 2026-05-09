@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Loader2, FileDown, FileSpreadsheet, ArrowLeft, ChevronRight } from 'lucide-react';
 import { Switch } from '../components/ui/switch';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ReportsBuilder from './ReportsBuilderPage';
 import { formatDateTime } from '../lib/utils';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -459,8 +461,11 @@ export default function ReportsPage() {
   );
   if (!data) return null;
 
-  return (
-    <div className="space-y-6 p-1">
+  const isSA = user?.role === 'superadmin';
+
+  // The original "Dashboards" content (existing reports view).
+  const dashboardView = (
+    <>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900" data-testid="reports-title">Health Reports</h1>
@@ -507,6 +512,27 @@ export default function ReportsPage() {
 
       <DrillDrawer open={!!drillTarget} onClose={() => setDrillTarget(null)}
                    viewerId={user._id} target={drillTarget} defectiveOnly={defectiveOnly} />
+    </>
+  );
+
+  return (
+    <div className="space-y-6 p-1">
+      {isSA ? (
+        <Tabs defaultValue="dashboards" className="space-y-4">
+          <TabsList data-testid="reports-tabs">
+            <TabsTrigger value="dashboards" data-testid="tab-dashboards">Dashboards</TabsTrigger>
+            <TabsTrigger value="builder" data-testid="tab-builder">Builder</TabsTrigger>
+          </TabsList>
+          <TabsContent value="dashboards" className="space-y-6">
+            {dashboardView}
+          </TabsContent>
+          <TabsContent value="builder">
+            <ReportsBuilder />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <div className="space-y-6">{dashboardView}</div>
+      )}
     </div>
   );
 }
