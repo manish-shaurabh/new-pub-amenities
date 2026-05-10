@@ -20,6 +20,7 @@ import { useAuth } from '../lib/auth-context';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 import CylinderBar from '../components/CylinderBar';
 import RadarChart from '../components/RadarChart';
+import ComparativeExportDialog, { ComparativeQuickDownload } from '../components/ComparativeExportDialog';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -139,17 +140,16 @@ function CardB({ user, windowDays, stat, assetTypeIds, deptId }) {
 }
 
 // ─── Card C: 4-level drilldown using horizontal CylinderBar ───────────────
-function CardC({ user, windowDays, stat, assetTypeIds, deptId }) {
+function CardC({ user, windowDays, stat, assetTypeIds, deptId, stack, setStack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  // Drill stack — each entry: { level, parent_id, parent_asset_type_id, label }
-  const [stack, setStack] = useState([{ level: 'station', parent_id: null, parent_asset_type_id: null, label: 'All Stations' }]);
   const cur = stack[stack.length - 1];
   const [historyAsset, setHistoryAsset] = useState(null);
 
   // Reset stack when filters change so drilldown context stays consistent
   useEffect(() => {
     setStack([{ level: 'station', parent_id: null, parent_asset_type_id: null, label: 'All Stations' }]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deptId, assetTypeIds.join(','), windowDays]);
 
   useEffect(() => {
@@ -271,6 +271,10 @@ export default function ComparativeReports() {
   const [stat, setStat] = useState('median');
   const [deptId, setDeptId] = useState('');
   const [assetTypeIds, setAssetTypeIds] = useState([]);
+  const [drillStack, setDrillStack] = useState([
+    { level: 'station', parent_id: null, parent_asset_type_id: null, label: 'All Stations' },
+  ]);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -302,6 +306,34 @@ export default function ComparativeReports() {
 
   return (
     <div className="space-y-4" data-testid="comparative-root">
+      {/* Quick download bar */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="text-xs text-slate-500">
+          Export the current view (filters & drill state) as PDF or Excel.
+        </div>
+        <ComparativeQuickDownload
+          user={user} windowDays={windowDays} stat={stat}
+          deptId={deptId} assetTypeIds={assetTypeIds}
+          drillState={{
+            level: drillStack[drillStack.length - 1].level,
+            parent_id: drillStack[drillStack.length - 1].parent_id,
+            parent_asset_type_id: drillStack[drillStack.length - 1].parent_asset_type_id,
+          }}
+          onOpenSettings={() => setExportOpen(true)}
+        />
+      </div>
+
+      <ComparativeExportDialog
+        open={exportOpen} onOpenChange={setExportOpen}
+        user={user} windowDays={windowDays} stat={stat}
+        deptId={deptId} assetTypeIds={assetTypeIds}
+        drillState={{
+          level: drillStack[drillStack.length - 1].level,
+          parent_id: drillStack[drillStack.length - 1].parent_id,
+          parent_asset_type_id: drillStack[drillStack.length - 1].parent_asset_type_id,
+        }}
+      />
+
       {/* Top bar */}
       <Card>
         <CardContent className="py-4 grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -367,7 +399,8 @@ export default function ComparativeReports() {
           </p>
         </CardHeader>
         <CardContent>
-          <CardC user={user} windowDays={windowDays} stat={stat} assetTypeIds={assetTypeIds} deptId={deptId} />
+          <CardC user={user} windowDays={windowDays} stat={stat} assetTypeIds={assetTypeIds} deptId={deptId}
+                 stack={drillStack} setStack={setDrillStack} />
         </CardContent>
       </Card>
     </div>

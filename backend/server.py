@@ -41,6 +41,7 @@ from routers import (
     reports,
     reports_builder,
     comparative,
+    comparative_export,
 )
 
 app = FastAPI(title="Railway Asset Inspection Management System")
@@ -108,6 +109,7 @@ for r in (
     reports.router,
     reports_builder.router,
     comparative.router,
+    comparative_export.router,
 ):
     app.include_router(r)
 
