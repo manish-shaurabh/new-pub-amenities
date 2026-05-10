@@ -286,20 +286,6 @@ def _section_defective_rows(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
-def _section_last_inspection_rows(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Last inspection per asset in scope."""
-    rows = []
-    user_ids = list({ins.get("inspector_id") for ins in bundle["last_inspections"].values()
-                     if ins.get("inspector_id")})
-    inspectors = {}
-    return _last_inspection_rows_sync(bundle, user_ids, inspectors, rows)
-
-
-def _last_inspection_rows_sync(bundle, user_ids, inspectors, rows):
-    # Resolve inspector names lazily — caller will fill once
-    return None  # placeholder — will be replaced by async version
-
-
 # ─── PDF ──────────────────────────────────────────────────────────────────
 def _draw_horizontal_bar(value: float, peer_max: float, width_mm: float, height_mm: float,
                          color_hex: str = None) -> Drawing:

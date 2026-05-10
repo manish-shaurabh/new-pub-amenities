@@ -28,6 +28,19 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Comparative Reports PDF/Excel Export with Configurable Sections
+**Backend** (`/app/backend/routers/comparative_export.py` — new)
+- `POST /api/reports/comparative/export/pdf/{user_id}` and `POST /api/reports/comparative/export/excel/{user_id}` accepting `ExportRequest` body: `window_days, stat, dept_id, asset_type_ids, drill_state{level,parent_id,parent_asset_type_id}, sections{card_a,card_b,card_c_current,card_c_full,defective,remarks,last_inspection}, style`.
+- **PDF** (ReportLab, A4 portrait): cover with filter chips · Card A table with semantic-colored mini cylinder bars · Card B with embedded radar SVG + peer matrix table · Card C current view (or full hierarchy if requested) · defective-only landscape table · last-inspection table · remarks appendix (last 5 per defective asset, grouped by asset).
+- **Excel** (openpyxl): multi-sheet workbook — Summary | By Asset Type | Peer Matrix | Drilldown | Defective Only | Last Inspections | Remarks. Self row in Peer Matrix highlighted teal; defective rows tinted red/orange by list type.
+- SUP role anonymisation honored in both formats; current user always shown with real name + ★ marker.
+
+**Frontend** (`/app/frontend/src/components/ComparativeExportDialog.js` — new; `pages/ComparativeReportsPage.js` updated)
+- `ComparativeQuickDownload` inline buttons (PDF / Excel / Configure…) at top of Comparative tab — uses default sections.
+- `ComparativeExportDialog` with 7 section toggles (data-testid `comp-export-{section}`) + style picker (Detailed / Compact). Filters and current drill state are inherited from the page.
+- Drill stack lifted to parent so exports always reflect what the user is currently viewing.
+- Tested via `testing_agent_v3_fork` iteration_20: backend 11/11 + frontend dialog/toggles/network all PASS. PDF=19KB %PDF-1.4 valid; Excel=14KB 7-sheet workbook parseable.
+
 ### Feb 2026 — Comparative Reports v2 (4-level drilldown + 3D cylinder bars + radar)
 **Backend** (`/app/backend/routers/comparative.py`)
 - `GET /api/reports/comparative/grouped/{user_id}` extended to **4 levels**: `station` → `location_summary` → `location_types` → `asset`. New `parent_asset_type_id` query param for the asset level. Empty stations now hidden. Returns `p90` in payload (used for broken-axis detection in UI).
