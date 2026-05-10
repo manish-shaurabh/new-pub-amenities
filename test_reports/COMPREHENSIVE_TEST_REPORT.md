@@ -3,7 +3,7 @@
 
 **Test Date**: May 6, 2026  
 **Tester**: T1 Testing Agent  
-**Backend URL**: https://orange-red-yellow.preview.emergentagent.com/api  
+**Backend URL**: https://asset-audit-dash.preview.emergentagent.com/api  
 **Test Credentials**: Superadmin SA001 / admin123  
 
 ---

@@ -245,23 +245,26 @@ def _user_station_ids(user: dict) -> List[str]:
 @router.get("/api/reports/comparative/by-asset-type/{user_id}")
 async def by_asset_type(user_id: str,
                         station_ids: Optional[str] = Query(None),
+                        dept_id: Optional[str] = Query(None),
                         window_days: str = Query("90"),
                         stat: str = Query("median")):
     """Lens 1 — MTTR by asset-type within user's station scope."""
     user = await _user_or_404(user_id)
     f_dt, t_dt = _window_from_days(window_days)
     win = (f_dt, t_dt)
-    # Scope stations
     user_stns = _user_station_ids(user)
     explicit = [s for s in (station_ids.split(",") if station_ids else []) if s]
     scope = set(explicit) if explicit else set(user_stns)
     q = {}
     if scope: q["station_id"] = {"$in": list(scope)}
     assets = await assets_collection.find(q).to_list(20000)
-    asset_ids = {str(a["_id"]) for a in assets}
     types = await asset_types_collection.find({}).to_list(2000)
     type_by_id = {str(t["_id"]): t for t in types}
-    # Group asset ids by type
+    # Apply dept filter
+    if dept_id:
+        assets = [a for a in assets
+                  if (type_by_id.get(a.get("asset_type_id")) or {}).get("department_id") == dept_id]
+    asset_ids = {str(a["_id"]) for a in assets}
     by_type: Dict[str, set] = {}
     for a in assets:
         by_type.setdefault(a.get("asset_type_id"), set()).add(str(a["_id"]))
@@ -278,6 +281,7 @@ async def by_asset_type(user_id: str,
             "label": (type_by_id.get(tid) or {}).get("name", "—"),
             **s,
         })
+    rows = [r for r in rows if r.get("n", 0) > 0]
     rows.sort(key=lambda r: -(r.get(stat) or 0))
     return {"window_days": window_days, "stat": stat, "rows": rows,
             "scope_station_ids": list(scope)}
