@@ -12,6 +12,7 @@ import { Loader2, FileDown, FileSpreadsheet, ArrowLeft, ChevronRight } from 'luc
 import { Switch } from '../components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import ReportsBuilder from './ReportsBuilderPage';
+import ComparativeReports from './ComparativeReportsPage';
 import { formatDateTime } from '../lib/utils';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -517,22 +518,22 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6 p-1">
-      {isSA ? (
-        <Tabs defaultValue="dashboards" className="space-y-4">
-          <TabsList data-testid="reports-tabs">
-            <TabsTrigger value="dashboards" data-testid="tab-dashboards">Dashboards</TabsTrigger>
-            <TabsTrigger value="builder" data-testid="tab-builder">Builder</TabsTrigger>
-          </TabsList>
-          <TabsContent value="dashboards" className="space-y-6">
-            {dashboardView}
-          </TabsContent>
-          <TabsContent value="builder">
-            <ReportsBuilder />
-          </TabsContent>
-        </Tabs>
-      ) : (
-        <div className="space-y-6">{dashboardView}</div>
-      )}
+      <Tabs defaultValue="dashboards" className="space-y-4">
+        <TabsList data-testid="reports-tabs">
+          <TabsTrigger value="dashboards" data-testid="tab-dashboards">Dashboards</TabsTrigger>
+          <TabsTrigger value="comparative" data-testid="tab-comparative">Comparative</TabsTrigger>
+          {isSA && <TabsTrigger value="builder" data-testid="tab-builder">Builder</TabsTrigger>}
+        </TabsList>
+        <TabsContent value="dashboards" className="space-y-6">
+          {dashboardView}
+        </TabsContent>
+        <TabsContent value="comparative">
+          <ComparativeReports />
+        </TabsContent>
+        {isSA && <TabsContent value="builder">
+          <ReportsBuilder />
+        </TabsContent>}
+      </Tabs>
     </div>
   );
 }

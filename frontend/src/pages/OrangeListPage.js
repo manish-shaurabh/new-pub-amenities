@@ -13,10 +13,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { Calendar } from '../components/ui/calendar';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle, Clock, FileText, FileSpreadsheet, RefreshCw, CalendarIcon, XCircle, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, FileText, FileSpreadsheet, RefreshCw, CalendarIcon, XCircle, MessageSquare, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
 import Pagination from '../components/Pagination';
 import RemarksThread from '../components/RemarksThread';
+import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 import { formatDateTime, formatDuration, toIstLiteral } from '../lib/utils';
 
 const PAGE_SIZE = 25;
@@ -34,6 +35,8 @@ export default function OrangeListPage() {
   const [markedWorkingDate, setMarkedWorkingDate] = useState(null);
   const [markedWorkingTime, setMarkedWorkingTime] = useState('');
   const [expanded, setExpanded] = useState({});
+  const [historyAsset, setHistoryAsset] = useState(null);
+  const [etaCache, setEtaCache] = useState({});
 
   // Role-scoped fetch: only superadmin/admin see global; everyone else scopes to their role.
   const isScoped = user && !['superadmin', 'admin'].includes(user.role);
@@ -58,6 +61,29 @@ export default function OrangeListPage() {
 
   // Reset page when tab changes
   useEffect(() => { setPage(1); }, [activeTab]);
+
+  // Background-load ETAs for visible items (capped to 30 to limit calls)
+  useEffect(() => {
+    const BACKEND = process.env.REACT_APP_BACKEND_URL;
+    const targets = allItems.filter(i => i.status !== 'pending_approval' && !etaCache[i.asset_id]).slice(0, 30);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const updates = {};
+      await Promise.all(targets.map(async (it) => {
+        try {
+          const r = await fetch(`${BACKEND}/api/orange-list/${it.asset_id}/asset-stats?window_days=90`);
+          if (!r.ok) return;
+          const d = await r.json();
+          updates[it.asset_id] = { eta_hrs: d.eta_hrs, source: d.eta_source };
+        } catch (e) { /* ignore */ }
+      }));
+      if (!cancelled && Object.keys(updates).length) {
+        setEtaCache(prev => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [allItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -174,7 +200,18 @@ export default function OrangeListPage() {
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-medium text-sm">{item.asset_info?.asset_number || 'Unknown Asset'}</p>
+              <button type="button"
+                      onClick={() => setHistoryAsset({ id: item.asset_id, number: item.asset_info?.asset_number })}
+                      className="font-medium text-sm hover:underline hover:text-teal-700"
+                      data-testid={`ol-asset-link-${item._id}`}>
+                {item.asset_info?.asset_number || 'Unknown Asset'}
+              </button>
+              <button type="button" title="View asset history & stats"
+                      onClick={() => setHistoryAsset({ id: item.asset_id, number: item.asset_info?.asset_number })}
+                      className="text-slate-400 hover:text-teal-700"
+                      data-testid={`ol-history-icon-${item._id}`}>
+                <BarChart3 className="h-3.5 w-3.5" />
+              </button>
               {item.list_type === 'red' && (
                 <Badge className="bg-red-600 text-white border-0 text-[10px]">RED LIST</Badge>
               )}
@@ -183,6 +220,13 @@ export default function OrangeListPage() {
               )}
               {item.status === 'pending_approval' && (
                 <Badge className="bg-yellow-500 text-white border-0 text-[10px]">YELLOW LIST</Badge>
+              )}
+              {etaCache[item.asset_id]?.eta_hrs != null && (
+                <Badge variant="outline" className="text-[10px] border-teal-300 text-teal-700"
+                       data-testid={`ol-eta-${item._id}`}
+                       title={`Tentative ETA — ${etaCache[item.asset_id].source === 'asset' ? 'this asset history' : 'asset-type @ station median'}`}>
+                  ETA ~{etaCache[item.asset_id].eta_hrs}h
+                </Badge>
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -457,6 +501,12 @@ export default function OrangeListPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <AssetHistoryDrawer
+        assetId={historyAsset?.id}
+        assetNumber={historyAsset?.number}
+        open={!!historyAsset}
+        onOpenChange={(o) => !o && setHistoryAsset(null)}
+      />
     </div>
   );
 }

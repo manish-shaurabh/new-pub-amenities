@@ -20,10 +20,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle, Clock, RefreshCw, CalendarIcon, XCircle, Wrench, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, RefreshCw, CalendarIcon, XCircle, Wrench, MessageSquare, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatDateTimeCompact, formatDateTime, formatDuration, toIstLiteral } from '../lib/utils';
 import RemarksThread from './RemarksThread';
+import AssetHistoryDrawer from './AssetHistoryDrawer';
 
 export default function OrangeListPanel({ userId, mode = 'sup' }) {
   const { user } = useAuth();
@@ -37,6 +38,8 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
   const [markedWorkingTime, setMarkedWorkingTime] = useState('');
   const [activeTab, setActiveTab] = useState(mode === 'asup' ? 'yellow' : 'orange');
   const [expanded, setExpanded] = useState({}); // { [itemId]: true } for remarks thread
+  const [historyAsset, setHistoryAsset] = useState(null);
+  const [etaCache, setEtaCache] = useState({}); // { [asset_id]: { eta_hrs, n } }
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -52,6 +55,29 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Background-load ETAs for all open items (capped to first 30 to limit calls)
+  useEffect(() => {
+    const BACKEND = process.env.REACT_APP_BACKEND_URL;
+    const targets = items.filter(i => i.status !== 'pending_approval' && !etaCache[i.asset_id]).slice(0, 30);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const updates = {};
+      await Promise.all(targets.map(async (it) => {
+        try {
+          const r = await fetch(`${BACKEND}/api/orange-list/${it.asset_id}/asset-stats?window_days=90`);
+          if (!r.ok) return;
+          const d = await r.json();
+          updates[it.asset_id] = { eta_hrs: d.eta_hrs, source: d.eta_source };
+        } catch (e) { /* ignore */ }
+      }));
+      if (!cancelled && Object.keys(updates).length) {
+        setEtaCache(prev => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetDialog = () => {
     setActionDialog(null);
@@ -150,7 +176,18 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <p className="text-sm font-medium truncate">{item.asset_info?.asset_number || '—'}</p>
+              <button type="button"
+                      onClick={() => setHistoryAsset({ id: item.asset_id, number: item.asset_info?.asset_number })}
+                      className="text-sm font-medium truncate hover:underline hover:text-teal-700"
+                      data-testid={`ol-asset-link-${item._id}`}>
+                {item.asset_info?.asset_number || '—'}
+              </button>
+              <button type="button" title="View history & stats"
+                      onClick={() => setHistoryAsset({ id: item.asset_id, number: item.asset_info?.asset_number })}
+                      className="text-slate-400 hover:text-teal-700"
+                      data-testid={`ol-history-icon-${item._id}`}>
+                <BarChart3 className="h-3.5 w-3.5" />
+              </button>
               {item.list_type === 'red' && isDefective && (
                 <Badge className="bg-red-600 text-white border-0 text-[9px] px-1 py-0">RED</Badge>
               )}
@@ -159,6 +196,13 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
               )}
               {isPending && (
                 <Badge className="bg-yellow-500 text-white border-0 text-[9px] px-1 py-0">YELLOW</Badge>
+              )}
+              {etaCache[item.asset_id]?.eta_hrs != null && (
+                <Badge variant="outline" className="text-[9px] px-1 py-0 border-teal-300 text-teal-700"
+                       data-testid={`ol-eta-${item._id}`}
+                       title={`Tentative repair ETA — ${etaCache[item.asset_id].source === 'asset' ? 'this asset history' : 'asset-type @ station median'}`}>
+                  ETA ~{etaCache[item.asset_id].eta_hrs}h
+                </Badge>
               )}
             </div>
             <p className="text-xs text-muted-foreground truncate">
@@ -442,6 +486,12 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
           </div>
         </DialogContent>
       </Dialog>
+      <AssetHistoryDrawer
+        assetId={historyAsset?.id}
+        assetNumber={historyAsset?.number}
+        open={!!historyAsset}
+        onOpenChange={(o) => !o && setHistoryAsset(null)}
+      />
     </div>
   );
 }

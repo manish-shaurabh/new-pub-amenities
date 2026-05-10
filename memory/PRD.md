@@ -28,6 +28,30 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Asset stats drilldown + Comparative reports tab
+**Backend** (`/app/backend/routers/comparative.py`)
+- `GET /api/orange-list/{asset_id}/asset-stats?window_days=` — per-asset stats: times defective · min/max/median/mean repair · functional% · ETA (asset history fallback to asset-type@station median) · trend (Δ% vs prior window)
+- `GET /api/reports/comparative/by-asset-type/{user_id}` — Lens 1: MTTR by asset type at user's station scope
+- `GET /api/reports/comparative/by-supervisor/{user_id}` — Lens 2: peer supervisor comparison; **anonymised for SUP role**, real names for RO/ASUP/Admin/SA; current user always has their own real name + highlight
+- `GET /api/reports/comparative/grouped/{user_id}` — Lens 3: 3-level drilldown engine (level=station → location → asset). Returns groups with bars per asset-type. Default top-5 asset types globally (configurable via `asset_type_ids`)
+
+**Frontend Part A** — Orange/Red list rows enriched
+- Asset numbers are clickable + 📊 history icon → opens `<AssetHistoryDrawer>`
+- Inline `ETA ~Xh` badge on every defective row (background-loaded, capped to 30 calls)
+- Drawer extended with: window picker (7/15/30/90/FY/all), 6 stat cards (times defective · functional% · n · median/min/max), ETA + trend strip, repair history list — both in `OrangeListPage.js` and the legacy `OrangeListPanel.js`
+
+**Frontend Part B** — New "Comparative" tab in `/reports`, visible to SUP/RO/ASUP/Admin/SA
+- Top toolbar: Window · Stat (Median/Mean) · Asset Type (for Card B) · Asset Types multi-select (for Card C, default top-5)
+- **Card A** — MTTR by asset type at user's stations (single bar list)
+- **Card B** — Comparative supervisors within dept × asset type, "you" highlighted; SUP sees peers as "Peer 1/2/…"
+- **Card C** — Pure-SVG **grouped vertical bar chart** with breadcrumb-driven drilldown:
+  - Level 1: clusters of asset-type bars per station
+  - Level 2 (click a station): clusters per location within that station
+  - Level 3 (click a location): one bar per individual asset, color-coded by asset type, click → opens `<AssetHistoryDrawer>` from Part A
+- Worst-first sort at every level · empty grey placeholder bars for missing data · interactive tooltips with min/max/n
+
+**Verified end-to-end**: backend curl tests all pass (Part A + 3 lenses); UI smoke confirms 24 ETA chips, 25 clickable asset links, stats strip in drawer; Card C renders 5-bar clusters at level 1, drills cleanly to locations at level 2; audit 10/10 PASS.
+
 ### Feb 2026 — Reports Builder v2 (all 6 layers — comprehensive)
 **Backend** (`/app/backend/routers/reports_builder.py`)
 - **Layer 1 — Dimensions** (19 total): + ro · asup · inspector · reporter · list_type · defect_age_band · repair_age_band · hour_of_day · day_of_week · per-asset
