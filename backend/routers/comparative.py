@@ -359,14 +359,17 @@ async def by_supervisor(user_id: str,
 async def grouped_drilldown(user_id: str,
                             level: str = Query("station"),
                             parent_id: Optional[str] = Query(None),
+                            parent_asset_type_id: Optional[str] = Query(None),
                             asset_type_ids: Optional[str] = Query(None),
+                            dept_id: Optional[str] = Query(None),
                             window_days: str = Query("90"),
                             stat: str = Query("median")):
-    """Lens 3 — grouped bars drillable Station → Location → Asset.
-
-    level=station        → groups = stations in scope, bars per asset-type
-    level=location       → groups = locations within parent_id (station), bars per asset-type
-    level=asset          → groups = single asset bars, color-coded by asset_type
+    """Lens 3 — grouped bars drillable through 4 levels:
+        station          → groups = stations in scope, clustered bars per asset-type
+        location_summary → groups = locations within parent_id (station), ONE summary bar per location
+        location_types   → groups = asset-types within parent_id (location), ONE bar per type
+        asset            → groups = individual assets within parent_id (location)
+                           and parent_asset_type_id (asset-type filter)
     """
     user = await _user_or_404(user_id)
     f_dt, t_dt = _window_from_days(window_days)
@@ -376,9 +379,16 @@ async def grouped_drilldown(user_id: str,
     # ── Determine selected asset types ──
     types = await asset_types_collection.find({}).to_list(2000)
     type_by_id = {str(t["_id"]): t for t in types}
+
+    # Filter to dept if requested
+    types_in_scope_ids = set(str(t["_id"]) for t in types
+                             if (not dept_id or t.get("department_id") == dept_id))
+
     explicit_types = [t for t in (asset_type_ids.split(",") if asset_type_ids else []) if t]
+    explicit_types = [t for t in explicit_types if t in types_in_scope_ids]
+
     if not explicit_types:
-        # Default = top-5 by event count globally in window
+        # Default = top-5 by event count globally (within dept if filtered) in window
         all_ols = await orange_list_collection.find(
             {"status": "resolved"}).to_list(50000)
         all_assets = await assets_collection.find({}).to_list(20000)
@@ -386,12 +396,17 @@ async def grouped_drilldown(user_id: str,
         type_counts: Dict[str, int] = {}
         for ol in all_ols:
             mw = _parse_dt(ol.get("marked_working_at"))
-            if not mw or not f_dt: continue
+            if not mw: continue
             if f_dt and mw < f_dt: continue
             if t_dt and mw > t_dt: continue
             tid = type_of_asset.get(ol.get("asset_id"))
-            if tid: type_counts[tid] = type_counts.get(tid, 0) + 1
+            if tid and tid in types_in_scope_ids:
+                type_counts[tid] = type_counts.get(tid, 0) + 1
         explicit_types = [t for t, _ in sorted(type_counts.items(), key=lambda kv: -kv[1])[:5]]
+        if not explicit_types:
+            # Fallback: just pick first 5 of dept-scoped types
+            explicit_types = list(types_in_scope_ids)[:5]
+
     type_palette = {tid: PALETTE[i % len(PALETTE)] for i, tid in enumerate(explicit_types)}
     type_meta = [{"id": tid, "name": (type_by_id.get(tid) or {}).get("name", "—"),
                   "color": type_palette[tid]} for tid in explicit_types]
@@ -399,24 +414,45 @@ async def grouped_drilldown(user_id: str,
     # ── Asset scope ──
     asset_q: Dict[str, Any] = {"asset_type_id": {"$in": explicit_types}}
     breadcrumbs = [{"level": "root", "label": "All Stations"}]
-    if level == "location":
+
+    if level == "location_summary":
         if not parent_id:
-            raise HTTPException(status_code=400, detail="parent_id required for level=location")
+            raise HTTPException(status_code=400, detail="parent_id required for level=location_summary")
         asset_q["station_id"] = parent_id
         sdoc = await stations_collection.find_one({"_id": ObjectId(parent_id)})
         breadcrumbs.append({"level": "station", "id": parent_id,
                             "label": (sdoc or {}).get("name", "—")})
-    elif level == "asset":
+    elif level == "location_types":
         if not parent_id:
-            raise HTTPException(status_code=400, detail="parent_id required for level=asset")
+            raise HTTPException(status_code=400, detail="parent_id required for level=location_types")
         asset_q["location_id"] = parent_id
         ldoc = await locations_collection.find_one({"_id": ObjectId(parent_id)})
         if ldoc:
             sdoc = await stations_collection.find_one({"_id": ObjectId(ldoc.get("station_id"))})
             breadcrumbs.append({"level": "station", "id": ldoc.get("station_id"),
                                 "label": (sdoc or {}).get("name", "—")})
-            breadcrumbs.append({"level": "location", "id": parent_id,
+            breadcrumbs.append({"level": "location_summary", "id": ldoc.get("station_id"),
+                                "label": "Locations"})
+            breadcrumbs.append({"level": "location_types", "id": parent_id,
                                 "label": ldoc.get("name", "—")})
+    elif level == "asset":
+        if not parent_id:
+            raise HTTPException(status_code=400, detail="parent_id required for level=asset")
+        asset_q["location_id"] = parent_id
+        if parent_asset_type_id:
+            asset_q["asset_type_id"] = parent_asset_type_id
+        ldoc = await locations_collection.find_one({"_id": ObjectId(parent_id)})
+        if ldoc:
+            sdoc = await stations_collection.find_one({"_id": ObjectId(ldoc.get("station_id"))})
+            type_doc = type_by_id.get(parent_asset_type_id) if parent_asset_type_id else None
+            breadcrumbs.append({"level": "station", "id": ldoc.get("station_id"),
+                                "label": (sdoc or {}).get("name", "—")})
+            breadcrumbs.append({"level": "location_summary", "id": ldoc.get("station_id"),
+                                "label": "Locations"})
+            breadcrumbs.append({"level": "location_types", "id": parent_id,
+                                "label": ldoc.get("name", "—")})
+            breadcrumbs.append({"level": "asset", "id": parent_asset_type_id or "—",
+                                "label": (type_doc or {}).get("name", "All types")})
     else:  # station
         if user_stns:
             asset_q["station_id"] = {"$in": list(user_stns)}
@@ -426,8 +462,10 @@ async def grouped_drilldown(user_id: str,
     asset_by_id = {str(a["_id"]): a for a in assets}
     if not assets:
         return {"level": level, "parent_id": parent_id,
+                "parent_asset_type_id": parent_asset_type_id,
                 "window_days": window_days, "stat": stat,
-                "asset_types": type_meta, "groups": [], "breadcrumbs": breadcrumbs}
+                "asset_types": type_meta, "groups": [], "breadcrumbs": breadcrumbs,
+                "p90": None}
 
     ols = await orange_list_collection.find(
         {"asset_id": {"$in": asset_ids}, "status": "resolved"}).to_list(50000)
@@ -452,50 +490,210 @@ async def grouped_drilldown(user_id: str,
             })
         groups.sort(key=lambda g: -g["_sort_value"])
         for g in groups: g.pop("_sort_value", None)
+        all_vals = [b.get(stat) for g in groups for b in g["bars"] if b.get(stat) is not None]
+        p90 = round(_percentile(all_vals, 0.9), 1) if all_vals else None
         return {"level": "asset", "parent_id": parent_id,
+                "parent_asset_type_id": parent_asset_type_id,
                 "window_days": window_days, "stat": stat,
                 "asset_types": type_meta, "groups": groups,
-                "breadcrumbs": breadcrumbs}
+                "breadcrumbs": breadcrumbs, "p90": p90}
 
-    # station / location levels: bucket assets by group_key
-    group_key_field = "station_id" if level == "station" else "location_id"
+    if level == "location_summary":
+        # Groups = locations within station; ONE summary bar per location
+        groups_idx: Dict[str, List[str]] = {}
+        for a in assets:
+            gk = a.get("location_id")
+            if gk: groups_idx.setdefault(gk, []).append(str(a["_id"]))
+        out = []
+        for gk, ids in groups_idx.items():
+            hours = _resolved_repair_hours(ols, set(ids), win)
+            s = _hrs_stats(hours)
+            ld = await locations_collection.find_one({"_id": ObjectId(gk)})
+            out.append({
+                "id": gk, "label": (ld or {}).get("name", "—"),
+                "drillable": True,
+                "bars": [{"asset_type_id": None,
+                          "asset_type": "All types",
+                          "color": "#0e7c6b",
+                          "asset_count": len(ids), **s}],
+                "_sort_value": s.get(stat) or 0,
+            })
+        out.sort(key=lambda g: -g["_sort_value"])
+        for g in out: g.pop("_sort_value", None)
+        all_vals = [b.get(stat) for g in out for b in g["bars"] if b.get(stat) is not None]
+        p90 = round(_percentile(all_vals, 0.9), 1) if all_vals else None
+        return {"level": "location_summary", "parent_id": parent_id,
+                "parent_asset_type_id": parent_asset_type_id,
+                "window_days": window_days, "stat": stat,
+                "asset_types": type_meta, "groups": out,
+                "breadcrumbs": breadcrumbs, "p90": p90}
+
+    if level == "location_types":
+        # Groups = asset-types at this location; ONE bar per asset-type
+        ids_by_type: Dict[str, set] = {}
+        for aid in asset_ids:
+            tid = asset_by_id[aid].get("asset_type_id")
+            if tid in type_palette:
+                ids_by_type.setdefault(tid, set()).add(aid)
+        out = []
+        for tid in explicit_types:
+            type_asset_ids = ids_by_type.get(tid, set())
+            if not type_asset_ids:
+                continue
+            hours = _resolved_repair_hours(ols, type_asset_ids, win)
+            s = _hrs_stats(hours)
+            out.append({
+                "id": tid, "label": (type_by_id.get(tid) or {}).get("name", "—"),
+                "drillable": True,
+                "bars": [{"asset_type_id": tid,
+                          "asset_type": (type_by_id.get(tid) or {}).get("name", "—"),
+                          "color": type_palette[tid],
+                          "asset_count": len(type_asset_ids), **s}],
+                "_sort_value": s.get(stat) or 0,
+            })
+        out.sort(key=lambda g: -g["_sort_value"])
+        for g in out: g.pop("_sort_value", None)
+        all_vals = [b.get(stat) for g in out for b in g["bars"] if b.get(stat) is not None]
+        p90 = round(_percentile(all_vals, 0.9), 1) if all_vals else None
+        return {"level": "location_types", "parent_id": parent_id,
+                "parent_asset_type_id": parent_asset_type_id,
+                "window_days": window_days, "stat": stat,
+                "asset_types": type_meta, "groups": out,
+                "breadcrumbs": breadcrumbs, "p90": p90}
+
+    # level == "station": clustered bars per asset-type per station
     groups_idx: Dict[str, List[str]] = {}
     for a in assets:
-        gk = a.get(group_key_field)
+        gk = a.get("station_id")
         if gk: groups_idx.setdefault(gk, []).append(str(a["_id"]))
 
     out = []
     for gk, ids in groups_idx.items():
         bars = []
-        # Group assets in this group by asset_type, restricted to selected types
         ids_by_type: Dict[str, set] = {}
         for aid in ids:
             tid = asset_by_id[aid].get("asset_type_id")
             if tid in type_palette:
                 ids_by_type.setdefault(tid, set()).add(aid)
-        for tid in explicit_types:  # iterate in selected order so cluster ordering is stable
+        for tid in explicit_types:
             type_asset_ids = ids_by_type.get(tid, set())
             hours = _resolved_repair_hours(ols, type_asset_ids, win)
             s = _hrs_stats(hours)
             bars.append({"asset_type_id": tid,
                          "asset_type": (type_by_id.get(tid) or {}).get("name", "—"),
                          "color": type_palette[tid],
-                         **s})
-        # Cluster's sort value = max bar value (worst-first)
+                         "asset_count": len(type_asset_ids), **s})
+        # Hide empty stations (no resolved repairs at all in window)
+        if all((b.get("n") or 0) == 0 for b in bars):
+            continue
         sort_value = max([(b.get(stat) or 0) for b in bars] or [0])
-        # Group label
-        if level == "station":
-            sd = await stations_collection.find_one({"_id": ObjectId(gk)})
-            label = (sd or {}).get("name", "—")
-        else:
-            ld = await locations_collection.find_one({"_id": ObjectId(gk)})
-            label = (ld or {}).get("name", "—")
-        out.append({"id": gk, "label": label, "drillable": True,
+        sd = await stations_collection.find_one({"_id": ObjectId(gk)})
+        out.append({"id": gk, "label": (sd or {}).get("name", "—"),
+                    "drillable": True,
                     "bars": bars, "_sort_value": sort_value})
 
     out.sort(key=lambda g: -g["_sort_value"])
     for g in out: g.pop("_sort_value", None)
+    all_vals = [b.get(stat) for g in out for b in g["bars"] if b.get(stat) is not None]
+    p90 = round(_percentile(all_vals, 0.9), 1) if all_vals else None
     return {"level": level, "parent_id": parent_id,
+            "parent_asset_type_id": parent_asset_type_id,
             "window_days": window_days, "stat": stat,
             "asset_types": type_meta, "groups": out,
-            "breadcrumbs": breadcrumbs}
+            "breadcrumbs": breadcrumbs, "p90": p90}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Lens 4 — Radar data: peer supervisors × asset-types matrix
+# ════════════════════════════════════════════════════════════════════════════
+@router.get("/api/reports/comparative/by-supervisor-radar/{user_id}")
+async def by_supervisor_radar(user_id: str,
+                              dept_id: Optional[str] = Query(None),
+                              asset_type_ids: Optional[str] = Query(None),
+                              window_days: str = Query("90"),
+                              stat: str = Query("median")):
+    """Returns per-supervisor metrics across multiple asset-types for a radar chart.
+    Axes = asset-types; one polygon per supervisor (you vs peers).
+    Anonymises peer names for SUP role.
+    """
+    user = await _user_or_404(user_id)
+    f_dt, t_dt = _window_from_days(window_days)
+    win = (f_dt, t_dt)
+
+    dept_id = dept_id or user.get("department_id")
+    types = await asset_types_collection.find({}).to_list(2000)
+    type_by_id = {str(t["_id"]): t for t in types}
+
+    explicit_types = [t for t in (asset_type_ids.split(",") if asset_type_ids else []) if t]
+    if dept_id:
+        explicit_types = [t for t in explicit_types
+                          if (type_by_id.get(t) or {}).get("department_id") == dept_id]
+
+    if not explicit_types:
+        # Default: top types in dept by event count
+        scope_type_ids = {str(t["_id"]) for t in types
+                          if not dept_id or t.get("department_id") == dept_id}
+        all_ols = await orange_list_collection.find(
+            {"status": "resolved"}).to_list(50000)
+        all_assets = await assets_collection.find({}).to_list(20000)
+        type_of_asset = {str(a["_id"]): a.get("asset_type_id") for a in all_assets}
+        type_counts: Dict[str, int] = {}
+        for ol in all_ols:
+            mw = _parse_dt(ol.get("marked_working_at"))
+            if not mw: continue
+            if f_dt and mw < f_dt: continue
+            if t_dt and mw > t_dt: continue
+            tid = type_of_asset.get(ol.get("asset_id"))
+            if tid and tid in scope_type_ids:
+                type_counts[tid] = type_counts.get(tid, 0) + 1
+        explicit_types = [t for t, _ in sorted(type_counts.items(), key=lambda kv: -kv[1])[:6]]
+        if not explicit_types:
+            explicit_types = list(scope_type_ids)[:6]
+
+    axes = [{"id": tid, "name": (type_by_id.get(tid) or {}).get("name", "—")}
+            for tid in explicit_types]
+
+    sups = await users_collection.find(
+        {"role": "supervisor", "department_id": dept_id, "is_active": True}).to_list(2000)
+    if not sups:
+        return {"window_days": window_days, "stat": stat, "axes": axes,
+                "series": [], "anonymised": user.get("role") == "supervisor",
+                "dept_id": dept_id}
+
+    all_stns = set()
+    for s in sups:
+        all_stns |= set(s.get("assigned_stations") or [])
+
+    asset_q = {"asset_type_id": {"$in": explicit_types}}
+    if all_stns: asset_q["station_id"] = {"$in": list(all_stns)}
+    assets = await assets_collection.find(asset_q).to_list(20000)
+    asset_ids = [str(a["_id"]) for a in assets]
+    asset_type_of = {str(a["_id"]): a.get("asset_type_id") for a in assets}
+
+    ols = await orange_list_collection.find(
+        {"asset_id": {"$in": asset_ids}, "status": "resolved"}).to_list(50000)
+
+    is_anonymous = user.get("role") == "supervisor"
+    series = []
+    for i, sup in enumerate(sups):
+        sid = str(sup["_id"])
+        is_self = (sid == user_id)
+        # Per-axis: median repair hours by this sup for that asset-type
+        axis_values = []
+        for tid in explicit_types:
+            sup_repairs = [ol for ol in ols
+                           if ol.get("marked_working_by") == sid
+                           and asset_type_of.get(ol.get("asset_id")) == tid]
+            hours = _resolved_repair_hours(sup_repairs,
+                                           {str(ol["asset_id"]) for ol in sup_repairs}, win)
+            s = _hrs_stats(hours)
+            axis_values.append({"asset_type_id": tid, "value": s.get(stat),
+                                "n": s.get("n", 0)})
+        series.append({
+            "supervisor_id": sid if (not is_anonymous or is_self) else None,
+            "label": sup.get("name") if (not is_anonymous or is_self) else f"Peer {i + 1}",
+            "is_self": is_self,
+            "values": axis_values,
+        })
+    return {"window_days": window_days, "stat": stat, "axes": axes,
+            "series": series, "anonymised": is_anonymous, "dept_id": dept_id}
