@@ -28,6 +28,22 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Comparative Reports v2 (4-level drilldown + 3D cylinder bars + radar)
+**Backend** (`/app/backend/routers/comparative.py`)
+- `GET /api/reports/comparative/grouped/{user_id}` extended to **4 levels**: `station` → `location_summary` → `location_types` → `asset`. New `parent_asset_type_id` query param for the asset level. Empty stations now hidden. Returns `p90` in payload (used for broken-axis detection in UI).
+- New `dept_id` filter cascades through grouped + by-asset-type endpoints; restricts asset-types to that dept.
+- New `GET /api/reports/comparative/by-supervisor-radar/{user_id}` — returns axes (asset-types) × series (supervisors with per-axis median repair hours). Anonymises peer names for SUP role; current user always sees their own real name with `is_self=true`.
+
+**Frontend**
+- New `/app/frontend/src/components/CylinderBar.js` — horizontal 3D aqua-glass cylinder bars: per-item gradient (light top → mid → dark bottom), inner glass shine strip, full ellipse end-cap, broken-axis zigzag (∿) when value > 2× p90 with bold red ★ at numeric tip. "No data" rows show grey dashed shell. Tooltip shows n/min/max.
+- New `/app/frontend/src/components/RadarChart.js` — labeled spider chart, axes = asset-types; teal self polygon overlays light-blue peer polygons; per-axis "you: X hrs" labels at axis tips.
+- `/app/frontend/src/pages/ComparativeReportsPage.js` rewritten:
+  - Card A — horizontal CylinderBar with **semantic** coloring (green=fast repair, red=slow), no longer index-based.
+  - Card B — RadarChart with admin/SA empty-state copy when no department selected.
+  - Card C — 4-level drilldown using horizontal CylinderBar with click-to-drill and breadcrumb navigation; clicking an asset opens AssetHistoryDrawer.
+  - Department dropdown cascades into asset-type picker and all 3 cards.
+- Tested via `testing_agent_v3_fork` iteration_19: backend 10/10, frontend 100% (cylinder-bar-chart, radar-chart, card-c-root, comp-dept, comp-stat all verified; 4-level drill Station → DHANBAD → Platform No-1 → Ceiling Fan → FAN-9 confirmed; broken-axis zigzag + ★ visible on outlier; semantic coloring confirmed). Audit 10/10 PASS.
+
 ### Feb 2026 — Asset stats drilldown + Comparative reports tab
 **Backend** (`/app/backend/routers/comparative.py`)
 - `GET /api/orange-list/{asset_id}/asset-stats?window_days=` — per-asset stats: times defective · min/max/median/mean repair · functional% · ETA (asset history fallback to asset-type@station median) · trend (Δ% vs prior window)

@@ -117,6 +117,15 @@ function CardB({ user, windowDays, stat, assetTypeIds, deptId }) {
   if (loading) return <Loader2 className="h-6 w-6 animate-spin text-teal-700 mx-auto" />;
   if (!data?.axes?.length) return <p className="text-sm text-slate-500 text-center py-6">No data for radar.</p>;
   if (data.axes.length < 3) return <p className="text-sm text-slate-500 text-center py-6">Need ≥3 asset types for radar (currently {data.axes.length}).</p>;
+  if (!data.series?.length) {
+    return (
+      <p className="text-sm text-slate-500 text-center py-6">
+        {user?.role === 'admin' || user?.role === 'superadmin'
+          ? 'Peer comparison requires a department. Pick a Department in the toolbar to see supervisor peers.'
+          : 'No peer supervisors found in your department.'}
+      </p>
+    );
+  }
   return (
     <div>
       {data.anonymised && (
