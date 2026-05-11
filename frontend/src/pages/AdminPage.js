@@ -13,8 +13,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase, Tag } from 'lucide-react';
+import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase, Tag, ShieldAlert } from 'lucide-react';
 import RemarkTagsManager from '../components/RemarkTagsManager';
+import DataHealthPanel from '../components/DataHealthPanel';
 
 // Import the user management components from the old UsersPage
 const roleLabels = {
@@ -506,7 +507,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-9">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-10">
           <TabsTrigger value="departments" data-testid="tab-departments"><Briefcase className="h-4 w-4 mr-2" /> Depts</TabsTrigger>
           <TabsTrigger value="stations"><Building2 className="h-4 w-4 mr-2" /> Stations</TabsTrigger>
           <TabsTrigger value="locations"><MapPin className="h-4 w-4 mr-2" /> Locations</TabsTrigger>
@@ -516,6 +517,7 @@ export default function AdminPage() {
           <TabsTrigger value="personnel-map"><TableIcon className="h-4 w-4 mr-2" /> Personnel Map</TabsTrigger>
           <TabsTrigger value="transfer"><ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer</TabsTrigger>
           <TabsTrigger value="tags" data-testid="tab-tags"><Tag className="h-4 w-4 mr-2" /> Tags</TabsTrigger>
+          <TabsTrigger value="data-health" data-testid="tab-data-health"><ShieldAlert className="h-4 w-4 mr-2" /> Health</TabsTrigger>
         </TabsList>
 
         {/* DEPARTMENTS TAB */}
@@ -1071,6 +1073,11 @@ export default function AdminPage() {
         {/* TAGS TAB */}
         <TabsContent value="tags" className="space-y-3">
           <RemarkTagsManager />
+        </TabsContent>
+
+        {/* DATA HEALTH TAB */}
+        <TabsContent value="data-health" className="space-y-3">
+          <DataHealthPanel currentUser={user} />
         </TabsContent>
       </Tabs>
 

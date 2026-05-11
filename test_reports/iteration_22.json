@@ -1,0 +1,53 @@
+{
+  "summary": "Backend 9/10 passing + Frontend e2e PASS for Admin → Data Health panel. Scan returns all 10 expected categories with permission gates working (SA 200, supervisor 403, admin view 200, admin clean 403). Cascade preview for test_stations and test_users returns correct fields. Idempotent orphan_inspection_items cleanup verified (second call 0/0). Single test_station cascade delete reduces count by 1 with full cascade summary. Audit log returns rows with performed_by_name and stringified _id. Frontend: all 10 cards render, badge shows '56 issues found', rescan works, confirm dialog opens, execute is gated correctly by the 'I understand' checkbox, cancel works, audit table populated with 5 rows. **One backend bug found: bulk preview for orphan_/stale_records categories returns 500** (TypeError: unsupported operand type(s) for *: 'Query' and 'int') — root cause: preview() calls scan(user_id) as a plain function so stale_months defaults to the FastAPI Query() object instead of the int.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/data-health/preview/{user_id}?category=orphan_inspection_items (or any bulk-only category)",
+        "issue": "Returns 500. Backend log: TypeError: unsupported operand type(s) for *: 'Query' and 'int'. Cause: scan() is called as a python function from preview() for bulk categories; stale_months default is `Query(STALE_MONTHS_DEFAULT)` (the FastAPI Query marker), not the int. The `cutoff = now_ist() - timedelta(days=stale_months * 30)` line fails. Fix: refactor scan into an inner helper `_scan(user_id, stale_months: int = STALE_MONTHS_DEFAULT)` and have both the endpoint and preview() call the helper with an int, OR pass `stale_months=STALE_MONTHS_DEFAULT` explicitly in preview's `await scan(user_id)` call.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Bulk preview (orphan_*, stale_records)",
+        "issue": "Frontend Preview button is wired correctly and would call /api/data-health/preview with category-only param, but backend 500s on that call. Not currently visible in UI because all bulk categories have count=0 in the seed (cards render in dimmed 'All clean' state which hides the Preview button by design). Will surface as soon as an orphan/stale category gains records.",
+        "affected_selectors": ["dh-preview-orphan_inspection_items", "dh-preview-orphan_ol_entries", "dh-preview-orphan_remarks", "dh-preview-stale_records"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_data_health.py",
+    "/app/test_reports/pytest/data_health_results.xml"
+  ],
+  "action_items": [
+    "Fix bulk-category preview 500 in /app/backend/routers/data_health.py: extract scan() body into a helper or pass an int stale_months when calling scan() from preview()."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routers/data_health.py line ~292: `scan_result = await scan(user_id)` directly invokes the FastAPI route function. Without FastAPI dependency-resolution, Query() defaults stay as Query objects → arithmetic fails. Refactor to a pure helper function for reuse.",
+    "_clean_orphan_ol_entries uses a `$expr` with `$toString` and a fallback path. The primary `$expr` query returns no docs (Mongo cannot $in against a list of strings using $toString on ObjectId nicely if asset_id is stored as string). The fallback works, but the dual path is fragile — drop the $expr branch and keep the python loop only, or pre-convert asset_ids consistently.",
+    "_cascade_delete_users uses `$set` + `$unset` on the same field in one operation — most MongoDB versions tolerate it (unset wins) but it's brittle. Prefer two updates or just $set to null.",
+    "_clean_duplicates uses target_ids and tries deletion in BOTH users_collection and assets_collection — if a user id collides with an asset id (unlikely but ObjectId is not partitioned), both could match. Pass an explicit `kind` field from the UI instead.",
+    "scan() reads up to 5,000-50,000 docs into memory per category — fine at current seed scale, but a server-side aggregation would scale better as the DB grows.",
+    "Audit log endpoint allows admin (view-only) but discloses target_ids and performed_by — acceptable for an admin scope but worth noting.",
+    "Frontend DataHealthPanel.js: when a bulk category has count=0 the Preview button is hidden — intentional, but means the bug above only surfaces on real data."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_data_health.py (NEW — 11 tests, 9 pass / 1 fail / 1 skip)"
+  ],
+  "success_rate": {
+    "backend": "82% (9/11; 1 hard fail on bulk preview 500, 1 skip because unnamed_asset_types count=0)",
+    "frontend": "100% (panel renders, all 10 cards, rescan, confirm gating, audit table — all verified)"
+  },
+  "test_credentials": "SA001/admin123 (superadmin). Admin/supervisor users autodiscovered via /api/users.",
+  "seed_data_creation": "None — used existing seed. The test_clean_single_test_station_cascade test deletes one TEST_STATION; that's expected/desired by the panel and was already part of the test residue.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes bulk preview, re-run /app/backend/tests/test_data_health.py to confirm test_preview_bulk_orphan_items returns 200 with bulk:true and total fields. Backend log location: /var/log/supervisor/backend.*.log. Login key is 'token'; user object uses '_id'. Frontend Admin tab is reachable at /admin → 'Health' tab (data-testid=tab-data-health). State after this run: orphan_inspection_items still 0, test_stations reduced by 1 (one TEST_STATION cascade-deleted), audit collection has new entries. The frontend dh-preview-{cat} button only renders when count>0 AND category is non-perRecord (orphan_*, stale_records).",
+  "rca of the issue": "Bug: preview() endpoint for bulk categories (orphan_inspection_items, orphan_ol_entries, orphan_remarks, stale_records) crashes with 500. Reproduction: curl GET /api/data-health/preview/<sa_id>?category=orphan_inspection_items → 500. Root cause: line 291 `scan_result = await scan(user_id)` calls the FastAPI route handler directly as a python coroutine. FastAPI's Query(default) is only resolved when called via the HTTP pipeline; calling it directly leaves stale_months bound to the Query() sentinel object. Line 160 then does `stale_months * 30` and Python rejects multiplying a Query with an int. Mitigation: split scan into an internal helper `async def _do_scan(user_id, stale_months=6)` that both the route and preview() call, OR explicitly pass `stale_months=STALE_MONTHS_DEFAULT` when calling from preview(). This bug DOES NOT affect the bulk Clean flow (which doesn't recursively call scan), only the bulk Preview flow."
+}
