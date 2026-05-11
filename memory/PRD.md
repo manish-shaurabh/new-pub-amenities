@@ -28,6 +28,13 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Cascade-DELETE wired into Admin endpoints
+- `DELETE /api/assets/{id}` now cascades via `_cascade_delete_assets`: removes OL entries → remarks → strips from inspection items[] → deletes schedules → deletes the asset. Returns `cascade_summary` in response.
+- `DELETE /api/stations/{id}` now cascades via `_cascade_delete_stations`: locations → assets (with their full cascade) → station-level inspections → schedules → strips station_id from `users.assigned_stations`.
+- `DELETE /api/users/{id}` now cascades via `_cascade_delete_users`: nulls out user refs in OL/approvals/inspections (preserves audit), then deletes the user.
+- Added `_cascade_delete_assets` helper in `data_health.py` (previously only had stations/users/asset_types).
+- End-to-end verified: a single test station deletion cleaned 14 dependent records.
+
 ### Feb 2026 — Admin Data Health Panel (cascade-delete orphans, test residue, duplicates)
 **Backend** (`/app/backend/routers/data_health.py` — new)
 - `GET /api/data-health/scan/{user_id}` — scans 10 categories: `orphan_inspection_items`, `orphan_ol_entries`, `orphan_remarks`, `test_users`, `test_stations`, `unnamed_asset_types`, `zero_activity_stations`, `zero_activity_users`, `stale_records`, `duplicates`.

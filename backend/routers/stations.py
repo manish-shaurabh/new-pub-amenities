@@ -86,7 +86,10 @@ async def update_station(station_id: str, station: StationCreate):
 
 @router.delete("/api/stations/{station_id}")
 async def delete_station(station_id: str):
-    result = await stations_collection.delete_one({"_id": ObjectId(station_id)})
-    if result.deleted_count == 0:
+    """Cascade-delete: removes locations, assets (with their OLs/remarks/items/schedules),
+    station-level inspections, and schedules. Strips station_id from users.assigned_stations."""
+    if not await stations_collection.find_one({"_id": ObjectId(station_id)}):
         raise HTTPException(status_code=404, detail="Station not found")
-    return {"message": "Station deleted"}
+    from routers.data_health import _cascade_delete_stations
+    summary = await _cascade_delete_stations([station_id])
+    return {"message": "Station deleted", "cascade_summary": summary}

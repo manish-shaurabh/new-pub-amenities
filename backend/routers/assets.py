@@ -371,7 +371,11 @@ async def update_asset(asset_id: str, asset: AssetCreate):
 
 @router.delete("/api/assets/{asset_id}")
 async def delete_asset(asset_id: str):
-    result = await assets_collection.delete_one({"_id": ObjectId(asset_id)})
-    if result.deleted_count == 0:
+    """Cascade-delete: removes OL entries → remarks; strips from inspection
+    items; deletes schedules referencing this asset; finally deletes the asset.
+    """
+    if not await assets_collection.find_one({"_id": ObjectId(asset_id)}):
         raise HTTPException(status_code=404, detail="Asset not found")
-    return {"message": "Asset deleted"}
+    from routers.data_health import _cascade_delete_assets
+    summary = await _cascade_delete_assets([asset_id])
+    return {"message": "Asset deleted", "cascade_summary": summary}

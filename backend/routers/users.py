@@ -211,10 +211,13 @@ async def update_user(user_id: str, user: UserCreate):
 
 @router.delete("/api/users/{user_id}")
 async def delete_user(user_id: str):
-    result = await users_collection.delete_one({"_id": ObjectId(user_id)})
-    if result.deleted_count == 0:
+    """Cascade-delete: nulls user refs in OL/inspections/remarks (preserves audit
+    trail) then deletes the user record."""
+    if not await users_collection.find_one({"_id": ObjectId(user_id)}):
         raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User deleted"}
+    from routers.data_health import _cascade_delete_users
+    summary = await _cascade_delete_users([user_id])
+    return {"message": "User deleted", "cascade_summary": summary}
 
 
 @router.post("/api/users/link-supervisors")

@@ -551,6 +551,43 @@ async def _cascade_delete_stations(station_ids: List[str]) -> Dict[str, int]:
     }
 
 
+async def _cascade_delete_assets(asset_ids: List[str]) -> Dict[str, int]:
+    """Cascade-delete assets: OLs → remarks; strip from inspection items;
+    delete schedules referencing them; finally delete the asset rows."""
+    if not asset_ids:
+        return {"assets_deleted": 0}
+    # OL entries for these assets
+    ol_under = await orange_list_collection.find(
+        {"asset_id": {"$in": asset_ids}}, {"_id": 1}).to_list(50000)
+    ol_ids = [str(o["_id"]) for o in ol_under]
+    n_remarks = (await remarks_collection.delete_many(
+        {"orange_list_id": {"$in": ol_ids}})).deleted_count if ol_ids else 0
+    n_ols = (await orange_list_collection.delete_many(
+        {"_id": {"$in": [o["_id"] for o in ol_under]}})).deleted_count if ol_under else 0
+    # Strip from inspection items[]
+    items_stripped = 0
+    async for ins in inspections_collection.find({"items.asset_id": {"$in": asset_ids}}):
+        old = ins.get("items") or []
+        kept = [it for it in old if str(it.get("asset_id") or "") not in asset_ids]
+        if len(kept) != len(old):
+            items_stripped += len(old) - len(kept)
+            await inspections_collection.update_one(
+                {"_id": ins["_id"]}, {"$set": {"items": kept}})
+    # Schedules referencing these assets
+    n_sched = (await schedules_collection.delete_many(
+        {"asset_id": {"$in": asset_ids}})).deleted_count
+    # Finally delete the assets
+    n_assets = (await assets_collection.delete_many(
+        {"_id": {"$in": [ObjectId(a) for a in asset_ids]}})).deleted_count
+    return {
+        "assets_deleted": n_assets,
+        "orange_list_deleted": n_ols,
+        "remarks_deleted": n_remarks,
+        "inspection_items_stripped": items_stripped,
+        "schedules_deleted": n_sched,
+    }
+
+
 async def _cascade_delete_users(user_ids: List[str]) -> Dict[str, int]:
     if not user_ids:
         return {"users_deleted": 0}
