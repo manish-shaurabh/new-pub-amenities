@@ -408,7 +408,20 @@ async def _build_pdf(user_id: str, req: ExportRequest) -> bytes:
                                 textColor=colors.HexColor("#475569"), leading=11),
         "muted": ParagraphStyle("muted", parent=base["BodyText"], fontSize=8,
                                 textColor=colors.HexColor("#94a3b8"), leading=10),
+        "cell": ParagraphStyle("cell", parent=base["BodyText"], fontSize=7.5,
+                               textColor=colors.HexColor("#0f172a"),
+                               leading=9.5, wordWrap="CJK"),
+        "cell_b": ParagraphStyle("cell_b", parent=base["BodyText"], fontSize=7.5,
+                                 textColor=colors.HexColor("#0f172a"),
+                                 leading=9.5, wordWrap="CJK", fontName="Helvetica-Bold"),
     }
+
+    def P(text, style="cell"):
+        """Wrap a string in a Paragraph so the cell auto-wraps to column width.
+        Escapes HTML-significant chars so '<' '>' '&' in asset names don't break."""
+        s = "" if text is None else str(text)
+        s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return Paragraph(s, styles[style])
 
     story: List[Any] = []
     # Cover
@@ -430,7 +443,7 @@ async def _build_pdf(user_id: str, req: ExportRequest) -> bytes:
             "Median/Mean repair hours per asset-type within your scope. "
             "Color: green = fast repair, red = slow.", styles["small"]))
         peer_max = max([r.get(req.stat) or 0 for r in rows] or [1])
-        head = ["Rank", "Asset Type", "Median (hrs)", "Mean", "n", "Min", "Max", "Bar"]
+        head = [P(h, "cell_b") for h in ["Rank", "Asset Type", "Median (hrs)", "Mean", "n", "Min", "Max", "Bar"]]
         data = [head]
         for i, r in enumerate(rows):
             v = r.get(req.stat)
@@ -439,9 +452,14 @@ async def _build_pdf(user_id: str, req: ExportRequest) -> bytes:
                 else "#f97316" if (v is not None and v / peer_max < 0.85) \
                 else "#dc2626"
             d = _draw_horizontal_bar(v, peer_max, 35, 4, color_hex)
-            data.append([str(i + 1), r["label"], r.get("median"), r.get("mean"),
-                         r.get("n"), r.get("min"), r.get("max"), d])
-        tbl = Table(data, colWidths=[12*mm, 50*mm, 22*mm, 18*mm, 12*mm, 14*mm, 14*mm, 38*mm])
+            data.append([P(str(i + 1)), P(r["label"]),
+                         P(str(r.get("median") if r.get("median") is not None else "—")),
+                         P(str(r.get("mean") if r.get("mean") is not None else "—")),
+                         P(str(r.get("n") or 0)),
+                         P(str(r.get("min") if r.get("min") is not None else "—")),
+                         P(str(r.get("max") if r.get("max") is not None else "—")), d])
+        tbl = Table(data, repeatRows=1, splitByRow=1,
+                    colWidths=[12*mm, 50*mm, 22*mm, 18*mm, 12*mm, 14*mm, 14*mm, 38*mm])
         tbl.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0e7c6b")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -472,14 +490,14 @@ async def _build_pdf(user_id: str, req: ExportRequest) -> bytes:
             drawing = _draw_radar(radar["axes"], radar["series"], size_mm=90)
             story.append(drawing)
             # Peer matrix table
-            head = ["Supervisor"] + [a["name"] for a in radar["axes"]]
+            head = [P("Supervisor", "cell_b")] + [P(a["name"], "cell_b") for a in radar["axes"]]
             data = [head]
             for s in radar["series"]:
-                row = [s["label"] + (" ★" if s.get("is_self") else "")]
-                row += [(v.get("value") if v.get("value") is not None else "—")
+                row = [P(s["label"] + (" ★" if s.get("is_self") else ""))]
+                row += [P(str(v.get("value")) if v.get("value") is not None else "—")
                         for v in s.get("values", [])]
                 data.append(row)
-            tbl = Table(data, repeatRows=1)
+            tbl = Table(data, repeatRows=1, splitByRow=1)
             ts = [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0e7c6b")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -521,16 +539,16 @@ async def _build_pdf(user_id: str, req: ExportRequest) -> bytes:
         if not defective_rows:
             story.append(Paragraph("No open defects in scope.", styles["small"]))
         else:
-            head = ["#", "Asset", "Type", "Station", "Location", "List", "Defective Since", "Days"]
+            head = [P(h, "cell_b") for h in ["#", "Asset", "Type", "Station", "Location", "List", "Defective Since", "Days"]]
             data = [head]
             for i, r in enumerate(defective_rows, 1):
                 ds = r["defective_since"][:16] if r["defective_since"] else "—"
-                data.append([str(i), r["asset_number"], r["asset_type"],
-                             r["station"], r["location"],
-                             r["list_type"].upper() or "—", ds,
-                             f'{r["days_open"]:.1f}' if r["days_open"] is not None else "—"])
-            tbl = Table(data, repeatRows=1,
-                        colWidths=[8*mm, 26*mm, 26*mm, 26*mm, 36*mm, 14*mm, 30*mm, 14*mm])
+                data.append([P(str(i)), P(r["asset_number"]), P(r["asset_type"]),
+                             P(r["station"]), P(r["location"]),
+                             P((r["list_type"] or "").upper() or "—"), P(ds),
+                             P(f'{r["days_open"]:.1f}' if r["days_open"] is not None else "—")])
+            tbl = Table(data, repeatRows=1, splitByRow=1,
+                        colWidths=[8*mm, 32*mm, 28*mm, 22*mm, 32*mm, 12*mm, 26*mm, 12*mm])
             ts = [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dc2626")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -558,14 +576,14 @@ async def _build_pdf(user_id: str, req: ExportRequest) -> bytes:
         if not rows:
             story.append(Paragraph("No inspections in scope.", styles["small"]))
         else:
-            head = ["Asset", "Type", "Station", "Last Inspection", "Inspector", "Items", "Result"]
+            head = [P(h, "cell_b") for h in ["Asset", "Type", "Station", "Last Inspection", "Inspector", "Items", "Result"]]
             data = [head] + [
-                [r["asset_number"], r["asset_type"], r["station"],
-                 r["last_at"], r["inspector"], r["item_count"], r["result"]]
+                [P(r["asset_number"]), P(r["asset_type"]), P(r["station"]),
+                 P(r["last_at"]), P(r["inspector"]), P(str(r["item_count"])), P(r["result"])]
                 for r in rows
             ]
-            tbl = Table(data, repeatRows=1,
-                        colWidths=[28*mm, 26*mm, 26*mm, 32*mm, 30*mm, 14*mm, 24*mm])
+            tbl = Table(data, repeatRows=1, splitByRow=1,
+                        colWidths=[28*mm, 26*mm, 22*mm, 28*mm, 30*mm, 12*mm, 20*mm])
             tbl.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#334155")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -595,14 +613,14 @@ async def _build_pdf(user_id: str, req: ExportRequest) -> bytes:
                 f"<b>{a.get('asset_number', '—')}</b> · "
                 f"{(bundle['type_by_id'].get(a.get('asset_type_id')) or {}).get('name', '—')}",
                 styles["h2"]))
-            data = [["When", "Role/Type", "Tag", "Body"]]
+            data = [[P(h, "cell_b") for h in ["When", "Role/Type", "Tag", "Body"]]]
             for r in rems:
                 ts = str(r.get("created_at") or "")[:16]
                 role_type = f"{(r.get('author_role') or '—')} · {(r.get('type') or '—')}"
                 tag = r.get("tag") or "—"
-                body = (r.get("body") or "")[:140]
-                data.append([ts, role_type, tag, body])
-            tbl = Table(data, repeatRows=1,
+                body = (r.get("body") or "")[:280]
+                data.append([P(ts), P(role_type), P(tag), P(body)])
+            tbl = Table(data, repeatRows=1, splitByRow=1,
                         colWidths=[24*mm, 32*mm, 28*mm, 96*mm])
             tbl.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#475569")),
@@ -698,42 +716,53 @@ def _render_drill_table(story, cdata, stat, styles):
     if not cdata or not cdata.get("groups"):
         story.append(Paragraph("No data at this drill level.", styles["small"]))
         return
+
+    def _P(text, style="cell"):
+        s = "" if text is None else str(text)
+        s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return Paragraph(s, styles[style])
+
     bcrumb = " / ".join(b["label"] for b in cdata.get("breadcrumbs", []))
     story.append(Paragraph(f"<b>Path</b>: {bcrumb}", styles["small"]))
     is_station = cdata.get("level") == "station"
+    head_label = "Station" if is_station else "Group"
+    head = [_P(h, "cell_b") for h in [head_label, "Asset Type", f"{stat.title()} (hrs)", "n", "Min", "Max"]]
+    data = [head]
     if is_station:
-        # Clustered — show row per (station, asset-type) bar
-        head = ["Station", "Asset Type", f"{stat.title()} (hrs)", "n", "Min", "Max"]
-        data = [head]
         for g in cdata["groups"]:
             for b in g["bars"]:
                 if (b.get("n") or 0) == 0:
                     continue
-                data.append([g["label"], b.get("asset_type", "—"),
-                             b.get(stat), b.get("n"), b.get("min"), b.get("max")])
+                data.append([_P(g["label"]), _P(b.get("asset_type", "—")),
+                             _P(b.get(stat)), _P(b.get("n")), _P(b.get("min")), _P(b.get("max"))])
     else:
-        head = ["Group", "Asset Type", f"{stat.title()} (hrs)", "n", "Min", "Max"]
-        data = [head]
         for g in cdata["groups"]:
             b = g["bars"][0] if g["bars"] else {}
-            data.append([g["label"], b.get("asset_type", "—"),
-                         b.get(stat), b.get("n"), b.get("min"), b.get("max")])
-    tbl = Table(data, repeatRows=1)
+            data.append([_P(g["label"]), _P(b.get("asset_type", "—")),
+                         _P(b.get(stat)), _P(b.get("n")), _P(b.get("min")), _P(b.get("max"))])
+    tbl = Table(data, repeatRows=1, splitByRow=1,
+                colWidths=[55*mm, 40*mm, 24*mm, 14*mm, 18*mm, 18*mm])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0e7c6b")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1),
          [colors.white, colors.HexColor("#f8fafc")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(tbl)
 
 
 async def _render_full_hierarchy(story, bundle, styles):
     req: ExportRequest = bundle["req"]
+
+    def _P(text, style="cell"):
+        s = "" if text is None else str(text)
+        s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return Paragraph(s, styles[style])
+
     station_data = await _drill_at(bundle, "station", None, None)
     for sg in (station_data.get("groups") or []):
         story.append(Paragraph(f"▸ {sg['label']}", styles["h2"]))
@@ -741,10 +770,10 @@ async def _render_full_hierarchy(story, bundle, styles):
         if not loc_data.get("groups"):
             story.append(Paragraph("(no locations with data)", styles["muted"]))
             continue
-        head = ["Location", f"{req.stat.title()} (hrs)", "n", "Min", "Max"]
+        head = [_P(h, "cell_b") for h in ["Location", f"{req.stat.title()} (hrs)", "n", "Min", "Max"]]
         data = [head] + [
-            [g["label"], g["bars"][0].get(req.stat), g["bars"][0].get("n"),
-             g["bars"][0].get("min"), g["bars"][0].get("max")]
+            [_P(g["label"]), _P(g["bars"][0].get(req.stat)), _P(g["bars"][0].get("n")),
+             _P(g["bars"][0].get("min")), _P(g["bars"][0].get("max"))]
             for g in loc_data["groups"]
         ]
         tbl = Table(data, repeatRows=1, colWidths=[60*mm, 22*mm, 12*mm, 14*mm, 14*mm])

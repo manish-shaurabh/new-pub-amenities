@@ -28,6 +28,17 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — PDF Export Text-Wrap Fix
+- **Problem**: Defective Assets appendix in the Comparative Reports PDF showed overlapping cells — `PLATFORM SURFACEPLATFORM SURFACEDHANBAD`, `FAN 11 (UNDER SHEDCEILING FAEND)` because ReportLab `Table` doesn't auto-wrap plain string cells.
+- **Fix in `/app/backend/routers/comparative_export.py`**:
+  - Added two new paragraph styles `cell` and `cell_b` (with `wordWrap="CJK"`)
+  - Added helper `P(text, style)` that wraps every string in a ReportLab `Paragraph` with HTML-escape so `<`/`>`/`&` in names don't break rendering
+  - Updated **all 7 PDF tables** (Card A, peer matrix, drill table, full hierarchy, defective appendix, last inspection, remarks) to use `P()` for every text cell
+  - Tightened column widths so long names get more room; added `splitByRow=1` so tables paginate cleanly
+  - Remarks body limit raised from 140 → 280 chars
+- **Verified**: Defective Assets PDF now shows multi-line wrapped location names like `Platform No-1 (Under Shed-5)` instead of overlapping. Card A / Drill / Full Hierarchy all render cleanly.
+- Excel export untouched (Excel wraps natively).
+
 ### Feb 2026 — Cascade-DELETE wired into Admin endpoints
 - `DELETE /api/assets/{id}` now cascades via `_cascade_delete_assets`: removes OL entries → remarks → strips from inspection items[] → deletes schedules → deletes the asset. Returns `cascade_summary` in response.
 - `DELETE /api/stations/{id}` now cascades via `_cascade_delete_stations`: locations → assets (with their full cascade) → station-level inspections → schedules → strips station_id from `users.assigned_stations`.
