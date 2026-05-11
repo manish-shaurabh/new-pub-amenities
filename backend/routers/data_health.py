@@ -288,7 +288,7 @@ async def preview(user_id: str,
                  "note": "Assets keep type_id reference but show as '(unnamed)' — renaming the type is preferred over deletion." if n_assets else "Safe to delete — no assets reference this type."}}
 
     # Bulk-only categories
-    scan_result = await scan(user_id)
+    scan_result = await scan(user_id, stale_months=STALE_MONTHS_DEFAULT)
     cat = scan_result["categories"].get(category)
     if not cat:
         raise HTTPException(status_code=400, detail=f"Unknown category: {category}")

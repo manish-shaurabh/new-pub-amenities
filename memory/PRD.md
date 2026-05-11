@@ -28,6 +28,26 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Admin Data Health Panel (cascade-delete orphans, test residue, duplicates)
+**Backend** (`/app/backend/routers/data_health.py` — new)
+- `GET /api/data-health/scan/{user_id}` — scans 10 categories: `orphan_inspection_items`, `orphan_ol_entries`, `orphan_remarks`, `test_users`, `test_stations`, `unnamed_asset_types`, `zero_activity_stations`, `zero_activity_users`, `stale_records`, `duplicates`.
+- `GET /api/data-health/preview/{user_id}?category=&target_id=` — returns cascade-impact for a single record (station: locations+assets+OLs+remarks+inspections+schedules; user: OL/inspection ref counts with null-out note) or bulk-summary for orphan-style categories.
+- `POST /api/data-health/clean/{user_id}` — atomic cascade-delete; superadmin-only.
+- `GET /api/data-health/audit/{user_id}` — last N cleanups with performed_by_name + summary.
+- Permissions: admin can view, superadmin can execute.
+- Cascade helpers: `_cascade_delete_stations` (locations→assets→OLs→remarks→inspections+items+schedules), `_cascade_delete_users` (nulls user refs on OL/inspections instead of deleting them — preserves audit), `_cascade_delete_asset_types` (refuses if assets reference them).
+
+**Frontend** (`/app/frontend/src/components/DataHealthPanel.js` — new)
+- New `/admin → Health` tab with 10 category cards (icon, count, sample list, Preview + Clean buttons).
+- Per-record inline preview & delete icons within each card.
+- Two-step UX: Preview cascade impact dialog → final confirm dialog with **"I understand"** checkbox that gates the execute button.
+- Audit log table at bottom of panel.
+- Admin role sees view-only ("Superadmin required" banner); superadmin sees execute buttons.
+
+**Bug fixed mid-iteration**: Initial `preview()` for bulk categories crashed with 500 because it called `scan()` directly leaving `stale_months` as a FastAPI `Query()` sentinel. Fix: explicit `stale_months=STALE_MONTHS_DEFAULT` arg in the helper call.
+
+**Tested**: `testing_agent_v3_fork` iteration_22 — backend now 100% (bug above patched & re-verified via curl), frontend 100% (10 cards, badge, rescan, confirm checkbox gating, audit table all PASS). End-to-end smoke: orphan_inspection_items count 4→0; test_stations count 3→2 after single-target cascade.
+
 ### Feb 2026 — Comparative Reports v3 (Section C removed, drill folded into A)
 **Backend** (`/app/backend/routers/comparative.py` — 5 new endpoints appended)
 - `GET /api/reports/comparative/asset-type/locations/{user_id}` — Level 2: locations grouped by station for a given asset-type
