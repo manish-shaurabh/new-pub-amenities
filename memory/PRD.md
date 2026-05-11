@@ -28,6 +28,14 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Excel Polish: Row Striping + Frozen Header
+- Added `_stripe_rows()` and `_freeze_below_header()` helpers in `comparative_export.py`.
+- All Excel data sheets (By Asset Type, Peer Matrix, Drilldown, Drilldown — Full, Defective Only, Last Inspections, Remarks) now have:
+  - **Subtle slate-50 alternating row stripes** (`#F8FAFC`) — matches the PDF visual rhythm
+  - **Frozen panes** at the header row — header stays sticky while scrolling long defective/remark lists
+- Highlight-protected rows (red/orange defective + teal self in peer matrix) are excluded from stripe overwrites via a `skip_rows` set.
+- Verified via openpyxl: every sheet shows `freeze_panes: A2` (or `A4` for the Drilldown sheet with a 3-row preamble) and alternating fill pattern `white / F8FAFC / white / F8FAFC …`.
+
 ### Feb 2026 — PDF Export Text-Wrap Fix
 - **Problem**: Defective Assets appendix in the Comparative Reports PDF showed overlapping cells — `PLATFORM SURFACEPLATFORM SURFACEDHANBAD`, `FAN 11 (UNDER SHEDCEILING FAEND)` because ReportLab `Table` doesn't auto-wrap plain string cells.
 - **Fix in `/app/backend/routers/comparative_export.py`**:

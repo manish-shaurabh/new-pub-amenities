@@ -828,6 +828,7 @@ async def _last_inspection_rows(bundle, scope_asset_ids=None):
 # ─── Excel ────────────────────────────────────────────────────────────────
 HEADER_FILL = PatternFill("solid", fgColor="0E7C6B")
 HEADER_FONT = Font(bold=True, color="FFFFFF", size=10)
+STRIPE_FILL = PatternFill("solid", fgColor="F8FAFC")  # subtle slate-50 for odd rows
 THIN_BORDER = Border(left=Side(style="thin", color="CBD5E1"),
                      right=Side(style="thin", color="CBD5E1"),
                      top=Side(style="thin", color="CBD5E1"),
@@ -840,6 +841,30 @@ def _style_header(ws, row=1):
         c.font = HEADER_FONT
         c.alignment = Alignment(horizontal="center", vertical="center")
         c.border = THIN_BORDER
+
+
+def _stripe_rows(ws, start_row: int, end_row: int = None,
+                 skip_rows: set = None):
+    """Apply subtle alternating fill to data rows. `skip_rows` are 1-indexed
+    row numbers that already have a highlight (e.g. self-row in peer matrix)
+    and should not be overwritten."""
+    if end_row is None:
+        end_row = ws.max_row
+    skip = skip_rows or set()
+    for r in range(start_row, end_row + 1):
+        if r in skip:
+            continue
+        # Stripe every OTHER data row: first data row stays white, second
+        # gets the stripe, etc.
+        if (r - start_row) % 2 == 1:
+            for c in ws[r]:
+                if c.fill.fgColor and c.fill.fgColor.rgb in ("00000000", None):
+                    c.fill = STRIPE_FILL
+
+
+def _freeze_below_header(ws, header_row: int = 1):
+    """Freeze panes so the header row stays visible while scrolling."""
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1).coordinate
 
 
 def _autofit(ws, max_w=60):
@@ -880,6 +905,8 @@ async def _build_excel(user_id: str, req: ExportRequest) -> bytes:
             ws.append([i, r["label"], r.get("median"), r.get("mean"),
                        r.get("n"), r.get("min"), r.get("max"),
                        r.get("p75"), r.get("p90")])
+        _stripe_rows(ws, start_row=2)
+        _freeze_below_header(ws)
         _autofit(ws)
 
     # Card B
@@ -889,14 +916,18 @@ async def _build_excel(user_id: str, req: ExportRequest) -> bytes:
         head = ["Supervisor"] + [a["name"] for a in radar.get("axes", [])]
         ws.append(head)
         _style_header(ws)
+        self_rows = set()
         for s in radar.get("series", []):
             row = [s["label"] + (" ★" if s.get("is_self") else "")]
             row += [(v.get("value") if v.get("value") is not None else None)
                     for v in s.get("values", [])]
             ws.append(row)
             if s.get("is_self"):
+                self_rows.add(ws.max_row)
                 for c in ws[ws.max_row]:
                     c.fill = PatternFill("solid", fgColor="CCFBF1")
+        _stripe_rows(ws, start_row=2, skip_rows=self_rows)
+        _freeze_below_header(ws)
         if radar.get("anonymised"):
             ws.append([])
             ws.append(["Note: peers anonymised (SUP role)."])
@@ -919,6 +950,8 @@ async def _build_excel(user_id: str, req: ExportRequest) -> bytes:
             ws.append([st.get("name", "—"), loc.get("name", "—"),
                        tp.get("name", "—"), a.get("asset_number"),
                        s.get(req.stat), s.get("n"), s.get("min"), s.get("max")])
+        _stripe_rows(ws, start_row=2)
+        _freeze_below_header(ws)
         _autofit(ws)
     elif req.sections.card_c_current:
         cdata = await _drill_at(bundle, req.drill_state.level,
@@ -934,6 +967,8 @@ async def _build_excel(user_id: str, req: ExportRequest) -> bytes:
             for b in g["bars"]:
                 ws.append([g["label"], b.get("asset_type", "—"),
                            b.get(req.stat), b.get("n"), b.get("min"), b.get("max")])
+        _stripe_rows(ws, start_row=4)
+        _freeze_below_header(ws, header_row=3)
         _autofit(ws)
 
     # Defective
@@ -943,6 +978,7 @@ async def _build_excel(user_id: str, req: ExportRequest) -> bytes:
         ws.append(["Asset", "Type", "Station", "Location", "List Type",
                    "Status", "Defective Since", "Days Open"])
         _style_header(ws)
+        highlighted_rows = set()
         for r in defective:
             ws.append([r["asset_number"], r["asset_type"], r["station"],
                        r["location"], r["list_type"].upper(), r["status"],
@@ -950,11 +986,15 @@ async def _build_excel(user_id: str, req: ExportRequest) -> bytes:
                        r["days_open"]])
             row = ws[ws.max_row]
             if r["list_type"] == "red":
+                highlighted_rows.add(ws.max_row)
                 for c in row:
                     c.fill = PatternFill("solid", fgColor="FECACA")
             elif r["list_type"] == "orange":
+                highlighted_rows.add(ws.max_row)
                 for c in row:
                     c.fill = PatternFill("solid", fgColor="FED7AA")
+        _stripe_rows(ws, start_row=2, skip_rows=highlighted_rows)
+        _freeze_below_header(ws)
         _autofit(ws)
 
     # Last inspection
@@ -967,6 +1007,8 @@ async def _build_excel(user_id: str, req: ExportRequest) -> bytes:
         for r in rows:
             ws.append([r["asset_number"], r["asset_type"], r["station"],
                        r["last_at"], r["inspector"], r["item_count"], r["result"]])
+        _stripe_rows(ws, start_row=2)
+        _freeze_below_header(ws)
         _autofit(ws)
 
     # Remarks
@@ -988,6 +1030,8 @@ async def _build_excel(user_id: str, req: ExportRequest) -> bytes:
                     r.get("tag", "—"),
                     (r.get("body") or "")[:300],
                 ])
+        _stripe_rows(ws, start_row=2)
+        _freeze_below_header(ws)
         _autofit(ws, max_w=80)
 
     out = io.BytesIO()
