@@ -12,6 +12,7 @@ import SchedulesPage from './pages/SchedulesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
 import ReportsPage from './pages/ReportsPage';
+import PerformanceSheetPage from './pages/PerformanceSheetPage';
 import AppLayout from './components/AppLayout';
 import './App.css';
 
@@ -102,6 +103,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <AppLayout>
             <ReportsPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/performance/:userId" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <PerformanceSheetPage />
           </AppLayout>
         </ProtectedRoute>
       } />

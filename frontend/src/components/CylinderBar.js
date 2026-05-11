@@ -1,30 +1,26 @@
 /**
- * CylinderBar — Horizontal 3D aqua-glass cylinder bars with broken-axis support.
+ * CylinderBar — Horizontal 3D aqua-glass cylinder bars with broken-axis.
  *
  * Props:
- *   data:    [{ id, label, value, n, min, max, color, sub?, drillable?, onClick? }]
- *   stat:    'median' | 'mean' (used in tooltip text only)
- *   p90:     number — 90th-percentile across data; bars > 2× p90 break the axis
- *   maxLabel?: string — label suffix (default "hrs")
+ *   data:     [{ id, label, value, n, min, max, color, sub?, drillable?,
+ *                badge? {text, color}, meta? extraLine }]
+ *   stat:     'median' | 'mean'
+ *   p90:      number — bars > 2× p90 break the axis
+ *   maxLabel?: string (default "hrs")
  *   onSelect?: (item) => void
  *
- * Features:
- *   - Horizontal cylinder with vibrant per-item gradient (front face, top ellipse, end cap shading)
- *   - Inner glass highlight (inset white stripe near top) for 3D feel
- *   - Broken-axis: if v > 2 * p90, renders zigzag and shows raw numeric value at the tip
- *   - "No data" rows render as grey shell with dashed outline
- *   - All 100% pure SVG (no extra deps)
+ * Visual upgrade: 6-stop gradient, drop shadow filter, ambient highlight,
+ * thicker rim, deeper end-cap shading, larger zigzag with white outline.
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useId } from 'react';
 
-const ROW_H = 38;
+const ROW_H = 42;
 const LABEL_W = 200;
-const VAL_W = 80;
+const VAL_W = 96;
 const PAD_L = 8;
 const PAD_R = 16;
-const BAR_H = 22;
+const BAR_H = 24;
 
-// Lighten/darken an #rrggbb hex by amount in [-1..1]
 function shade(hex, amt) {
   const h = (hex || '#94a3b8').replace('#', '');
   const r = parseInt(h.slice(0, 2), 16);
@@ -38,19 +34,20 @@ function shade(hex, amt) {
   return `#${toHex(f(r))}${toHex(f(g))}${toHex(f(b))}`;
 }
 
-export default function CylinderBar({ data, stat = 'median', p90, maxLabel = 'hrs', onSelect, width = 880 }) {
+export default function CylinderBar({
+  data, stat = 'median', p90, maxLabel = 'hrs', onSelect, width = 920,
+}) {
   const safeData = data || [];
-  const H = Math.max(80, safeData.length * ROW_H + 24);
+  const filterId = useId();
+  const H = Math.max(80, safeData.length * ROW_H + 28);
   const barAreaX = LABEL_W + PAD_L;
   const barAreaW = width - barAreaX - VAL_W - PAD_R;
 
-  // Broken-axis threshold = 2× p90 (skip if p90 missing or all values ≤ 2× p90)
   const threshold = (p90 != null && p90 > 0) ? p90 * 2 : null;
   const hasOutlier = threshold && safeData.some((d) => (d.value || 0) > threshold);
 
   const visibleMax = useMemo(() => {
     if (threshold && hasOutlier) {
-      // Cap visible scale at threshold so non-outliers stay readable; outliers will show broken
       const inRange = safeData.filter((d) => d.value != null && d.value <= threshold);
       return Math.max(1, ...inRange.map((d) => d.value || 0), threshold);
     }
@@ -59,36 +56,46 @@ export default function CylinderBar({ data, stat = 'median', p90, maxLabel = 'hr
 
   const xFor = (v) => {
     if (v == null) return 0;
-    if (threshold && hasOutlier && v > threshold) {
-      // Broken: show 88% of bar area
-      return barAreaW * 0.86;
-    }
-    return Math.max(2, (v / visibleMax) * barAreaW * 0.94);
+    if (threshold && hasOutlier && v > threshold) return barAreaW * 0.86;
+    return Math.max(4, (v / visibleMax) * barAreaW * 0.94);
   };
 
   return (
-    <svg viewBox={`0 0 ${width} ${H}`} width="100%" height={H} style={{ maxWidth: '100%' }} data-testid="cylinder-bar-chart">
+    <svg viewBox={`0 0 ${width} ${H}`} width="100%" height={H}
+         style={{ maxWidth: '100%' }} data-testid="cylinder-bar-chart">
       <defs>
+        <filter id={`cb-shadow-${filterId}`} x="-2%" y="-30%" width="104%" height="160%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="1.2" />
+          <feOffset dx="0" dy="1.5" result="off" />
+          <feComponentTransfer><feFuncA type="linear" slope="0.32" /></feComponentTransfer>
+          <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
         {safeData.map((d, i) => {
           const c = d.color || '#0e7c6b';
-          const light = shade(c, 0.45);
-          const lighter = shade(c, 0.7);
-          const dark = shade(c, -0.35);
+          const top = shade(c, 0.72);
+          const upper = shade(c, 0.38);
+          const lower = shade(c, -0.18);
+          const bottom = shade(c, -0.42);
           return (
             <React.Fragment key={i}>
-              <linearGradient id={`cyl-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={lighter} />
-                <stop offset="35%" stopColor={light} />
-                <stop offset="55%" stopColor={c} />
-                <stop offset="100%" stopColor={dark} />
+              <linearGradient id={`cyl-grad-${filterId}-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={top} />
+                <stop offset="12%" stopColor={upper} />
+                <stop offset="42%" stopColor={c} />
+                <stop offset="72%" stopColor={lower} />
+                <stop offset="100%" stopColor={bottom} />
               </linearGradient>
-              <linearGradient id={`cyl-cap-${i}`} x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor={dark} stopOpacity="0.9" />
+              <linearGradient id={`cyl-cap-${filterId}-${i}`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor={bottom} stopOpacity="0.95" />
                 <stop offset="100%" stopColor={c} stopOpacity="0.95" />
               </linearGradient>
-              <linearGradient id={`cyl-shine-${i}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.45" />
+              <linearGradient id={`cyl-shine-${filterId}-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.7" />
                 <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id={`cyl-ao-${filterId}-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#000" stopOpacity="0" />
+                <stop offset="100%" stopColor="#000" stopOpacity="0.18" />
               </linearGradient>
             </React.Fragment>
           );
@@ -96,12 +103,12 @@ export default function CylinderBar({ data, stat = 'median', p90, maxLabel = 'hr
       </defs>
 
       {safeData.map((d, i) => {
-        const cy = 12 + i * ROW_H + BAR_H / 2;
+        const cy = 14 + i * ROW_H + BAR_H / 2;
         const yTop = cy - BAR_H / 2;
         const has = d.value != null;
         const isOutlier = threshold && hasOutlier && has && d.value > threshold;
         const w = has ? xFor(d.value) : 0;
-        const ellipseRx = 5;
+        const ellipseRx = 6;
         const labelClick = !!d.drillable || !!onSelect;
 
         return (
@@ -109,83 +116,117 @@ export default function CylinderBar({ data, stat = 'median', p90, maxLabel = 'hr
              onClick={() => labelClick && onSelect && onSelect(d)}
              data-testid={`cyl-row-${i}`}>
             {/* Row label */}
-            <text x={LABEL_W - 6} y={cy + 4} fontSize="11" textAnchor="end"
-                  fill={d.drillable ? '#0e7c6b' : '#334155'}
-                  style={{ fontWeight: d.drillable ? 600 : 500 }}>
+            <text x={LABEL_W - 6} y={cy - 2} fontSize="11.5" textAnchor="end"
+                  fill={d.drillable ? '#0e7c6b' : '#0f172a'}
+                  style={{ fontWeight: d.drillable ? 700 : 600 }}>
               <title>{d.label}</title>
               {d.label && d.label.length > 28 ? d.label.slice(0, 27) + '…' : d.label}
             </text>
             {d.sub && (
-              <text x={LABEL_W - 6} y={cy + 14} fontSize="8.5" textAnchor="end" fill="#94a3b8">
+              <text x={LABEL_W - 6} y={cy + 11} fontSize="9" textAnchor="end" fill="#64748b">
                 {d.sub}
               </text>
             )}
 
-            {/* Empty shell (no data) */}
+            {/* Status badge to the left of bar */}
+            {d.badge && (
+              <g transform={`translate(${barAreaX}, ${cy - BAR_H / 2 - 4})`}>
+                <rect x="0" y="-9" width={d.badge.text.length * 6 + 10} height="14" rx="7"
+                      fill={d.badge.color} opacity="0.92" />
+                <text x={(d.badge.text.length * 6 + 10) / 2} y="1" fontSize="9"
+                      textAnchor="middle" fill="#fff" fontWeight="700">
+                  {d.badge.text}
+                </text>
+              </g>
+            )}
+
+            {/* Empty shell */}
             {!has && (
               <g>
-                <rect x={barAreaX} y={yTop} width={Math.min(60, barAreaW * 0.15)} height={BAR_H}
-                      fill="#f1f5f9" stroke="#cbd5e1" strokeDasharray="3,2" rx="3" />
-                <text x={barAreaX + 6} y={cy + 4} fontSize="9" fill="#94a3b8" fontStyle="italic">no data</text>
+                <rect x={barAreaX} y={yTop} width={Math.min(60, barAreaW * 0.15)}
+                      height={BAR_H} fill="#f1f5f9" stroke="#cbd5e1"
+                      strokeDasharray="3,2" rx="4" />
+                <text x={barAreaX + 6} y={cy + 4} fontSize="9" fill="#94a3b8"
+                      fontStyle="italic">no data</text>
               </g>
             )}
 
             {/* Cylinder body */}
             {has && (
-              <g>
-                {/* Back (left) end cap — small ellipse */}
+              <g filter={`url(#cb-shadow-${filterId})`}>
+                {/* Left cap (back) */}
                 <ellipse cx={barAreaX} cy={cy} rx={ellipseRx} ry={BAR_H / 2}
-                         fill={`url(#cyl-cap-${i})`} stroke={shade(d.color || '#0e7c6b', -0.4)} strokeWidth="0.5" />
-                {/* Body rect */}
-                <rect x={barAreaX} y={yTop} width={Math.max(2, w - (isOutlier ? 28 : 0))} height={BAR_H}
-                      fill={`url(#cyl-grad-${i})`} stroke={shade(d.color || '#0e7c6b', -0.3)} strokeWidth="0.4" />
-                {/* Glass shine strip */}
-                <rect x={barAreaX} y={yTop + 2} width={Math.max(1, w - (isOutlier ? 28 : 0) - 2)} height={Math.max(2, BAR_H * 0.32)}
-                      fill={`url(#cyl-shine-${i})`} rx="2" />
-                {/* Outlier zigzag break */}
+                         fill={`url(#cyl-cap-${filterId}-${i})`}
+                         stroke={shade(d.color || '#0e7c6b', -0.45)} strokeWidth="0.6" />
+                {/* Body */}
+                <rect x={barAreaX} y={yTop}
+                      width={Math.max(4, w - (isOutlier ? 30 : 0))} height={BAR_H}
+                      fill={`url(#cyl-grad-${filterId}-${i})`}
+                      stroke={shade(d.color || '#0e7c6b', -0.32)} strokeWidth="0.5" />
+                {/* Ambient occlusion at top + bottom edges */}
+                <rect x={barAreaX} y={yTop}
+                      width={Math.max(4, w - (isOutlier ? 30 : 0))} height={BAR_H}
+                      fill={`url(#cyl-ao-${filterId}-${i})`} />
+                {/* Glass shine */}
+                <rect x={barAreaX + 1} y={yTop + 2}
+                      width={Math.max(2, w - (isOutlier ? 30 : 0) - 2)}
+                      height={Math.max(3, BAR_H * 0.36)}
+                      fill={`url(#cyl-shine-${filterId}-${i})`} rx="2" />
+                {/* Outlier zigzag (V-shape break) */}
                 {isOutlier && (() => {
-                  const bx = barAreaX + w - 28;
+                  const bx = barAreaX + w - 30;
                   return (
                     <g>
-                      <path d={`M ${bx} ${yTop} l 6 6 l -6 6 l 6 6 l -6 4`} stroke="#fff" strokeWidth="2.5" fill="none" />
-                      <path d={`M ${bx} ${yTop} l 6 6 l -6 6 l 6 6 l -6 4`} stroke="#0f172a" strokeWidth="1" fill="none" />
-                      <rect x={bx + 8} y={yTop} width={14} height={BAR_H} fill={`url(#cyl-grad-${i})`} />
-                      <rect x={bx + 8} y={yTop + 2} width={12} height={Math.max(2, BAR_H * 0.32)} fill={`url(#cyl-shine-${i})`} rx="2" />
+                      <path d={`M ${bx} ${yTop - 1} l 7 ${BAR_H / 2 + 1} l -7 ${BAR_H / 2 + 1}`}
+                            stroke="#fff" strokeWidth="3" fill="none" />
+                      <path d={`M ${bx} ${yTop - 1} l 7 ${BAR_H / 2 + 1} l -7 ${BAR_H / 2 + 1}`}
+                            stroke="#0f172a" strokeWidth="1.2" fill="none" />
+                      <path d={`M ${bx + 8} ${yTop - 1} l 7 ${BAR_H / 2 + 1} l -7 ${BAR_H / 2 + 1}`}
+                            stroke="#fff" strokeWidth="3" fill="none" />
+                      <path d={`M ${bx + 8} ${yTop - 1} l 7 ${BAR_H / 2 + 1} l -7 ${BAR_H / 2 + 1}`}
+                            stroke="#0f172a" strokeWidth="1.2" fill="none" />
+                      <rect x={bx + 17} y={yTop} width={13} height={BAR_H}
+                            fill={`url(#cyl-grad-${filterId}-${i})`} />
+                      <rect x={bx + 17} y={yTop + 2} width={11}
+                            height={Math.max(3, BAR_H * 0.36)}
+                            fill={`url(#cyl-shine-${filterId}-${i})`} rx="2" />
                     </g>
                   );
                 })()}
-                {/* Front (right) end cap — full ellipse */}
+                {/* Right cap (front, full ellipse) */}
                 <ellipse cx={barAreaX + w} cy={cy} rx={ellipseRx} ry={BAR_H / 2}
-                         fill={shade(d.color || '#0e7c6b', 0.15)}
-                         stroke={shade(d.color || '#0e7c6b', -0.3)} strokeWidth="0.5" />
-                {/* Tip dot for clarity */}
-                <circle cx={barAreaX + w} cy={cy} r={1.5} fill="#fff" opacity="0.9" />
+                         fill={shade(d.color || '#0e7c6b', 0.18)}
+                         stroke={shade(d.color || '#0e7c6b', -0.32)} strokeWidth="0.6" />
+                <ellipse cx={barAreaX + w - 1} cy={cy - BAR_H * 0.18}
+                         rx={ellipseRx * 0.45} ry={BAR_H * 0.18}
+                         fill="#fff" opacity="0.55" />
                 <title>{d.label}: {d.value} {maxLabel} (n={d.n}, min={d.min}, max={d.max})</title>
               </g>
             )}
 
             {/* Numeric value at tip */}
             {has && (
-              <text x={Math.min(width - PAD_R, barAreaX + w + 8)} y={cy + 4} fontSize="11"
-                    fontWeight={isOutlier ? 700 : 600}
+              <text x={Math.min(width - PAD_R, barAreaX + w + 10)} y={cy + 4}
+                    fontSize="11.5" fontWeight={isOutlier ? 800 : 700}
                     fill={isOutlier ? '#b91c1c' : '#0f172a'}>
                 {d.value}{isOutlier ? '★' : ''}
-                <tspan fontSize="9" fill="#94a3b8" dx="2">
+                <tspan fontSize="9" fill="#94a3b8" dx="3">
                   {maxLabel}{d.n != null ? ` · n=${d.n}` : ''}
                 </tspan>
               </text>
+            )}
+            {d.meta && has && (
+              <text x={Math.min(width - PAD_R, barAreaX + w + 10)} y={cy + 14}
+                    fontSize="8.5" fill="#64748b">{d.meta}</text>
             )}
           </g>
         );
       })}
 
-      {/* Footer: broken-axis legend */}
       {hasOutlier && (
-        <g>
-          <text x={barAreaX} y={H - 4} fontSize="9" fill="#94a3b8">
-            Axis broken (∿) where value &gt; 2× p90 ({(p90 || 0)} {maxLabel}). ★ marks outliers.
-          </text>
-        </g>
+        <text x={barAreaX} y={H - 6} fontSize="9" fill="#94a3b8">
+          Axis broken (∿) where value &gt; 2× p90 ({(p90 || 0)} {maxLabel}). ★ marks outliers.
+        </text>
       )}
     </svg>
   );

@@ -19,8 +19,8 @@ from fastapi import APIRouter, HTTPException, Query
 
 from database import (
     users_collection, assets_collection, asset_types_collection,
-    stations_collection, locations_collection,
-    orange_list_collection, now_ist,
+    stations_collection, locations_collection, departments_collection,
+    orange_list_collection, inspections_collection, now_ist,
 )
 
 router = APIRouter()
@@ -697,3 +697,335 @@ async def by_supervisor_radar(user_id: str,
         })
     return {"window_days": window_days, "stat": stat, "axes": axes,
             "series": series, "anonymised": is_anonymous, "dept_id": dept_id}
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Section A v2 — Drilldown: Asset Type → Stations × Locations → Assets
+# Section B v2 — Single Station or RO peer comparison
+# ════════════════════════════════════════════════════════════════════════════
+
+def _safe_type_name(t: dict) -> str:
+    """Returns asset-type name or '(unnamed)' sentinel for empty/null names."""
+    if not t:
+        return "(unnamed)"
+    name = (t.get("name") or "").strip()
+    return name or "(unnamed)"
+
+
+@router.get("/api/reports/comparative/asset-type/locations/{user_id}")
+async def asset_type_locations(user_id: str,
+                               asset_type_id: str = Query(...),
+                               station_ids: Optional[str] = Query(None),
+                               window_days: str = Query("90"),
+                               stat: str = Query("median")):
+    """Level 2 — for a given asset-type, return groups by STATION with
+    LOCATIONS as bars under each station header (user pick 1c).
+    """
+    user = await _user_or_404(user_id)
+    f_dt, t_dt = _window_from_days(window_days)
+    win = (f_dt, t_dt)
+
+    explicit = [s for s in (station_ids.split(",") if station_ids else []) if s]
+    user_stns = _user_station_ids(user)
+    scope = set(explicit) if explicit else set(user_stns)
+
+    asset_q: Dict[str, Any] = {"asset_type_id": asset_type_id}
+    if scope:
+        asset_q["station_id"] = {"$in": list(scope)}
+    assets = await assets_collection.find(asset_q).to_list(20000)
+    if not assets:
+        return {"asset_type_id": asset_type_id, "window_days": window_days,
+                "stat": stat, "groups": [], "p90": None}
+
+    asset_ids = [str(a["_id"]) for a in assets]
+    ols = await orange_list_collection.find(
+        {"asset_id": {"$in": asset_ids}, "status": "resolved"}).to_list(50000)
+
+    # Group: station → location → asset_ids
+    groups: Dict[str, Dict[str, set]] = {}
+    for a in assets:
+        sid = a.get("station_id")
+        lid = a.get("location_id")
+        if sid and lid:
+            groups.setdefault(sid, {}).setdefault(lid, set()).add(str(a["_id"]))
+
+    out_groups = []
+    all_vals = []
+    for sid, loc_map in groups.items():
+        station = await stations_collection.find_one({"_id": ObjectId(sid)})
+        loc_bars = []
+        for lid, ids in loc_map.items():
+            location = await locations_collection.find_one({"_id": ObjectId(lid)})
+            hours = _resolved_repair_hours(ols, ids, win)
+            s = _hrs_stats(hours)
+            v = s.get(stat)
+            if v is not None:
+                all_vals.append(v)
+            loc_bars.append({
+                "id": lid,
+                "label": (location or {}).get("name", "—"),
+                "asset_count": len(ids),
+                **s,
+            })
+        loc_bars.sort(key=lambda b: -(b.get(stat) or 0))
+        out_groups.append({
+            "station_id": sid,
+            "station_name": (station or {}).get("name", "—"),
+            "station_code": (station or {}).get("code", ""),
+            "locations": loc_bars,
+        })
+    out_groups.sort(key=lambda g: -max(
+        [b.get(stat) or 0 for b in g["locations"]] or [0]))
+
+    return {"asset_type_id": asset_type_id, "window_days": window_days,
+            "stat": stat, "groups": out_groups,
+            "p90": round(_percentile(all_vals, 0.9), 1) if all_vals else None}
+
+
+@router.get("/api/reports/comparative/asset-type/assets/{user_id}")
+async def asset_type_assets(user_id: str,
+                            asset_type_id: str = Query(...),
+                            location_id: str = Query(...),
+                            window_days: str = Query("90"),
+                            stat: str = Query("median")):
+    """Level 3 — individual assets at a (location, type). Each row carries
+    MTTR + current status + days_defective + last_inspection_at."""
+    await _user_or_404(user_id)
+    f_dt, t_dt = _window_from_days(window_days)
+    win = (f_dt, t_dt)
+
+    assets = await assets_collection.find(
+        {"asset_type_id": asset_type_id, "location_id": location_id}).to_list(2000)
+    if not assets:
+        return {"asset_type_id": asset_type_id, "location_id": location_id,
+                "window_days": window_days, "stat": stat, "rows": [], "p90": None}
+
+    asset_ids = [str(a["_id"]) for a in assets]
+    ols_all = await orange_list_collection.find(
+        {"asset_id": {"$in": asset_ids}}).to_list(20000)
+    ols_resolved = [o for o in ols_all if o.get("status") == "resolved"]
+
+    # Last inspection per asset
+    last_ins: Dict[str, dict] = {}
+    cur = inspections_collection.find(
+        {"asset_id": {"$in": asset_ids}}, sort=[("inspection_at", -1)]).limit(20000)
+    async for ins in cur:
+        aid = str(ins.get("asset_id"))
+        if aid not in last_ins:
+            last_ins[aid] = ins
+
+    now = now_ist()
+    rows = []
+    all_vals = []
+    for a in assets:
+        aid = str(a["_id"])
+        s = _hrs_stats(_resolved_repair_hours(ols_resolved, aid, win))
+        v = s.get(stat)
+        if v is not None:
+            all_vals.append(v)
+        # Current open OL (if any)
+        open_ol = next((o for o in ols_all
+                        if o.get("asset_id") == aid and o.get("status") != "resolved"), None)
+        days_def = None
+        list_type = None
+        if open_ol:
+            ds = _parse_dt(open_ol.get("defective_since"))
+            if ds:
+                days_def = round((now - ds).total_seconds() / 86400, 2)
+            list_type = (open_ol.get("list_type") or "").lower() or None
+        # Status: working | yellow | orange | red
+        if a.get("status") == "pending_approval":
+            status = "yellow"
+        elif open_ol:
+            status = list_type or "orange"
+        else:
+            status = "working"
+        last_at = (last_ins.get(aid) or {}).get("inspection_at")
+        rows.append({
+            "id": aid,
+            "asset_number": a.get("asset_number") or "—",
+            "status": status,
+            "list_type": list_type,
+            "days_defective": days_def,
+            "last_inspection_at": str(last_at)[:16] if last_at else None,
+            **s,
+        })
+    rows.sort(key=lambda r: -(r.get(stat) or 0))
+    return {"asset_type_id": asset_type_id, "location_id": location_id,
+            "window_days": window_days, "stat": stat, "rows": rows,
+            "p90": round(_percentile(all_vals, 0.9), 1) if all_vals else None}
+
+
+@router.get("/api/reports/comparative/station-supervisors/{user_id}")
+async def station_supervisors(user_id: str,
+                              station_id: str = Query(...),
+                              window_days: str = Query("90"),
+                              stat: str = Query("median")):
+    """Section B / Station mode — all supervisors at a station with MTTR and
+    department tag. Click → /performance/<sup_id>."""
+    await _user_or_404(user_id)
+    f_dt, t_dt = _window_from_days(window_days)
+    win = (f_dt, t_dt)
+
+    sups = await users_collection.find(
+        {"role": "supervisor", "assigned_stations": station_id,
+         "is_active": True}).to_list(2000)
+    depts = await departments_collection.find({}).to_list(200)
+    dept_by_id = {str(d["_id"]): d for d in depts}
+
+    station = await stations_collection.find_one({"_id": ObjectId(station_id)})
+    rows = []
+    all_vals = []
+    for sup in sups:
+        sid = str(sup["_id"])
+        # Repairs by this sup at this station
+        sup_ols = await orange_list_collection.find(
+            {"marked_working_by": sid, "status": "resolved"}).to_list(20000)
+        # Filter to assets at this station
+        asset_ids_in_ols = list({o.get("asset_id") for o in sup_ols if o.get("asset_id")})
+        assets_at_station = await assets_collection.find(
+            {"_id": {"$in": [ObjectId(i) for i in asset_ids_in_ols]},
+             "station_id": station_id}).to_list(5000)
+        valid_aids = {str(a["_id"]) for a in assets_at_station}
+        relevant_ols = [o for o in sup_ols if o.get("asset_id") in valid_aids]
+        hours = _resolved_repair_hours(relevant_ols, valid_aids, win)
+        s = _hrs_stats(hours)
+        v = s.get(stat)
+        if v is not None:
+            all_vals.append(v)
+        dept = dept_by_id.get(sup.get("department_id")) or {}
+        rows.append({
+            "id": sid,
+            "name": sup.get("name", "—"),
+            "employee_id": sup.get("employee_id", "—"),
+            "department_id": sup.get("department_id"),
+            "department_name": dept.get("name", "—"),
+            "department_code": dept.get("code", ""),
+            **s,
+        })
+    rows.sort(key=lambda r: -(r.get(stat) or 0))
+    return {"station_id": station_id,
+            "station_name": (station or {}).get("name", "—"),
+            "station_code": (station or {}).get("code", ""),
+            "window_days": window_days, "stat": stat, "rows": rows,
+            "p90": round(_percentile(all_vals, 0.9), 1) if all_vals else None}
+
+
+@router.get("/api/reports/comparative/ros/{user_id}")
+async def list_ros(user_id: str, dept_id: Optional[str] = Query(None)):
+    """Helper — list Reporting Officers (optionally filtered by dept)."""
+    await _user_or_404(user_id)
+    q = {"role": "reporting_officer", "is_active": True}
+    if dept_id:
+        q["department_id"] = dept_id
+    ros = await users_collection.find(q).to_list(500)
+    depts = await departments_collection.find({}).to_list(200)
+    dept_by_id = {str(d["_id"]): d for d in depts}
+    stns = await stations_collection.find({}).to_list(500)
+    station_by_id = {str(s["_id"]): s for s in stns}
+
+    rows = []
+    for ro in ros:
+        dept = dept_by_id.get(ro.get("department_id")) or {}
+        station_codes = [
+            (station_by_id.get(sid) or {}).get("code", "")
+            for sid in (ro.get("assigned_stations") or [])
+        ]
+        station_codes = [c for c in station_codes if c]
+        rows.append({
+            "id": str(ro["_id"]),
+            "name": ro.get("name", "—"),
+            "employee_id": ro.get("employee_id", "—"),
+            "department_id": ro.get("department_id"),
+            "department_name": dept.get("name", "—"),
+            "department_code": dept.get("code", ""),
+            "station_codes": station_codes,
+        })
+    rows.sort(key=lambda r: r["name"])
+    return {"rows": rows}
+
+
+@router.get("/api/reports/comparative/ro-supervisors/{user_id}")
+async def ro_supervisors(user_id: str,
+                         ro_id: str = Query(...),
+                         window_days: str = Query("90"),
+                         stat: str = Query("median")):
+    """Section B / RO mode — for a single RO, return their assigned-station
+    SUPs (same dept + station scope) with per-SUP MTTR plus a header avg."""
+    await _user_or_404(user_id)
+    f_dt, t_dt = _window_from_days(window_days)
+    win = (f_dt, t_dt)
+
+    ro = await users_collection.find_one({"_id": ObjectId(ro_id)})
+    if not ro:
+        raise HTTPException(status_code=404, detail="RO not found")
+
+    depts = await departments_collection.find({}).to_list(200)
+    dept_by_id = {str(d["_id"]): d for d in depts}
+    stns = await stations_collection.find({}).to_list(500)
+    station_by_id = {str(s["_id"]): s for s in stns}
+
+    ro_dept_id = ro.get("department_id")
+    ro_stations = ro.get("assigned_stations") or []
+
+    # SUPs scoped to RO's dept and RO's assigned stations
+    sups_q = {"role": "supervisor", "is_active": True}
+    if ro_dept_id:
+        sups_q["department_id"] = ro_dept_id
+    if ro_stations:
+        sups_q["assigned_stations"] = {"$in": ro_stations}
+    sups = await users_collection.find(sups_q).to_list(2000)
+
+    rows = []
+    all_vals = []
+    for sup in sups:
+        sid = str(sup["_id"])
+        sup_ols = await orange_list_collection.find(
+            {"marked_working_by": sid, "status": "resolved"}).to_list(20000)
+        asset_ids_in_ols = list({o.get("asset_id") for o in sup_ols if o.get("asset_id")})
+        # Restrict to assets within RO's station scope (dept already filtered via sup)
+        if ro_stations:
+            valid_assets = await assets_collection.find(
+                {"_id": {"$in": [ObjectId(i) for i in asset_ids_in_ols]},
+                 "station_id": {"$in": ro_stations}}).to_list(5000)
+        else:
+            valid_assets = await assets_collection.find(
+                {"_id": {"$in": [ObjectId(i) for i in asset_ids_in_ols]}}).to_list(5000)
+        valid_aids = {str(a["_id"]) for a in valid_assets}
+        relevant_ols = [o for o in sup_ols if o.get("asset_id") in valid_aids]
+        hours = _resolved_repair_hours(relevant_ols, valid_aids, win)
+        s = _hrs_stats(hours)
+        v = s.get(stat)
+        if v is not None:
+            all_vals.append(v)
+        rows.append({
+            "id": sid,
+            "name": sup.get("name", "—"),
+            "employee_id": sup.get("employee_id", "—"),
+            "department_name": (dept_by_id.get(sup.get("department_id")) or {}).get("name", "—"),
+            "department_code": (dept_by_id.get(sup.get("department_id")) or {}).get("code", ""),
+            **s,
+        })
+    rows.sort(key=lambda r: -(r.get(stat) or 0))
+
+    avg_mttr = round(sum(all_vals) / len(all_vals), 1) if all_vals else None
+    ro_dept = dept_by_id.get(ro_dept_id) or {}
+    ro_station_codes = [(station_by_id.get(sid) or {}).get("code", "")
+                        for sid in ro_stations]
+    ro_station_codes = [c for c in ro_station_codes if c]
+
+    return {
+        "ro": {
+            "id": ro_id,
+            "name": ro.get("name", "—"),
+            "employee_id": ro.get("employee_id", "—"),
+            "department_name": ro_dept.get("name", "—"),
+            "department_code": ro_dept.get("code", ""),
+            "station_codes": ro_station_codes,
+            "avg_mttr": avg_mttr,
+            "sup_count": len(rows),
+        },
+        "window_days": window_days, "stat": stat, "rows": rows,
+        "p90": round(_percentile(all_vals, 0.9), 1) if all_vals else None,
+    }
