@@ -28,6 +28,25 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Comparative Reports v3 (Section C removed, drill folded into A)
+**Backend** (`/app/backend/routers/comparative.py` — 5 new endpoints appended)
+- `GET /api/reports/comparative/asset-type/locations/{user_id}` — Level 2: locations grouped by station for a given asset-type
+- `GET /api/reports/comparative/asset-type/assets/{user_id}` — Level 3: individual assets at (type, location) with `status` (working/yellow/orange/red), `list_type`, `days_defective`, `last_inspection_at`
+- `GET /api/reports/comparative/station-supervisors/{user_id}` — SUPs at one station with department tag + MTTR
+- `GET /api/reports/comparative/ros/{user_id}?dept_id=` — list of ROs (dept-cascadable) with dept + station codes
+- `GET /api/reports/comparative/ro-supervisors/{user_id}?ro_id=` — RO header (name, dept, station codes, **avg_mttr**, sup_count) + per-SUP MTTR rows
+
+**Frontend**
+- **Section C removed entirely** (no more 4-level grouped chart card)
+- Section A → `SectionAExplorer`: AssetType → Locations (grouped by station with sticky headers) → Assets (with WORKING/YELLOW/ORANGE/RED status badges + days-defective + last-inspection-date) → existing `AssetHistoryDrawer`
+- Section B → `SectionBPeers`: single-select Category (Station / RO). Station mode shows SUPs with dept-coded chips. RO mode shows RO header card (avg MTTR + sup_count + dept + station codes) + SUP cylinders. Click any SUP → navigates to `/performance/<sup_id>`.
+- New page: `/app/frontend/src/pages/PerformanceSheetPage.js` wraps existing `SupervisorAnalyticsView` for the new route.
+- New route `/performance/:userId` wired in `App.js`.
+- **Station multi-select** added to top toolbar (filters Section A scope).
+- `CylinderBar` upgraded: 6-stop gradient, drop-shadow filter, ambient occlusion overlay, deeper end-cap shading, V-shape zigzag break with white outline for outliers > 2× p90.
+- '—' / empty asset-type names rendered as `(unnamed)`, non-drillable, with admin warning banner for SA/Admin only.
+- Tested via `testing_agent_v3_fork` iteration_21: backend 14/14, frontend 100% (Section A 4-level drill, Section B station+RO modes, /performance route navigation, station multi-select, cylinder visuals all verified).
+
 ### Feb 2026 — Comparative Reports PDF/Excel Export with Configurable Sections
 **Backend** (`/app/backend/routers/comparative_export.py` — new)
 - `POST /api/reports/comparative/export/pdf/{user_id}` and `POST /api/reports/comparative/export/excel/{user_id}` accepting `ExportRequest` body: `window_days, stat, dept_id, asset_type_ids, drill_state{level,parent_id,parent_asset_type_id}, sections{card_a,card_b,card_c_current,card_c_full,defective,remarks,last_inspection}, style`.
