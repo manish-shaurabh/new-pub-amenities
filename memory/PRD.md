@@ -28,6 +28,26 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Activity Wipe (time-window bulk delete for self-test data)
+**Backend** (`/app/backend/routers/data_health.py`)
+- New endpoints:
+  - `POST /api/data-health/activity-wipe/preview/{user_id}` — body `{cutoff_date, collections[]}` → returns per-collection count + 5-row sample + total. Admin can view; doesn't mutate.
+  - `POST /api/data-health/activity-wipe/execute/{user_id}` — same body → atomic delete + audit log row. Superadmin only.
+- Supports collections: `inspections`, `orange_list`, `remarks`, `schedules` (your pick).
+- **Bug found & fixed mid-build**: `created_at` is stored as `datetime` (not ISO string). String comparison `<=` returned 0 because of BSON type ordering. Fix: parse cutoff to a `datetime` via `_parse_cutoff()` and build a hybrid OR query that matches BOTH `datetime` AND ISO-string variants of every date field.
+- Dangling-remark cleanup: if you wipe OLs but not remarks, the executor sweeps orphan remarks left behind.
+
+**Frontend** (`/app/frontend/src/components/DataHealthPanel.js`)
+- New **Activity Wipe card** (superadmin-only) inserted above the audit log.
+- UI: date picker for cutoff + 4 collection checkboxes + Preview button → shows per-collection counts + total → Wipe button gated by "I understand" confirmation dialog.
+- Audit log table at bottom auto-refreshes after a wipe and shows category=`activity_wipe` rows.
+
+**Verified end-to-end**:
+- Preview with cutoff `2026-12-31` → 292 records (106 inspections + 79 OL + 105 remarks + 2 schedules) — matches DB
+- Preview with cutoff `2026-04-15` → 2 records — date filter working correctly
+- Execute → audit log entry created
+- Asset/station/user master data untouched
+
 ### Feb 2026 — Orphan Asset-Type Refs + Station/Location Duplicates + Hide Unnamed
 **Backend** (`/app/backend/routers/data_health.py`)
 - **New category** `orphan_asset_type_refs` — detects assets whose `asset_type_id` points to a deleted asset-type. Cleanup cascade-deletes those assets via `_cascade_delete_assets`.

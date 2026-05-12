@@ -20,7 +20,7 @@ Endpoints (all require role in {superadmin, admin}, execute requires superadmin)
   GET  /api/data-health/audit/{user_id}?limit=
 """
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
@@ -721,3 +721,133 @@ async def audit_log(user_id: str, limit: int = Query(50, le=200)):
         r["_id"] = str(r["_id"])
         rows.append(r)
     return {"rows": rows}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Activity Wipe — bulk-delete inspection/OL/remarks/schedules in a time window
+# ════════════════════════════════════════════════════════════════════════════
+class ActivityWipeRequest(BaseModel):
+    cutoff_date: str  # ISO datetime string; delete records with created_at <= this
+    collections: List[str]
+
+
+_WIPE_TARGETS = {
+    "inspections": (inspections_collection, "created_at", "inspection_at"),
+    "orange_list": (orange_list_collection, "created_at", "defective_since"),
+    "remarks": (remarks_collection, "created_at", None),
+    "schedules": (schedules_collection, "created_at", None),
+}
+
+
+def _validate_collections(cols: List[str]) -> List[str]:
+    bad = [c for c in cols if c not in _WIPE_TARGETS]
+    if bad:
+        raise HTTPException(status_code=400,
+                            detail=f"Unknown collections: {bad}. Valid: {list(_WIPE_TARGETS)}")
+    return cols
+
+
+def _parse_cutoff(cutoff_date: str) -> datetime:
+    """Parse cutoff ISO string into a Naive datetime. Accepts 'YYYY-MM-DD' or
+    full ISO 'YYYY-MM-DDTHH:MM:SS'. Strips trailing 'Z' if present."""
+    s = (cutoff_date or "").strip().rstrip("Z")
+    try:
+        # Date-only → end of that day
+        if len(s) == 10:
+            return datetime.fromisoformat(s).replace(hour=23, minute=59, second=59)
+        return datetime.fromisoformat(s)
+    except Exception:
+        raise HTTPException(status_code=400,
+                            detail=f"Invalid cutoff_date: {cutoff_date!r}. "
+                                   "Use 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM:SS'.")
+
+
+def _wipe_query(cutoff_dt: datetime, primary: str, fallback: Optional[str]) -> Dict[str, Any]:
+    """Build OR query supporting both datetime AND ISO-string storage variants
+    so we match every record regardless of how dates were saved."""
+    cutoff_iso = cutoff_dt.isoformat()
+    conds = []
+    for f in [primary] + ([fallback] if fallback else []):
+        conds.append({f: {"$lte": cutoff_dt, "$ne": None}})
+        conds.append({f: {"$lte": cutoff_iso, "$type": "string"}})
+    return {"$or": conds}
+
+
+async def _wipe_count(coll, cutoff_dt: datetime, primary: str, fallback: Optional[str]) -> int:
+    return await coll.count_documents(_wipe_query(cutoff_dt, primary, fallback))
+
+
+async def _wipe_sample(coll, cutoff_dt: datetime, primary: str, fallback: Optional[str],
+                       n: int = 5):
+    rows = []
+    keep_keys = {"_id", "asset_id", "station_id", "asset_number",
+                 "inspector_id", "marked_working_by", "author_role",
+                 "body", "text", "list_type", "status", primary}
+    if fallback:
+        keep_keys.add(fallback)
+    async for d in coll.find(_wipe_query(cutoff_dt, primary, fallback)).limit(n):
+        d["_id"] = str(d["_id"])
+        out = {}
+        for k, v in d.items():
+            if k in keep_keys:
+                out[k] = v.isoformat() if isinstance(v, datetime) else v
+        rows.append(out)
+    return rows
+
+
+@router.post("/api/data-health/activity-wipe/preview/{user_id}")
+async def activity_wipe_preview(user_id: str, req: ActivityWipeRequest):
+    await _user_or_403(user_id)
+    cols = _validate_collections(req.collections)
+    cutoff_dt = _parse_cutoff(req.cutoff_date)
+    out = {"cutoff_date": cutoff_dt.isoformat(), "per_collection": {}}
+    total = 0
+    for cname in cols:
+        coll, primary, fallback = _WIPE_TARGETS[cname]
+        n = await _wipe_count(coll, cutoff_dt, primary, fallback)
+        sample = await _wipe_sample(coll, cutoff_dt, primary, fallback)
+        out["per_collection"][cname] = {"count": n, "sample": sample,
+                                        "primary_field": primary,
+                                        "fallback_field": fallback}
+        total += n
+    out["total"] = total
+    return out
+
+
+@router.post("/api/data-health/activity-wipe/execute/{user_id}")
+async def activity_wipe_execute(user_id: str, req: ActivityWipeRequest):
+    actor = await _user_or_403(user_id, require_superadmin=True)
+    cols = _validate_collections(req.collections)
+    cutoff_dt = _parse_cutoff(req.cutoff_date)
+    summary = {}
+    total_deleted = 0
+    for cname in cols:
+        coll, primary, fallback = _WIPE_TARGETS[cname]
+        q = _wipe_query(cutoff_dt, primary, fallback)
+        n = (await coll.delete_many(q)).deleted_count
+        summary[cname] = n
+        total_deleted += n
+    # If we wiped OLs but not remarks, clean dangling remarks
+    if "orange_list" in cols and "remarks" not in cols:
+        ol_ids = {str(o["_id"]) for o in await orange_list_collection.find(
+            {}, {"_id": 1}).to_list(50000)}
+        n_dangling = 0
+        async for r in remarks_collection.find({"orange_list_id": {"$exists": True}}):
+            if str(r.get("orange_list_id") or "") not in ol_ids:
+                await remarks_collection.delete_one({"_id": r["_id"]})
+                n_dangling += 1
+        summary["remarks_dangling_cleaned"] = n_dangling
+        total_deleted += n_dangling
+
+    await audit_collection.insert_one({
+        "performed_by": user_id,
+        "performed_by_name": actor.get("name"),
+        "performed_at": now_ist().isoformat(),
+        "category": "activity_wipe",
+        "cutoff_date": cutoff_dt.isoformat(),
+        "collections": cols,
+        "summary": summary,
+    })
+    return {"summary": summary, "total_deleted": total_deleted,
+            "performed_at": now_ist().isoformat()}
+

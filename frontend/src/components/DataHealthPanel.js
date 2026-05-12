@@ -205,6 +205,9 @@ export default function DataHealthPanel({ currentUser }) {
           </div>
         )}
 
+      {/* Activity Wipe card */}
+      {isSuperadmin && <ActivityWipeCard currentUser={currentUser} onAfter={() => { refreshScan(); refreshAudit(); }} />}
+
       {/* Audit log */}
       <Card>
         <CardHeader className="pb-2">
@@ -424,3 +427,151 @@ function CascadeImpact({ data }) {
   }
   return <pre className="text-[10px] bg-slate-50 p-2 rounded">{JSON.stringify(data, null, 2)}</pre>;
 }
+
+
+// ─── Activity Wipe Card ─────────────────────────────────────────────────────
+function ActivityWipeCard({ currentUser, onAfter }) {
+  const [cutoff, setCutoff] = useState(new Date().toISOString().slice(0, 10));
+  const [cols, setCols] = useState({
+    inspections: true, orange_list: true, remarks: true, schedules: true,
+  });
+  const [preview, setPreview] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [understood, setUnderstood] = useState(false);
+  const [executing, setExecuting] = useState(false);
+
+  const selectedCols = Object.keys(cols).filter(k => cols[k]);
+
+  const doPreview = async () => {
+    if (!selectedCols.length) return;
+    setPreviewing(true);
+    try {
+      const r = await axios.post(
+        `${BACKEND}/api/data-health/activity-wipe/preview/${currentUser._id}`,
+        { cutoff_date: cutoff, collections: selectedCols },
+      );
+      setPreview(r.data);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Preview failed');
+    } finally { setPreviewing(false); }
+  };
+
+  const doExecute = async () => {
+    setExecuting(true);
+    try {
+      const r = await axios.post(
+        `${BACKEND}/api/data-health/activity-wipe/execute/${currentUser._id}`,
+        { cutoff_date: cutoff, collections: selectedCols },
+      );
+      toast.success(`Wiped ${r.data.total_deleted} records`);
+      setConfirmOpen(false);
+      setUnderstood(false);
+      setPreview(null);
+      onAfter?.();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Wipe failed');
+    } finally { setExecuting(false); }
+  };
+
+  return (
+    <Card data-testid="dh-activity-wipe">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2 text-red-700">
+          <AlertTriangle className="h-4 w-4" />
+          Activity Wipe — clear stale inspections, repairs, remarks
+        </CardTitle>
+        <p className="text-xs text-slate-500">
+          Deletes ALL records in selected collections with timestamp ≤ cutoff date.
+          Useful to clean self-test data without touching asset/station/user masters.
+          <strong className="text-red-700"> Permanent. Audited.</strong>
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-slate-500 uppercase">Cutoff date (delete on or before)</label>
+            <input type="date" value={cutoff} onChange={(e) => { setCutoff(e.target.value); setPreview(null); }}
+                   data-testid="dh-wipe-cutoff"
+                   className="mt-1 w-full border rounded px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 uppercase">Collections to wipe</label>
+            <div className="mt-1 grid grid-cols-2 gap-1">
+              {Object.keys(cols).map(k => (
+                <label key={k} className="flex items-center gap-1.5 text-sm">
+                  <Checkbox checked={cols[k]}
+                            onCheckedChange={(v) => { setCols(c => ({ ...c, [k]: !!v })); setPreview(null); }}
+                            data-testid={`dh-wipe-col-${k}`} />
+                  <span>{k.replaceAll('_', ' ')}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={doPreview}
+                  disabled={previewing || !selectedCols.length}
+                  data-testid="dh-wipe-preview" className="gap-1.5">
+            {previewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+            Preview count
+          </Button>
+          {preview && preview.total > 0 && (
+            <Button variant="destructive" size="sm"
+                    onClick={() => { setUnderstood(false); setConfirmOpen(true); }}
+                    data-testid="dh-wipe-execute-btn" className="gap-1.5">
+              <Trash2 className="h-3.5 w-3.5" />
+              Wipe {preview.total} records
+            </Button>
+          )}
+        </div>
+
+        {preview && (
+          <div className="rounded border border-slate-200 bg-slate-50 p-2 text-xs space-y-1"
+               data-testid="dh-wipe-preview-result">
+            <div className="font-semibold text-slate-700">
+              Will delete {preview.total} record(s) on or before {preview.cutoff_date}
+            </div>
+            {Object.entries(preview.per_collection).map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between">
+                <span className="text-slate-600">{k.replaceAll('_', ' ')}</span>
+                <span className="font-mono">{v.count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmOpen(false)}>
+        <DialogContent className="max-w-md" data-testid="dh-wipe-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <AlertTriangle className="h-5 w-5" /> Permanent Activity Wipe
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently delete {preview?.total ?? 0} record(s) across{' '}
+              <code>{selectedCols.join(', ')}</code> with timestamp ≤ <code>{cutoff}</code>.
+              Asset / station / user master data is NOT affected.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={understood} onCheckedChange={setUnderstood}
+                      data-testid="dh-wipe-confirm-checkbox" />
+            <span>I understand this is permanent and cannot be undone.</span>
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={executing}
+                    data-testid="dh-wipe-confirm-cancel">Cancel</Button>
+            <Button variant="destructive" disabled={!understood || executing}
+                    onClick={doExecute} data-testid="dh-wipe-confirm-execute" className="gap-1">
+              {executing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Execute Wipe
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
