@@ -1,0 +1,36 @@
+{
+  "summary": "P0 ghost-defective-asset fix VERIFIED end-to-end. Backend: 13/16 pass (3 skips are legit — test_stations/unnamed_asset_types seeded with 0 count, test_preview_test_station_cascade also skipped for same reason). Critical results: (1) GET /api/data-health/scan/{sa_id} now returns 200 and includes asset_status_ghost in categories (the previous 500 from undefined `ghost_assets` is fixed). (2) Ghost injection → scan detection → POST /api/data-health/clean with category=asset_status_ghost & target_ids=[asset_id] correctly resets asset.status='working' and clears defective_since, with summary.assets_reset>=1. (3) Activity-wipe execute auto-resets ghost assets when OLs are wiped — summary includes `asset_status_reset` field with correct count. (4) Bulk preview bug from iteration_22 also now PASSES (orphan_inspection_items preview returns 200 with bulk:true). Frontend: All 12 expected category cards render (data-testid=dh-card-asset_status_ghost present with 👻 icon, red color, FAN-2 sample row showing 'defective' status). Confirm Permanent Cleanup dialog opens with correct category, gated by 'I understand' radio. Audit log displays asset_status_ghost rows with {assets_reset:1} and activity_wipe rows with asset_status_reset:1 — confirming both flows work via the UI integration. Activity Wipe card still renders and operates correctly (regression OK). Code reviewed — clean.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_data_health.py",
+    "/app/test_reports/pytest/data_health_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/backend/routers/data_health.py _find_ghost_status_assets reads up to 50000 defective/pending assets into memory — acceptable at current seed scale, but should switch to aggregation if asset count grows beyond 100k.",
+    "_clean_asset_status_ghost uses $set+$unset on the same operation (status set, defective_since unset). MongoDB tolerates this but is slightly fragile — consider $set with explicit null for defective_since.",
+    "activity_wipe_execute ghost-reset block reuses the same $set/$unset pattern (line 896-899). Same comment applies — minor and not blocking.",
+    "Two test cases (test_preview_test_station_cascade, test_clean_single_test_station_cascade, test_clean_unnamed_types_with_assets_refused_or_zero) are conditional skips because seed data does not contain test_stations or unnamed_asset_types in this run. Not a bug — main agent's recent cleanup runs naturally drained these. To restore coverage, future seed/regression should re-inject one test station and one unnamed asset type at suite setup."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_data_health.py (added EXPECTED_CATEGORIES.orphan_asset_type_refs+asset_status_ghost, added TestAssetStatusGhost class with 4 tests, added TestActivityWipeAssetReset class with 1 test that injects defective asset+open OL then verifies activity-wipe auto-resets status — all 5 new tests passing)"
+  ],
+  "success_rate": {
+    "backend": "100% of executed (13/13 pass, 3 conditional skips due to drained seed)",
+    "frontend": "100% — all 12 cards render, ghost card surfaces with count/icon/color/sample, confirm dialog gating works, audit log populated"
+  },
+  "test_credentials": "SA001/admin123 (superadmin) — used for all tests. /app/memory/test_credentials.md correctly references this.",
+  "seed_data_creation": "Tests inject ghost assets transiently via Mongo (status=defective + no matching open OL) and restore them in fixture teardown. Activity-wipe test also creates and deletes a temporary OL row (_test_ghost_fixture:true). Verified post-run that no ghost assets remain in DB.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P0 ghost fix is GREEN. Backend regression suite at /app/backend/tests/test_data_health.py now covers 16 tests (10 prior + 5 new for ghost + 1 prior preview). Run with: pytest /app/backend/tests/test_data_health.py -v. The new tests require pymongo and bson (already installed). Frontend Data Health panel (DataHealthPanel.js) renders 12 category cards. Confirm modal uses an unchecked radio-style indicator (looks like a circle) for 'I understand' — testing scripts should locate it as input[type=radio] OR by the label text 'I understand'. The dh-confirm-execute button is disabled until that input transitions to checked state; a click on the input itself works in real UX but the underlying control may be a Radix/shadcn primitive needing explicit dispatch. State after run: FAN-2 (and any other previously-ghost assets) all restored to working, defective_since cleared. Audit collection has ~12 new rows including asset_status_ghost + activity_wipe with asset_status_reset.",
+  "rca of the issue": "Original bug RCA (already fixed by main agent before this iteration): scan() referenced an undefined `ghost_assets` variable causing 500 on GET /api/data-health/scan/{user_id}. Fix added _find_ghost_status_assets() helper invoked in scan() and a new asset_status_ghost category block (lines 180-273). Additional fix: _clean_asset_status_ghost() helper performs status reset via update_many. Activity-wipe execute (lines 891-900) now calls _find_ghost_status_assets() after OL deletion and resets matching asset rows. Verified via 5 new pytest cases + UI inspection. No further action needed."
+}

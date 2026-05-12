@@ -177,6 +177,10 @@ async def scan(user_id: str, stale_months: int = Query(STALE_MONTHS_DEFAULT)):
     dup_stations = await _find_duplicates_text(stations_collection, "name")
     dup_locations = await _find_dup_locations()
 
+    # 11. asset_status_ghost — assets stuck non-'working' with no matching open OL.
+    # Surfaces when an Activity Wipe removed OLs but didn't reset asset.status.
+    ghost_assets = await _find_ghost_status_assets()
+
     def _u(u): return {"id": str(u["_id"]), "name": u.get("name"),
                        "employee_id": u.get("employee_id"), "role": u.get("role")}
     def _s(s): return {"id": str(s["_id"]), "name": s.get("name"),
@@ -325,7 +329,24 @@ async def _find_dup_locations() -> Dict[str, List[str]]:
     return out
 
 
-# ─── Preview (cascade impact for a single record) ─────────────────────────
+async def _find_ghost_status_assets() -> List[dict]:
+    """Return assets whose status implies defect but have NO open OL row.
+    Caused by direct DB edits or Activity Wipe removing OL without resetting
+    the asset.status mirror. These assets pollute dashboards as defective even
+    though there's no active orange-list entry behind them."""
+    bad_status_assets = await assets_collection.find(
+        {"status": {"$in": ["defective", "pending_approval"]}}).to_list(50000)
+    if not bad_status_assets:
+        return []
+    bad_ids = [str(a["_id"]) for a in bad_status_assets]
+    open_ols = await orange_list_collection.find(
+        {"asset_id": {"$in": bad_ids}, "status": {"$ne": "resolved"}},
+        {"asset_id": 1}).to_list(50000)
+    open_ol_asset_ids = {str(o["asset_id"]) for o in open_ols}
+    return [a for a in bad_status_assets if str(a["_id"]) not in open_ol_asset_ids]
+
+
+
 @router.get("/api/data-health/preview/{user_id}")
 async def preview(user_id: str,
                   category: str = Query(...),
@@ -466,6 +487,9 @@ async def clean(user_id: str, req: CleanRequest):
     elif req.category == "orphan_asset_type_refs":
         ids = req.target_ids or await _ids_for_category("orphan_asset_type_refs")
         summary = await _cascade_delete_assets(ids)
+    elif req.category == "asset_status_ghost":
+        ids = req.target_ids or await _ids_for_category("asset_status_ghost")
+        summary = await _clean_asset_status_ghost(ids)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown category: {req.category}")
 
@@ -570,6 +594,9 @@ async def _ids_for_category(category: str) -> List[str]:
         bad_assets = await assets_collection.find(
             {"asset_type_id": {"$nin": list(valid)}}).to_list(50000)
         return [str(a["_id"]) for a in bad_assets if a.get("asset_type_id")]
+    if category == "asset_status_ghost":
+        ghosts = await _find_ghost_status_assets()
+        return [str(a["_id"]) for a in ghosts]
     return []
 
 
@@ -664,6 +691,19 @@ async def _cascade_delete_assets(asset_ids: List[str]) -> Dict[str, int]:
         "inspection_items_stripped": items_stripped,
         "schedules_deleted": n_sched,
     }
+
+
+async def _clean_asset_status_ghost(asset_ids: List[str]) -> Dict[str, int]:
+    """Reset ghost asset statuses back to 'working' and clear defective_since.
+    Does NOT delete the asset rows — they remain in service. This re-syncs
+    asset.status with the (empty) orange_list state."""
+    if not asset_ids:
+        return {"assets_reset": 0}
+    n = (await assets_collection.update_many(
+        {"_id": {"$in": [ObjectId(a) for a in asset_ids]}},
+        {"$set": {"status": "working"},
+         "$unset": {"defective_since": ""}})).modified_count
+    return {"assets_reset": n}
 
 
 async def _cascade_delete_users(user_ids: List[str]) -> Dict[str, int]:
@@ -847,6 +887,17 @@ async def activity_wipe_execute(user_id: str, req: ActivityWipeRequest):
                 n_dangling += 1
         summary["remarks_dangling_cleaned"] = n_dangling
         total_deleted += n_dangling
+
+    # If we wiped OLs, reset assets whose status no longer matches any open OL
+    # so dashboards don't show "ghost defective" rows.
+    if "orange_list" in cols:
+        ghosts = await _find_ghost_status_assets()
+        if ghosts:
+            n_reset = (await assets_collection.update_many(
+                {"_id": {"$in": [g["_id"] for g in ghosts]}},
+                {"$set": {"status": "working"},
+                 "$unset": {"defective_since": ""}})).modified_count
+            summary["asset_status_reset"] = n_reset
 
     await audit_collection.insert_one({
         "performed_by": user_id,

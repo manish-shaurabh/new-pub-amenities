@@ -32,6 +32,8 @@ const CATEGORY_META = {
   zero_activity_users:     { color: '#0891b2', icon: '👤', perRecord: true },
   stale_records:           { color: '#64748b', icon: '🗓️', perRecord: false },
   duplicates:              { color: '#f97316', icon: '👯', perRecord: true },
+  orphan_asset_type_refs:  { color: '#f59e0b', icon: '🪪', perRecord: true },
+  asset_status_ghost:      { color: '#dc2626', icon: '👻', perRecord: true },
 };
 
 export default function DataHealthPanel({ currentUser }) {
@@ -335,6 +337,7 @@ function SampleRow({ sample, category, perRecord, onPreview, onDeleteOne, isSupe
   if (sample.code) subParts.push(sample.code);
   if (sample.role) subParts.push(sample.role);
   if (sample.kind) subParts.push(sample.kind);
+  if (sample.status) subParts.push(sample.status);
   return (
     <div className="flex items-center justify-between gap-1.5 group">
       <div className="truncate flex-1">
