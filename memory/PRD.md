@@ -28,6 +28,42 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Read-only Viewer Role (auditor / observer)
+**Purpose**: A new `viewer` user role for HQ executives, auditors, and board observers who need full visibility but ZERO mutation rights.
+
+**Permissions (server-enforced)**
+- ✅ View ALL dashboards (defaults to SuperadminDashboard scope — global)
+- ✅ View Asset Registry, Orange/Red List, Schedules, Inspection History, Notifications, Reports (Health + Comparative + Builder)
+- ✅ Download PDF / Excel exports (per-station, comparative, dossier, defective appendix)
+- ✅ Run Report Builder queries (no save/delete)
+- ❌ Cannot Create/Edit/Delete anything (assets, users, stations, departments, schedules, asset-types, tags)
+- ❌ Cannot perform inspections (route + nav hidden + 403 if posted)
+- ❌ Cannot mark working / approve / reject / post remarks
+- ❌ Cannot access Admin panel
+- ❌ Cannot save/delete saved-reports or dossiers
+
+**Backend**
+- `models.py`: Added `VIEWER = "viewer"` to `UserRole` enum.
+- New `/app/backend/viewer_guard.py` — FastAPI middleware that decodes JWT and rejects any `POST/PUT/PATCH/DELETE` from viewers, EXCEPT the explicit safe-POST allowlist:
+  - `/api/auth/login`, `/api/auth/refresh`
+  - Any path containing `/export/` (PDF/Excel generators)
+  - `/api/reports/builder/run*`, `/api/reports/builder/dossier/run*`, `/api/reports/builder/dossier/export/*`
+  - `/api/reports/comparative/export/*`
+  - `*/activity-wipe/preview` (DRY-RUN only)
+- `reports_builder.py::_ensure_sa()` now allows `superadmin OR viewer` (mutations still 403'd by middleware).
+- `reports.py`: viewer added to admin/superadmin role group in `_filter_assets_for_user`, the RO-card view, and the drill ring grouping → viewer gets the same global SA-style health dashboard at `/api/reports/health/{id}`.
+
+**Frontend**
+- `lib/auth-context.js` — added `isViewer()` helper.
+- `components/AppLayout.js` — sidebar nav hides `/inspection` and `/admin` for viewers; role label "Viewer (Read-only)" surfaces in user dropdown.
+- `App.js` — new `blockViewer` prop on `ProtectedRoute`; `/inspection` redirects viewers to `/`; `/admin` already adminOnly.
+- `pages/UsersPage.js` + `pages/AdminPage.js` — Add-User Role dropdown gains "Viewer (Read-only)" option (Superadmin-only). Filter dropdown gains Viewer row. `isSuperadmin` gates both Super Admin and Viewer options.
+- `components/dashboards/SuperadminDashboard.js` — header badge now shows "Viewer · Read-only" for viewers (was hardcoded "Superadmin").
+
+**Verified**: `testing_agent_v3_fork` iteration_25 — **backend 21/21 PASS** (`test_viewer_role.py`: read access, mutations blocked, allowed POSTs whitelist), **frontend 100%** on all retest items (badge, nav, /reports load, AdminPage dropdown). Test creds: VIEW001 / viewer123 (global scope).
+
+**Future**: scoped viewers (per-station assignment), watermarked "VIEW-ONLY" PDFs.
+
 ### Feb 2026 — Ghost Defective Assets (asset_status_ghost) — P0 fix
 **Background**: After Activity Wipe removes OL rows, `assets.status` was left stuck on `defective`/`pending_approval`, polluting dashboards with phantom defective rows.
 
