@@ -1,0 +1,46 @@
+{
+  "summary": "Viewer (read-only) role testing — backend 21/21 PASS, frontend partial PASS with 2 functional bugs and 1 cosmetic issue found. Backend middleware (viewer_guard.py) correctly enforces all blocks and whitelists. Frontend route guards (/inspection, /admin) work. Sidebar nav filtering works. BUT: (1) /api/reports/health/{user_id} returns 403 for viewer (router-level role gate not updated), causing /reports page to fail with 'Failed to load report' toast. (2) /admin → Users tab → Add User dialog uses AdminPage.js's own form which was NOT updated to include the Viewer option (main agent only updated UsersPage.js, but /admin actually renders AdminPage.js form). (3) Dashboard shows 'Superadmin · System-wide overview' badge text even for viewer.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/reports/health/{user_id}", "issue": "Returns 403 {detail: \"No report view for role 'viewer'\"} for viewer. Router-level role gate has not been updated to allow viewer. This breaks the entire /reports page UI for viewer.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminPage.js (line 1287-1296, Add User dialog Role <Select>)", "issue": "Role dropdown shows only [Supervisor, Approving Supervisor, Reporting Officer, Admin, Super Admin] — missing 'Viewer (Read-only)'. Main agent updated UsersPage.js but the /admin Users tab actually uses AdminPage.js's own embedded form. Also: 'Super Admin' is rendered unconditionally instead of being gated by isSuperadmin().", "selector": "[role='dialog'] [role='combobox']", "priority": "HIGH"},
+      {"component": "DashboardPage.js (Welcome header badge)", "issue": "When logged in as viewer, dashboard header still shows the badge text 'Superadmin · System-wide overview · all stations'. Should reflect viewer role or generic label.", "selector": "main h1 + .badge area", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Viewer navigates to /reports", "issue": "Toast 'Failed to load report' shown and page body is empty. Caused by GET /api/reports/health/{viewer_id} → 403. Need to either (a) include viewer in the role allowlist of that endpoint with a read-only view, or (b) build a viewer-specific reports landing that uses /api/reports/comparative/by-asset-type/{user_id} (which already returns 200).", "affected_selectors": ["main", ".toast"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_viewer_role.py",
+    "/app/test_reports/pytest/viewer_role_results.xml"
+  ],
+  "action_items": [
+    "Add viewer role to the allowlist of GET /api/reports/health/{user_id} (and any other GET endpoints whose router-level role checks reject viewer). Quick repro: curl -H 'Authorization: Bearer <viewer_token>' /api/reports/health/<viewer_id> → 403 with detail \"No report view for role 'viewer'\".",
+    "Update /app/frontend/src/pages/AdminPage.js (line 1287-1296) Add-User Role <Select> to include <SelectItem value='viewer'>Viewer (Read-only)</SelectItem> gated by isSuperadmin(), and also gate the 'Super Admin' option by isSuperadmin() as in UsersPage.js. The UsersPage.js update alone is insufficient because /admin renders its own form.",
+    "Fix DashboardPage.js header badge to use roleLabels[user.role] instead of hardcoded 'Superadmin · System-wide overview · all stations' for viewer (and possibly other roles)."
+  ],
+  "critical_code_review_comments": [
+    "viewer_guard.py — middleware is solid: 21/21 backend tests pass. Allowlist is conservative and correct. Minor: JWT_SECRET fallback hardcoded ('railway-secret-key') matches server.py; not a regression but flag for prod.",
+    "AdminPage.js still maintains a duplicate copy of the Add User dialog (1275-1310) parallel to UsersPage.js renderUserForm. This DRY violation directly caused this bug — any role-list change must be made in two places. Recommend extracting one shared <UserForm> component.",
+    "ReportsPage.js currently does a single GET /api/reports/health/{user_id} and shows blank on failure. Frontend should branch on role and render the comparative/list view that the viewer is allowed to see, instead of relying on a single role-gated endpoint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_viewer_role.py (new — 21 tests across 3 classes: TestViewerReadAccess, TestViewerMutationsBlocked, TestViewerAllowedPosts)"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21 pass)",
+    "frontend": "~70% — sidebar nav filtering ✓, role label ✓, /inspection redirect ✓, /admin redirect ✓; /reports broken ✗, /admin Add-User viewer option missing ✗, dashboard role badge wrong ✗"
+  },
+  "test_credentials": "SA001/admin123 and VIEW001/viewer123 — both verified working. /app/memory/test_credentials.md does not yet list VIEW001 (main agent should add).",
+  "seed_data_creation": "None — VIEW001 already exists in DB from main agent's manual tests.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression: pytest /app/backend/tests/test_viewer_role.py -v (21 tests). For frontend, login flow uses 2 inputs without testids on /login page — use page.query_selector_all('input') and fill by index. Reports page failure was reproduced via curl: GET /api/reports/health/<viewer_id> with viewer Bearer token returns HTTP 403 with body {\"detail\":\"No report view for role 'viewer'\"}. AdminPage.js (NOT UsersPage.js) renders the /admin Users-tab Add-User dialog — main agent updated the wrong file.",
+  "rca of the issue": "(1) /reports 403: ReportsPage.js calls GET /api/reports/health/{user_id}. The router (reports.py or similar) has a role check that explicitly returns 403 'No report view for role X' for unknown roles. Viewer was not added to that role->view mapping. Middleware (viewer_guard.py) only blocks mutations; reads are not its concern. (2) Missing Viewer option in /admin: main agent edited UsersPage.js line 199 but the visible /admin route is AdminPage.js which contains a duplicated Add-User dialog (line 1275-1310) that was not updated. (3) Dashboard 'Superadmin' label is likely a hardcoded badge in DashboardPage.js not driven by roleLabels[user.role]."
+}

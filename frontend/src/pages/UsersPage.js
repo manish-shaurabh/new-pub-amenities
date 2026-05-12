@@ -21,6 +21,7 @@ const roleLabels = {
   reporting_officer: 'Reporting Officer',
   approving_supervisor: 'Approving Supervisor',
   supervisor: 'Supervisor',
+  viewer: 'Viewer (Read-only)',
 };
 
 const roleColors = {
@@ -29,9 +30,10 @@ const roleColors = {
   reporting_officer: 'bg-[hsl(var(--pending))]/10 text-[hsl(var(--pending))] border-[hsl(var(--pending))]/20',
   approving_supervisor: 'bg-accent text-accent-foreground border-accent',
   supervisor: 'bg-muted text-muted-foreground border-border',
+  viewer: 'bg-slate-100 text-slate-700 border-slate-300',
 };
 
-const roleOrder = ['superadmin', 'admin', 'approving_supervisor', 'reporting_officer', 'supervisor'];
+const roleOrder = ['superadmin', 'admin', 'approving_supervisor', 'reporting_officer', 'supervisor', 'viewer'];
 
 export default function UsersPage() {
   const { user: currentUser, isSuperadmin } = useAuth();
@@ -194,6 +196,7 @@ export default function UsersPage() {
             <SelectItem value="reporting_officer">Reporting Officer</SelectItem>
             <SelectItem value="admin">Admin</SelectItem>
             {isSuperadmin() && <SelectItem value="superadmin">Super Admin</SelectItem>}
+            {isSuperadmin() && <SelectItem value="viewer">Viewer (Read-only)</SelectItem>}
           </SelectContent>
         </Select>
       </div>
@@ -333,6 +336,7 @@ export default function UsersPage() {
             <SelectItem value="reporting_officer">Reporting Officer</SelectItem>
             <SelectItem value="admin">Admin</SelectItem>
             <SelectItem value="superadmin">Super Admin</SelectItem>
+            <SelectItem value="viewer">Viewer (Read-only)</SelectItem>
           </SelectContent>
         </Select>
       </div>

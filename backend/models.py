@@ -12,6 +12,10 @@ class UserRole(str, Enum):
     REPORTING_OFFICER = "reporting_officer"
     APPROVING_SUPERVISOR = "approving_supervisor"
     SUPERVISOR = "supervisor"
+    VIEWER = "viewer"  # Read-only auditor/observer. Can view dashboards, reports,
+                        # asset registry, OL lists, schedules, history, and export
+                        # PDF/Excel. Cannot create/edit/delete anything, cannot
+                        # inspect, cannot mark working / approve / post remarks.
 
 
 class AssetStatus(str, Enum):

@@ -48,6 +48,12 @@ from routers import (
 app = FastAPI(title="Railway Asset Inspection Management System")
 
 
+# Read-only Viewer enforcement (rejects mutations from `viewer` role).
+# Registered BEFORE CORS so 403s still flow through CORS headers.
+from viewer_guard import viewer_guard_middleware
+app.middleware("http")(viewer_guard_middleware)
+
+
 @app.on_event("startup")
 async def _ensure_indexes():
     """Ensure unique constraints on department code.

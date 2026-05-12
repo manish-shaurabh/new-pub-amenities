@@ -44,6 +44,10 @@ export function AuthProvider({ children }) {
     return user?.role === 'superadmin';
   };
 
+  const isViewer = () => {
+    return user?.role === 'viewer';
+  };
+
   const canApprove = () => {
     return ['superadmin', 'admin', 'approving_supervisor'].includes(user?.role);
   };
@@ -53,7 +57,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, isSuperadmin, canApprove, canInspect }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, isSuperadmin, isViewer, canApprove, canInspect }}>
       {children}
     </AuthContext.Provider>
   );

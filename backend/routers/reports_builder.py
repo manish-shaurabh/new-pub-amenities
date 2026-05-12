@@ -44,13 +44,16 @@ router = APIRouter()
 # Auth gate — Superadmin only
 # ════════════════════════════════════════════════════════════════════════════
 async def _ensure_sa(user_id: str) -> dict:
+    """Allows Superadmin (full access) and Viewer (read-only).
+    Mutation routes that call this are additionally gated by the viewer_guard
+    middleware which 403s viewers on POST/PUT/DELETE outside the whitelist."""
     try:
         u = await users_collection.find_one({"_id": ObjectId(user_id)})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid user_id")
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
-    if u.get("role") != "superadmin":
+    if u.get("role") not in ("superadmin", "viewer"):
         raise HTTPException(status_code=403, detail="Superadmin only")
     return u
 

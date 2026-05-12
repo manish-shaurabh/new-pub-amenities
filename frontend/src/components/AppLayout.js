@@ -21,12 +21,13 @@ import { ScrollArea } from './ui/scroll-area';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, roles: 'all' },
-  { path: '/assets', label: 'Asset Registry', icon: Box, roles: ['superadmin'] },
-  { path: '/inspection', label: 'New Inspection', icon: ClipboardCheck, roles: 'all' },
+  { path: '/assets', label: 'Asset Registry', icon: Box, roles: ['superadmin', 'viewer'] },
+  { path: '/inspection', label: 'New Inspection', icon: ClipboardCheck,
+    roles: ['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor'] },
   { path: '/inspection-history', label: 'Inspection History', icon: History, roles: 'all' },
   {
     path: '/orange-list', label: 'Orange / Red List', icon: AlertTriangle,
-    roles: ['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor']
+    roles: ['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor', 'viewer']
   },
   { path: '/schedules', label: 'Schedules', icon: Calendar, roles: 'all' },
   { path: '/reports', label: 'Reports', icon: FileBarChart, roles: 'all' },
@@ -44,6 +45,7 @@ const roleLabels = {
   reporting_officer: 'Reporting Officer',
   approving_supervisor: 'Approving Supervisor',
   supervisor: 'Supervisor',
+  viewer: 'Viewer (Read-only)',
 };
 
 export default function AppLayout({ children }) {

@@ -16,12 +16,13 @@ import PerformanceSheetPage from './pages/PerformanceSheetPage';
 import AppLayout from './components/AppLayout';
 import './App.css';
 
-function ProtectedRoute({ children, adminOnly = false }) {
+function ProtectedRoute({ children, adminOnly = false, blockViewer = false }) {
   const { user, loading } = useAuth();
   
   if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
   if (!user) return <Navigate to="/login" />;
   if (adminOnly && !['superadmin', 'admin'].includes(user.role)) return <Navigate to="/" />;
+  if (blockViewer && user.role === 'viewer') return <Navigate to="/" />;
   
   return children;
 }
@@ -51,7 +52,7 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/inspection" element={
-        <ProtectedRoute>
+        <ProtectedRoute blockViewer>
           <AppLayout>
             <InspectionPage />
           </AppLayout>
