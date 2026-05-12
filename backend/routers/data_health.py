@@ -258,6 +258,15 @@ async def scan(user_id: str, stale_months: int = Query(STALE_MONTHS_DEFAULT)):
                            for a in orphan_type_ref_assets[:15]],
                 "label": "Assets pointing to a deleted asset-type",
             },
+            "asset_status_ghost": {
+                "count": len(ghost_assets),
+                "sample": [{"id": str(a["_id"]),
+                            "asset_number": a.get("asset_number"),
+                            "status": a.get("status"),
+                            "defective_since": str(a.get("defective_since") or "")}
+                           for a in ghost_assets[:15]],
+                "label": "Assets stuck non-'working' with no matching open OL entry",
+            },
         },
     }
 
