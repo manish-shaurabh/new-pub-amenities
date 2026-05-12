@@ -108,6 +108,14 @@ async def scan(user_id: str, stale_months: int = Query(STALE_MONTHS_DEFAULT)):
         if any_orphan:
             orphan_insp_ids.append(str(ins["_id"]))
 
+    # 1b. orphan asset_type refs — assets pointing to deleted asset-types
+    types_all = await asset_types_collection.find({}, {"_id": 1, "name": 1}).to_list(2000)
+    valid_type_ids = {str(t["_id"]) for t in types_all}
+    orphan_type_ref_assets = await assets_collection.find(
+        {"asset_type_id": {"$nin": list(valid_type_ids)}}).to_list(50000)
+    orphan_type_ref_assets = [a for a in orphan_type_ref_assets
+                              if a.get("asset_type_id")]  # ignore null/missing
+
     # 2. orphan OL entries
     ols = await orange_list_collection.find({}).to_list(50000)
     orphan_ol_ids = [str(o["_id"]) for o in ols
@@ -163,9 +171,11 @@ async def scan(user_id: str, stale_months: int = Query(STALE_MONTHS_DEFAULT)):
     stale_ols_resolved = await orange_list_collection.count_documents(
         {"status": "resolved", "marked_working_at": {"$lt": cutoff.isoformat()}})
 
-    # 10. duplicates
+    # 10. duplicates (users, assets, stations, locations)
     dup_users = await _find_duplicates(users_collection, "employee_id")
     dup_assets = await _find_duplicates(assets_collection, "asset_number")
+    dup_stations = await _find_duplicates_text(stations_collection, "name")
+    dup_locations = await _find_dup_locations()
 
     def _u(u): return {"id": str(u["_id"]), "name": u.get("name"),
                        "employee_id": u.get("employee_id"), "role": u.get("role")}
@@ -231,12 +241,22 @@ async def scan(user_id: str, stale_months: int = Query(STALE_MONTHS_DEFAULT)):
                 },
             },
             "duplicates": {
-                "count": len(dup_users) + len(dup_assets),
+                "count": len(dup_users) + len(dup_assets) + len(dup_stations) + len(dup_locations),
                 "sample": (
-                    [{"kind": "user", "employee_id": k, "ids": v} for k, v in list(dup_users.items())[:5]]
-                    + [{"kind": "asset", "asset_number": k, "ids": v} for k, v in list(dup_assets.items())[:5]]
+                    [{"kind": "user", "key": k, "ids": v} for k, v in list(dup_users.items())[:3]]
+                    + [{"kind": "asset", "key": k, "ids": v} for k, v in list(dup_assets.items())[:3]]
+                    + [{"kind": "station", "key": k, "ids": v} for k, v in list(dup_stations.items())[:3]]
+                    + [{"kind": "location", "key": k, "ids": v} for k, v in list(dup_locations.items())[:3]]
                 ),
-                "label": "Duplicate employee_ids or asset_numbers",
+                "label": "Duplicate users / assets / stations / locations (case-insensitive)",
+            },
+            "orphan_asset_type_refs": {
+                "count": len(orphan_type_ref_assets),
+                "sample": [{"id": str(a["_id"]),
+                            "asset_number": a.get("asset_number"),
+                            "bad_type_id": str(a.get("asset_type_id"))}
+                           for a in orphan_type_ref_assets[:15]],
+                "label": "Assets pointing to a deleted asset-type",
             },
         },
     }
@@ -253,6 +273,46 @@ async def _find_duplicates(coll, field: str) -> Dict[str, List[str]]:
     out = {}
     async for doc in coll.aggregate(pipeline):
         out[doc["_id"]] = doc["ids"]
+    return out
+
+
+async def _find_duplicates_text(coll, field: str) -> Dict[str, List[str]]:
+    """Like _find_duplicates but trims whitespace and lowercases for matching.
+    Catches 'DHANBAD' vs 'Dhanbad' vs 'DHANBAD ' as a single duplicate set."""
+    pipeline = [
+        {"$match": {field: {"$exists": True, "$nin": [None, ""]}}},
+        {"$group": {
+            "_id": {"$toLower": {"$trim": {"input": f"${field}"}}},
+            "ids": {"$push": {"$toString": "$_id"}},
+            "names": {"$push": f"${field}"},
+            "n": {"$sum": 1},
+        }},
+        {"$match": {"n": {"$gt": 1}}},
+    ]
+    out = {}
+    async for doc in coll.aggregate(pipeline):
+        out[doc["_id"]] = doc["ids"]
+    return out
+
+
+async def _find_dup_locations() -> Dict[str, List[str]]:
+    """Duplicate location names *within the same station* (case-insensitive)."""
+    pipeline = [
+        {"$match": {"name": {"$exists": True, "$nin": [None, ""]}}},
+        {"$group": {
+            "_id": {
+                "station_id": "$station_id",
+                "name_norm": {"$toLower": {"$trim": {"input": "$name"}}},
+            },
+            "ids": {"$push": {"$toString": "$_id"}},
+            "n": {"$sum": 1},
+        }},
+        {"$match": {"n": {"$gt": 1}}},
+    ]
+    out = {}
+    async for doc in locations_collection.aggregate(pipeline):
+        key = f"{doc['_id'].get('station_id') or '?'}::{doc['_id'].get('name_norm')}"
+        out[key] = doc["ids"]
     return out
 
 
@@ -394,6 +454,9 @@ async def clean(user_id: str, req: CleanRequest):
         summary = await _cascade_delete_users(ids)
     elif req.category == "duplicates":
         summary = await _clean_duplicates(req.target_ids)
+    elif req.category == "orphan_asset_type_refs":
+        ids = req.target_ids or await _ids_for_category("orphan_asset_type_refs")
+        summary = await _cascade_delete_assets(ids)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown category: {req.category}")
 
@@ -492,6 +555,12 @@ async def _ids_for_category(category: str) -> List[str]:
                and await inspections_collection.count_documents({"inspector_id": uid}) == 0:
                 out.append(uid)
         return out
+    if category == "orphan_asset_type_refs":
+        valid = {str(t["_id"]) for t in await asset_types_collection.find(
+            {}, {"_id": 1}).to_list(2000)}
+        bad_assets = await assets_collection.find(
+            {"asset_type_id": {"$nin": list(valid)}}).to_list(50000)
+        return [str(a["_id"]) for a in bad_assets if a.get("asset_type_id")]
     return []
 
 

@@ -28,6 +28,23 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Orphan Asset-Type Refs + Station/Location Duplicates + Hide Unnamed
+**Backend** (`/app/backend/routers/data_health.py`)
+- **New category** `orphan_asset_type_refs` — detects assets whose `asset_type_id` points to a deleted asset-type. Cleanup cascade-deletes those assets via `_cascade_delete_assets`.
+- **Extended duplicates** — `duplicates` category now includes:
+  - Duplicate user `employee_id` (existing)
+  - Duplicate asset `asset_number` (existing)
+  - **Duplicate station names** — case-insensitive, whitespace-trimmed (new)
+  - **Duplicate location names within the same station** — case-insensitive (new)
+- New helper `_find_duplicates_text` (case-insensitive + trim) and `_find_dup_locations` (grouped by station_id).
+- Bug fix: previous `_find_duplicates_text` had repeated `$ne` keys which only matched empty-string and ignored null; replaced with `$nin: [None, ""]`.
+
+**Frontend** (`/app/frontend/src/pages/ComparativeReportsPage.js`)
+- **MTTR Explorer now HIDES asset-type rows with empty/missing names entirely** — no more "(unnamed)" pollution in the chart. The data is still surfaced in Admin → Health → `unnamed_asset_types` or `orphan_asset_type_refs` for the admin to clean.
+- Removed unused `_unnamed` toast warning and the bottom warning banner.
+
+**Verified end-to-end**: injected a bogus orphan-type-ref asset → scan detects it → cleanup cascade-deletes it → scan returns 0.
+
 ### Feb 2026 — Excel Polish: Row Striping + Frozen Header
 - Added `_stripe_rows()` and `_freeze_below_header()` helpers in `comparative_export.py`.
 - All Excel data sheets (By Asset Type, Peer Matrix, Drilldown, Drilldown — Full, Defective Only, Last Inspections, Remarks) now have:

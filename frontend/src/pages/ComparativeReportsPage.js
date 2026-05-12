@@ -138,19 +138,19 @@ function SectionAExplorer({ user, windowDays, stat, deptId, stationIds }) {
   const rows = useMemo(() => {
     if (!data) return [];
     if (cur.level === 'type') {
-      const peerMax = Math.max(...(data.rows || []).map(r => r[stat] || 0), 1);
-      return (data.rows || []).map(r => {
-        const isUnnamed = !r.label || r.label === '—' || r.label.trim() === '';
-        return {
-          id: r.asset_type_id,
-          label: isUnnamed ? '(unnamed)' : r.label,
-          value: r[stat], n: r.n, min: r.min, max: r.max,
-          color: semanticColor(r[stat], peerMax),
-          sub: r.n != null ? `min ${r.min ?? '—'} · max ${r.max ?? '—'}` : '',
-          drillable: !isUnnamed,
-          _unnamed: isUnnamed,
-        };
+      const validRows = (data.rows || []).filter(r => {
+        const label = (r.label || '').trim();
+        return label && label !== '—';
       });
+      const peerMax = Math.max(...validRows.map(r => r[stat] || 0), 1);
+      return validRows.map(r => ({
+        id: r.asset_type_id,
+        label: r.label,
+        value: r[stat], n: r.n, min: r.min, max: r.max,
+        color: semanticColor(r[stat], peerMax),
+        sub: r.n != null ? `min ${r.min ?? '—'} · max ${r.max ?? '—'}` : '',
+        drillable: true,
+      }));
     }
     if (cur.level === 'locations') {
       // Backend returns groups: [{station_name, locations:[]}]
@@ -191,10 +191,6 @@ function SectionAExplorer({ user, windowDays, stat, deptId, stationIds }) {
   }, [data, cur, stat]);
 
   const onSelect = (item) => {
-    if (item._unnamed) {
-      toast.warning('This asset-type has no name. Please rename it in Admin → Asset Types.');
-      return;
-    }
     if (cur.level === 'type') {
       setStack([...stack, { level: 'locations', parent_id: item.id, label: item.label }]);
     } else if (cur.level === 'locations') {
