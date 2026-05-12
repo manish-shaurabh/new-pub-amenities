@@ -28,6 +28,22 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Ghost Defective Assets (asset_status_ghost) — P0 fix
+**Background**: After Activity Wipe removes OL rows, `assets.status` was left stuck on `defective`/`pending_approval`, polluting dashboards with phantom defective rows.
+
+**Backend** (`/app/backend/routers/data_health.py`)
+- New `_find_ghost_status_assets()` — returns assets whose status implies defect but have NO open OL row.
+- `scan()` now includes 12th category `asset_status_ghost` (count + sample {id, asset_number, status, defective_since}).
+- New `_clean_asset_status_ghost(asset_ids)` cleaner — resets `status='working'` and `$unset` `defective_since` (does NOT delete the asset).
+- `clean()` route + `_ids_for_category()` wired for the new category.
+- **Root-cause fix**: `activity_wipe_execute` now invokes the ghost detector after OL deletion and auto-resets matching asset rows in the same transaction (`summary.asset_status_reset` returned).
+
+**Frontend** (`/app/frontend/src/components/DataHealthPanel.js`)
+- New `CATEGORY_META.asset_status_ghost` (👻, red, perRecord=true). Also added `orphan_asset_type_refs` meta (🪪) that was missing.
+- `SampleRow` now also surfaces `status` in the subParts so ghost rows show "FAN-2 · defective" inline.
+
+**Tested** (`testing_agent_v3_fork` iteration_23): backend 13/13 + frontend 100%. Inject ghost → scan 1 → clean → 0 verified. Activity wipe auto-reset verified (asset_status_reset:1). Bulk-preview 500 bug from iteration_22 also fixed (regression check passed).
+
 ### Feb 2026 — Activity Wipe (time-window bulk delete for self-test data)
 **Backend** (`/app/backend/routers/data_health.py`)
 - New endpoints:
