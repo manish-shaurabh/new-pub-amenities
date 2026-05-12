@@ -803,7 +803,9 @@ export default function SuperadminDashboard() {
             Welcome back, {user?.name?.split(' ')[0]}
           </h1>
           <div className="flex items-center gap-2 mt-2">
-            <Badge variant="secondary" className="text-xs">Superadmin</Badge>
+            <Badge variant="secondary" className="text-xs">
+              {user?.role === 'viewer' ? 'Viewer · Read-only' : 'Superadmin'}
+            </Badge>
             <p className="text-sm text-muted-foreground">
               System-wide overview {stationIds.length ? `· ${stationIds.length} station${stationIds.length === 1 ? '' : 's'} selected` : '· all stations'}
             </p>

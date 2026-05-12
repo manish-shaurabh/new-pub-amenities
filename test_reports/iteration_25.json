@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 25 regression for viewer role fixes — all 3 issues from iteration 24 are now RESOLVED. Backend pytest suite (test_viewer_role.py): 21/21 PASS. Frontend e2e: (a) /api/reports/health/{viewer_id} returns 200 with view='ros' (3 RO cards), (b) viewer dashboard header badge now reads 'Viewer · Read-only' (not 'Superadmin'), (c) /admin → Users → Add User dialog Role dropdown now contains 'Viewer (Read-only)' option for SA001. /reports page renders Health Reports for viewer without any 'Failed to load report' toast.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Create User dialog (AdminPage.js)", "issues": ["Console warning: 'Missing Description or aria-describedby={undefined} for {DialogContent}'. Non-blocking accessibility warning — add a DialogDescription element to the Create User dialog."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_viewer_role.py",
+    "/app/test_reports/pytest/viewer_role_iter25.xml"
+  ],
+  "action_items": [
+    "Add a <DialogDescription> to the Create User dialog in AdminPage.js to silence the Radix a11y console warning (low priority).",
+    "Optional: verify with an actual admin (non-superadmin) account that the Add-User Role dropdown HIDES the 'Viewer (Read-only)' and 'Super Admin' options. Code review confirms isSuperadmin gating exists; runtime verification with an admin login was not performed in this iteration."
+  ],
+  "critical_code_review_comments": [
+    "AdminPage.js and UsersPage.js still contain duplicated Add-User form code (DRY violation from iter 24 not yet addressed). Consider extracting <UserForm /> to avoid future regressions where one copy is updated and the other isn't.",
+    "Reports.py role allowlist now includes viewer correctly (lines 194, 356, 393). Good defense-in-depth: viewer_guard middleware blocks mutations and router-level allowlist enables reads."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (21/21 pytest pass + manual curl /api/reports/health 200)", "frontend": "100% on the three retest items (viewer badge, viewer /reports loads, SA001 dropdown has Viewer option)"},
+  "test_credentials": "SA001/admin123 and VIEW001/viewer123 — both working.",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Viewer role feature is now fully working end-to-end. Backend regression suite at /app/backend/tests/test_viewer_role.py (21 tests, all pass in ~4s). Frontend selectors: login page has 2 input fields without testids (fill by index). User object from /api/auth/login returns Mongo `_id` for the user_id used in /api/reports/health/{id}, not employee_id.",
+  "rca of the issue": "Iter 24 had 3 distinct fixes needed: (1) reports.py role allowlist did not include 'viewer' on health/drill/grouping endpoints — fixed; (2) AdminPage.js had a duplicate Add-User form that wasn't updated when UsersPage.js was — fixed by adding Viewer option + isSuperadmin gate directly in AdminPage.js; (3) SuperadminDashboard.js badge text was hardcoded 'Superadmin · System-wide overview' — fixed by adding role==='viewer' conditional rendering. All three fixes verified working in iteration 25."
+}

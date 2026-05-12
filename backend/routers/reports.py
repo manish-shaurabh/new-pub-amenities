@@ -191,7 +191,7 @@ def _filter_assets_for_user(U: dict, user: dict) -> List[dict]:
     role = user.get("role")
     assigned = set(user.get("assigned_stations") or [])
     dept_id = user.get("department_id")
-    if role in ("admin", "superadmin"):
+    if role in ("admin", "superadmin", "viewer"):
         return U["assets"]
     if role == "approving_supervisor":
         return [a for a in U["assets"] if a.get("station_id") in assigned]
@@ -353,7 +353,7 @@ async def reports_health(user_id: str, drill_user_id: Optional[str] = Query(None
             raise HTTPException(status_code=404, detail="Drill target not found")
         scoped = _filter_assets_for_user(U, target)
         station_ids = sorted({a.get("station_id") for a in scoped})
-        ring_grouping = "department" if target.get("role") in ("admin", "superadmin", "approving_supervisor") else "asset_type"
+        ring_grouping = "department" if target.get("role") in ("admin", "superadmin", "approving_supervisor", "viewer") else "asset_type"
         cards = [c for sid in station_ids if (c := _build_station_card(U, sid, scoped, ring_grouping))]
         return {
             "view": "stations",
@@ -390,7 +390,7 @@ async def reports_health(user_id: str, drill_user_id: Optional[str] = Query(None
         return {"view": "supervisors", "viewer": {"user_id": user_id, "role": role},
                 "supervisors": sup_summaries, "generated_at": generated_at.isoformat()}
 
-    if role in ("admin", "superadmin"):
+    if role in ("admin", "superadmin", "viewer"):
         # Group by RO; each RO card = department-wise rings + supervisor bars
         ros = [u for u in U["user_by_id"].values() if u.get("role") == "reporting_officer"]
         cards = []

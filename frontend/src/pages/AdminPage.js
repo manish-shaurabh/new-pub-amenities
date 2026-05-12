@@ -36,6 +36,7 @@ const roleColors = {
 
 export default function AdminPage() {
   const { user } = useAuth();
+  const isSuperadmin = user?.role === 'superadmin';
   const [activeTab, setActiveTab] = useState('stations');
   const [loading, setLoading] = useState(true);
   
@@ -1291,7 +1292,8 @@ export default function AdminPage() {
                     <SelectItem value="approving_supervisor">Approving Supervisor</SelectItem>
                     <SelectItem value="reporting_officer">Reporting Officer</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="superadmin">Super Admin</SelectItem>
+                    {isSuperadmin && <SelectItem value="superadmin">Super Admin</SelectItem>}
+                    {isSuperadmin && <SelectItem value="viewer">Viewer (Read-only)</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
