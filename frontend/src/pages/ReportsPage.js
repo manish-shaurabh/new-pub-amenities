@@ -463,6 +463,8 @@ export default function ReportsPage() {
   if (!data) return null;
 
   const isSA = user?.role === 'superadmin';
+  const isViewer = user?.role === 'viewer';
+  const showBuilder = isSA || isViewer;
 
   // The original "Dashboards" content (existing reports view).
   const dashboardView = (
@@ -522,7 +524,7 @@ export default function ReportsPage() {
         <TabsList data-testid="reports-tabs">
           <TabsTrigger value="dashboards" data-testid="tab-dashboards">Dashboards</TabsTrigger>
           <TabsTrigger value="comparative" data-testid="tab-comparative">Comparative</TabsTrigger>
-          {isSA && <TabsTrigger value="builder" data-testid="tab-builder">Builder</TabsTrigger>}
+          {showBuilder && <TabsTrigger value="builder" data-testid="tab-builder">Builder</TabsTrigger>}
         </TabsList>
         <TabsContent value="dashboards" className="space-y-6">
           {dashboardView}
@@ -530,7 +532,7 @@ export default function ReportsPage() {
         <TabsContent value="comparative">
           <ComparativeReports />
         </TabsContent>
-        {isSA && <TabsContent value="builder">
+        {showBuilder && <TabsContent value="builder">
           <ReportsBuilder />
         </TabsContent>}
       </Tabs>

@@ -303,7 +303,7 @@ function HeatmapTable({ result, metricKind }) {
 }
 
 // ─── Composer (the big form) ──────────────────────────────────────────────
-function Composer({ meta, cfg, setCfg, running, onRun, onSave, saveName, setSaveName, viz }) {
+function Composer({ meta, cfg, setCfg, running, onRun, onSave, saveName, setSaveName, viz, canWrite = true }) {
   const isCrossTab = Boolean(cfg.dim_y);
   const setF = (k, v) => setCfg({ ...cfg, filters: { ...cfg.filters, [k]: v } });
   const setO = (k, v) => setCfg({ ...cfg, output: { ...cfg.output, [k]: v } });
@@ -479,10 +479,14 @@ function Composer({ meta, cfg, setCfg, running, onRun, onSave, saveName, setSave
 
         <div className="flex items-center justify-between">
           <div className="text-xs text-slate-500">
-            <Input placeholder="Save as name…" value={saveName} className="inline-block w-44 mr-1 text-xs h-8"
-                   onChange={(e) => setSaveName(e.target.value)} data-testid="builder-save-name" />
-            <Button size="sm" variant="outline" onClick={onSave} data-testid="builder-save-btn"
-                    className="h-8"><Save className="h-3 w-3 mr-1" /> Save</Button>
+            {canWrite && (
+              <>
+                <Input placeholder="Save as name…" value={saveName} className="inline-block w-44 mr-1 text-xs h-8"
+                       onChange={(e) => setSaveName(e.target.value)} data-testid="builder-save-name" />
+                <Button size="sm" variant="outline" onClick={onSave} data-testid="builder-save-btn"
+                        className="h-8"><Save className="h-3 w-3 mr-1" /> Save</Button>
+              </>
+            )}
           </div>
           <Button onClick={onRun} disabled={running} data-testid="builder-run-btn">
             {running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
@@ -559,13 +563,16 @@ export default function ReportsBuilder() {
 
   const isCrossTab = useMemo(() => Boolean(cfg.dim_y), [cfg.dim_y]);
   const isSA = user?.role === 'superadmin';
+  const isViewer = user?.role === 'viewer';
+  const canLoad = isSA || isViewer;       // builder UI visible to SA and viewer
+  const canWrite = isSA;                  // save / delete / save-dossier — SA only
   const metricKind = useMemo(() => {
     if (!meta) return 'count';
     return meta.metrics.find(m => m.id === cfg.metric)?.kind || 'count';
   }, [meta, cfg.metric]);
 
   useEffect(() => {
-    if (!isSA) return;
+    if (!canLoad) return;
     Promise.all([
       axios.get(`${BACKEND}/api/reports/builder/dimensions/${user._id}`),
       axios.get(`${BACKEND}/api/reports/builder/featured`),
@@ -575,7 +582,7 @@ export default function ReportsBuilder() {
     ]).then(([m, f, s, h, sd]) => {
       setMeta(m.data); setFeatured(f.data); setSaved(s.data); setHistory(h.data); setSavedDossiers(sd.data);
     }).catch(() => toast.error('Failed to load builder metadata'));
-  }, [isSA, user]);
+  }, [canLoad, user]);
 
   useEffect(() => {
     if (meta && !result) runConfig();
@@ -675,7 +682,7 @@ export default function ReportsBuilder() {
     } catch { toast.error('Delete failed'); }
   };
 
-  if (!isSA) return <div className="p-8 text-center text-slate-500">Builder is available to Super Admin only.</div>;
+  if (!canLoad) return <div className="p-8 text-center text-slate-500">Builder is available to Super Admin and Viewer roles only.</div>;
   if (!meta) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-teal-700" /></div>;
 
   return (
@@ -711,7 +718,7 @@ export default function ReportsBuilder() {
               <Composer meta={meta} cfg={cfg} setCfg={setCfg} running={running}
                         onRun={() => runConfig()} onSave={saveCurrent}
                         saveName={saveName} setSaveName={setSaveName}
-                        viz={cfg.viz || 'bar'} />
+                        viz={cfg.viz || 'bar'} canWrite={canWrite} />
               <Card data-testid="builder-result">
                 <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
                   <CardTitle className="text-base flex items-center gap-2">
@@ -765,9 +772,11 @@ export default function ReportsBuilder() {
                         {s.config.metric} · {s.config.dim_x}{s.config.dim_y ? ` × ${s.config.dim_y}` : ''} · {s.config.window}
                       </div>
                     </button>
-                    <button onClick={() => deleteSaved(s._id)} className="text-slate-400 hover:text-red-600">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {canWrite && (
+                      <button onClick={() => deleteSaved(s._id)} className="text-slate-400 hover:text-red-600">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </CardContent>
@@ -783,7 +792,8 @@ export default function ReportsBuilder() {
                          dossierSaveName={dossierSaveName} setDossierSaveName={setDossierSaveName}
                          savedDossiers={savedDossiers}
                          loadDossier={(d) => setDossier(d)}
-                         deleteDossier={deleteDossier} />
+                         deleteDossier={deleteDossier}
+                         canWrite={canWrite} />
         </TabsContent>
 
         {/* ── History ── */}
@@ -817,7 +827,7 @@ export default function ReportsBuilder() {
 // ─── Dossier editor ──────────────────────────────────────────────────────
 function DossierEditor({ dossier, setDossier, removeSection, moveSection,
                          exportDossier, saveDossier, dossierSaveName, setDossierSaveName,
-                         savedDossiers, loadDossier, deleteDossier }) {
+                         savedDossiers, loadDossier, deleteDossier, canWrite = true }) {
   const setMeta = (k, v) => setDossier(d => ({ ...d, [k]: v }));
   const setCover = (k, v) => setDossier(d => ({ ...d, cover: { ...(d.cover || {}), [k]: v } }));
   return (
@@ -841,11 +851,15 @@ function DossierEditor({ dossier, setDossier, removeSection, moveSection,
           <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Sections ({dossier.sections.length})</CardTitle>
             <div className="flex gap-2">
-              <Input placeholder="Save as…" value={dossierSaveName} className="text-xs h-8 w-40"
-                     onChange={(e) => setDossierSaveName(e.target.value)} />
-              <Button size="sm" variant="outline" onClick={saveDossier} data-testid="dossier-save-btn">
-                <Save className="h-3.5 w-3.5 mr-1" />Save dossier
-              </Button>
+              {canWrite && (
+                <>
+                  <Input placeholder="Save as…" value={dossierSaveName} className="text-xs h-8 w-40"
+                         onChange={(e) => setDossierSaveName(e.target.value)} />
+                  <Button size="sm" variant="outline" onClick={saveDossier} data-testid="dossier-save-btn">
+                    <Save className="h-3.5 w-3.5 mr-1" />Save dossier
+                  </Button>
+                </>
+              )}
               <Button size="sm" variant="outline" onClick={() => exportDossier('pdf')} data-testid="dossier-export-pdf">
                 <FileDown className="h-3.5 w-3.5 mr-1" /> PDF
               </Button>
@@ -896,9 +910,11 @@ function DossierEditor({ dossier, setDossier, removeSection, moveSection,
                   {d.dossier.sections?.length || 0} section(s)
                 </div>
               </button>
-              <button onClick={() => deleteDossier(d._id)} className="text-slate-400 hover:text-red-600">
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              {canWrite && (
+                <button onClick={() => deleteDossier(d._id)} className="text-slate-400 hover:text-red-600">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           ))}
         </CardContent>

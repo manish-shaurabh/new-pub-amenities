@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 26 — End-to-end testing for new Health Explorer dashboard + Reports Builder read-only for VIEWER. Backend: 10/10 pytest pass (test_health_explorer.py) covering L1/L2/L4 drill, asset_type/station modes, SA global scope, SUP scoping=50 assets (DHN+Electrical), VIEW001 global=SA scope, filters endpoint (SUP sees 1 station, 1 dept, 5 asset_types), filter narrowing. Frontend: SA dashboard shows 2 tabs (tab-health-explorer default + tab-classic-dashboard). HealthExplorer renders with summary card (30.1% healthy · 22 of 73), bucket chips, mode toggle (he-mode-type/station), 3 filter chips, refresh button. Mode toggle to 'station' persists to localStorage('health-explorer-mode') and survives reload (station button retains font-semibold). SA Reports Builder: Save/Run/CSV/Excel/PDF/Dossier-Save all VISIBLE. VIEW001 Reports Builder: Builder tab VISIBLE, no 'Superadmin only' message, builder-save-btn HIDDEN ✓, dossier-save-btn HIDDEN ✓, but Run/CSV/Excel/PDF/Dossier-Export-PDF VISIBLE ✓. VIEWER badge shows 'Audit Viewer · Viewer (Read-only)'. SUP (SSE001) Health Explorer summary correctly shows '20 of 50' assets — matches expected DHN+Electrical scope.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "HealthExplorer chart", "issues": ["At 30.1% healthy global, bars are all rendered red (#dc2626) — correct per threshold but visually dominating. Consider a subtle bar-track background so 0% bars still show a cylinder outline (currently 0% rows show only the cap indicator). Non-blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_health_explorer.py",
+    "/app/test_reports/pytest/health_explorer_iter26.xml"
+  ],
+  "action_items": [
+    "No blocking issues. Main agent may self-verify L1→L2→L3→L4 drill in browser by clicking a CylinderBar row; backend drill verified by pytest is identical to the path the onSelect handler triggers.",
+    "Optional: add data-testid='he-bar-row-{id}' on each CylinderBar row to make drill clicks scriptable in future Playwright tests (current SVG/g elements have no cursor-pointer class exposed at the row level — manual click via screen coordinates works, automated click via [data-testid] would be cleaner)."
+  ],
+  "critical_code_review_comments": [
+    "health_explorer.py is clean (~275 lines), reuses _load_universe / _filter_assets_for_user / _classify from reports.py — no duplication, good separation. Color thresholds are inline-duplicated with frontend; consider exporting from a shared constants module if more places need them.",
+    "HealthExplorer.js correctly resets drill on mode change (useEffect line 98) and on any filter change (goHome() in MultiSelectChip onChange). LocalStorage persistence is wrapped in try/catch — defensive, good.",
+    "ReportsBuilderPage.js: canLoad/canWrite gating is clean (lines 565-568). Save / delete / dossier-save all gated via {canWrite && ...} blocks. Run + Export buttons remain unconditional — correct read-only behaviour for viewer.",
+    "ReportsPage.js line 467: showBuilder = isSA || isViewer — minimal and clear. Tab and TabsContent both gated on same flag — no leaky state."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_health_explorer.py (NEW — 10 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (10/10 pytest in 4s)", "frontend": "95% — all testids present, all role-based hide/show flows verified; only L1→L2 drill click could not be automated due to missing row-level data-testid (drill verified by backend pytest instead)"},
+  "test_credentials": "SA001/admin123, SSE001/admin123, VIEW001/viewer123 — all working.",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Health Explorer is the new default dashboard tab at /. Backend endpoint: GET /api/dashboard/health-explorer/{user_id} with optional ?mode=station|asset_type, ?asset_type_id, ?station_id, ?location_id, ?station_ids, ?dept_ids, ?asset_type_ids. Filter list: GET /api/dashboard/health-explorer/{user_id}/filters. SA sees 73 total assets, SUP (SSE001) sees 50 (DHN+Electrical), VIEW001 sees 73 (global, read-only). Frontend testids: tab-health-explorer, tab-classic-dashboard, health-explorer, he-summary-card, he-mode-type, he-mode-station, he-filter-stations, he-filter-depts, he-filter-types, he-refresh, he-breadcrumb. localStorage key: 'health-explorer-mode'. CylinderBar SVG rows lack a per-row data-testid — request main agent to add if more granular Playwright testing is needed. Reports Builder: builder-save-btn, dossier-save-btn are gated by canWrite (SA only). builder-run-btn, builder-export-csv/excel/pdf, dossier-export-pdf/excel are always visible.",
+  "rca of the issue": "N/A — no bugs found. Both features (Health Explorer default dashboard + Reports Builder read-only for viewer) work as specified."
+}
