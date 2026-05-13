@@ -28,6 +28,39 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
+### Feb 2026 — Health Explorer (new default dashboard) + Viewer-Builder access
+**Health Explorer dashboard** — mirrors `Comparative Reports → Section A` layout but for ASSET HEALTH (not MTTR). Mounted as the **default tab** at `/` with "Classic Dashboard" as a secondary tab. Replaces no existing functionality — additive.
+
+**Backend** (`/app/backend/routers/health_explorer.py` — new, ~275 lines)
+- `GET /api/dashboard/health-explorer/{user_id}` — single endpoint, 4-level drill via optional ancestor params:
+  - L1 → groups by asset-type (or station, depending on `mode`)
+  - L2 (one ancestor) → groups by station (or asset-type)
+  - L3 (two ancestors) → groups by location
+  - L4 (three ancestors) → individual assets (drillable=false; frontend opens `AssetHistoryDrawer`)
+- Health % = `(working + yellow) / total` — yellow counts as healthy on the ground.
+- Color tint per threshold: ≥90% aqua `#0891b2` · 70–90% amber `#f59e0b` · <70% red `#dc2626`.
+- User-controlled filters (multi-select via CSV): `station_ids`, `dept_ids`, `asset_type_ids`. Intersected with role-scope.
+- Role scope reused from `reports.py::_filter_assets_for_user`: SA/Admin/Viewer = global · ASUP = assigned stations · SUP/RO = assigned stations + own dept.
+- Companion endpoint `GET /api/dashboard/health-explorer/{user_id}/filters` returns role-scoped filter options.
+
+**Frontend** (`/app/frontend/src/components/HealthExplorer.js` — new)
+- Reuses existing `<CylinderBar>` (aqua-glass gradient) and `<AssetHistoryDrawer>`.
+- Mode toggle pill ("By Asset Type" / "By Station") persisted in `localStorage['health-explorer-mode']`.
+- Multi-select chip dropdowns (Popover + Checkbox) — instant refresh on toggle, no Apply button.
+- Breadcrumb navigation with click-to-jump and "All Types/Stations" reset.
+- `DashboardPage.js` wraps role-dashboards in Tabs: `tab-health-explorer` (default) + `tab-classic-dashboard`.
+
+**Viewer access to Reports Builder** (`ReportsBuilderPage.js`, `ReportsPage.js`)
+- `canLoad = isSA || isViewer` — Builder tab now visible for viewers.
+- `canWrite = isSA` — Save/Delete buttons hidden from viewers via `{canWrite && ...}` blocks at four sites:
+  - Composer "Save as name…" + Save button
+  - Saved-reports per-row Trash icon
+  - Dossier "Save dossier" button + name input
+  - Saved-dossiers per-row Trash icon
+- Viewer keeps full Run / Export (CSV/Excel/PDF) / Add-to-Dossier / Export-dossier access.
+
+**Tested** (`testing_agent_v3_fork` iteration_26): **backend 10/10 PASS** (test_health_explorer.py covers L1/L2/L4 drill, both modes, SA global, SUP scope=50 assets DHN+Electrical, VIEWER global, filters endpoint, filter narrowing). **Frontend 95%** — all role-based hide/show verified, mode-toggle localStorage persistence verified, no blocking issues. Test creds: SA001 / SSE001 / VIEW001 (all admin123 except viewer123).
+
 ### Feb 2026 — Read-only Viewer Role (auditor / observer)
 **Purpose**: A new `viewer` user role for HQ executives, auditors, and board observers who need full visibility but ZERO mutation rights.
 
