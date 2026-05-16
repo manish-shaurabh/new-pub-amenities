@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { inspectionsAPI, assetsAPI, assetTypesAPI } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
 import { openInspectionReport } from '../lib/inspection-report';
+import ZoneDivisionFilter from '../components/ZoneDivisionFilter';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -19,9 +20,11 @@ const PAGE_SIZE = 25;
 
 export default function InspectionHistoryPage() {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const focusedAssetId = searchParams.get('asset_id');
   const focusedInspectionId = searchParams.get('inspection_id');
+  const presetStationId = searchParams.get('station_id') || '';
+
   const [inspections, setInspections] = useState([]);
   const [assets, setAssets] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
@@ -32,6 +35,9 @@ export default function InspectionHistoryPage() {
   const [assetHistory, setAssetHistory] = useState(null);
   const { open: openLightbox, lightbox } = useLightbox();
 
+  // Zone/Division filter
+  const [zdFilter, setZdFilter] = useState({ zoneId: '', divisionId: '', stationId: presetStationId });
+
   // Pagination state
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -41,7 +47,7 @@ export default function InspectionHistoryPage() {
   // are scoped server-side via for_user_id.
   const isScoped = user && !['superadmin', 'admin'].includes(user.role);
 
-  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [user?._id, page]);
+  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [user?._id, page, zdFilter.stationId]);
 
   const loadAll = async () => {
     if (!user) return;
@@ -49,6 +55,7 @@ export default function InspectionHistoryPage() {
       setLoading(true);
       const opts = { page, pageSize: PAGE_SIZE };
       if (isScoped) opts.for_user_id = user._id;
+      if (zdFilter.stationId) opts.station_id = zdFilter.stationId;
       const [inspRes, assetsRes, typesRes] = await Promise.all([
         inspectionsAPI.listPaginated(opts),
         assetsAPI.list({}),
@@ -154,27 +161,45 @@ export default function InspectionHistoryPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Select value={filterType} onValueChange={setFilterType}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All Asset Types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Asset Types</SelectItem>
-            {assetTypes.map(t => <SelectItem key={t._id} value={t._id}>{t.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="All Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="working">Working</SelectItem>
-            <SelectItem value="defective">Defective</SelectItem>
-            <SelectItem value="pending_approval">Pending</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col gap-2">
+        {/* Zone/Division scope filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground font-medium">Scope:</span>
+          <ZoneDivisionFilter
+            value={zdFilter}
+            onChange={(v) => { setZdFilter(v); setPage(1); }}
+            showStation
+            compact
+          />
+        </div>
+        {/* Type/Status filters */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="All Asset Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Asset Types</SelectItem>
+              {assetTypes.map(t => <SelectItem key={t._id} value={t._id}>{t.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="working">Working</SelectItem>
+              <SelectItem value="defective">Defective</SelectItem>
+              <SelectItem value="pending_approval">Pending</SelectItem>
+            </SelectContent>
+          </Select>
+          {zdFilter.stationId && (
+            <button className="text-xs text-primary hover:underline" onClick={() => setZdFilter({ zoneId: '', divisionId: '', stationId: '' })}>
+              Clear scope ↺
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Asset-wise Inspection History */}

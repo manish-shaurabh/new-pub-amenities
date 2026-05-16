@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { orangeListAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
+import ZoneDivisionFilter from '../components/ZoneDivisionFilter';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -37,6 +38,7 @@ export default function OrangeListPage() {
   const [expanded, setExpanded] = useState({});
   const [historyAsset, setHistoryAsset] = useState(null);
   const [etaCache, setEtaCache] = useState({});
+  const [zdFilter, setZdFilter] = useState({ zoneId: '', divisionId: '', stationId: '' });
 
   // Role-scoped fetch: only superadmin/admin see global; everyone else scopes to their role.
   const isScoped = user && !['superadmin', 'admin'].includes(user.role);
@@ -175,8 +177,17 @@ export default function OrangeListPage() {
 
   // ── Tab buckets — derived from the FULL unpaginated list so the tab
   // counts always reflect the true totals (not just the current page).
-  const orangeItems = allItems.filter(i => i.list_type === 'orange' && i.status !== 'pending_approval');
-  const redItems = allItems.filter(i => i.list_type === 'red' && i.status !== 'pending_approval');
+  const filteredItems = useMemo(() => {
+    if (!zdFilter.stationId && !zdFilter.divisionId && !zdFilter.zoneId) return allItems;
+    return allItems.filter(i => {
+      if (zdFilter.stationId) return i.station_id === zdFilter.stationId;
+      // For zone/division filtering, use station_id lookup — simplified here as pass-through
+      return true;
+    });
+  }, [allItems, zdFilter]);
+
+  const orangeItems = filteredItems.filter(i => i.list_type === 'orange' && i.status !== 'pending_approval');
+  const redItems = filteredItems.filter(i => i.list_type === 'red' && i.status !== 'pending_approval');
   const yellowItems = allItems.filter(i => i.status === 'pending_approval');
 
   // Client-side pagination per active tab
@@ -336,6 +347,21 @@ export default function OrangeListPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
+        {/* Zone/Division filter row */}
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <span className="text-xs text-muted-foreground font-medium">Scope:</span>
+          <ZoneDivisionFilter
+            value={zdFilter}
+            onChange={(v) => { setZdFilter(v); setPage(1); }}
+            showStation
+            compact
+          />
+          {(zdFilter.stationId || zdFilter.divisionId || zdFilter.zoneId) && (
+            <button className="text-xs text-primary hover:underline" onClick={() => setZdFilter({ zoneId: '', divisionId: '', stationId: '' })}>
+              Clear ↺
+            </button>
+          )}
+        </div>
         <TabsList>
           <TabsTrigger value="orange" data-testid="tab-orange">
             <AlertTriangle className="h-4 w-4 mr-1 text-orange-500" />

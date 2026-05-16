@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { complianceAPI, stationsAPI } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
+import ZoneDivisionFilter from '../components/ZoneDivisionFilter';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -188,7 +189,7 @@ function ThresholdDialog({ open, onClose, currentThreshold, userId, onSaved }) {
 }
 
 // ── Tab 1: By Supervisor ─────────────────────────────────────────────────────
-function SupervisorTab({ userId, stations, threshold }) {
+function SupervisorTab({ userId, stations, threshold, zdFilter = {} }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stationFilter, setStationFilter] = useState('');
@@ -198,6 +199,7 @@ function SupervisorTab({ userId, stations, threshold }) {
     try {
       const params = {};
       if (stationFilter) params.station_id = stationFilter;
+      else if (zdFilter.stationId) params.station_id = zdFilter.stationId;
       const res = await complianceAPI.supervisorActivity(userId, params);
       setRows(res.data || []);
     } catch (e) {
@@ -205,7 +207,7 @@ function SupervisorTab({ userId, stations, threshold }) {
     } finally {
       setLoading(false);
     }
-  }, [userId, stationFilter]);
+  }, [userId, stationFilter, zdFilter.stationId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -499,6 +501,7 @@ export default function InspectionCompliancePage() {
   const [stations, setStations] = useState([]);
   const [threshold, setThreshold] = useState(7);
   const [showSettings, setShowSettings] = useState(false);
+  const [zdFilter, setZdFilter] = useState({ zoneId: '', divisionId: '', stationId: '' });
 
   const canEditSettings = user && ['superadmin', 'admin', 'divisional_admin'].includes(user.role);
 
@@ -548,7 +551,16 @@ export default function InspectionCompliancePage() {
         </TabsList>
 
         <TabsContent value="supervisors">
-          <SupervisorTab userId={user._id} stations={stations} threshold={threshold} />
+          <div className="mb-3 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground font-medium">Scope:</span>
+            <ZoneDivisionFilter
+              value={zdFilter}
+              onChange={v => setZdFilter(v)}
+              showStation
+              compact
+            />
+          </div>
+          <SupervisorTab userId={user._id} stations={stations} threshold={threshold} zdFilter={zdFilter} />
         </TabsContent>
 
         <TabsContent value="heatmap">

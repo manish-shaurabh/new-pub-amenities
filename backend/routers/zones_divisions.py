@@ -122,16 +122,23 @@ async def list_divisions():
     if zone_ids:
         zone_docs = await zones_collection.find({"_id": {"$in": [ObjectId(z) for z in zone_ids]}}).to_list(1000)
         zone_map = {str(z["_id"]): z.get("name", "—") for z in zone_docs}
-    # count stations per division
-    pipeline = [{"$group": {"_id": "$division_id", "count": {"$sum": 1}}}]
-    station_counts_raw = await stations_collection.aggregate(pipeline).to_list(10000)
-    station_counts = {r["_id"]: r["count"] for r in station_counts_raw if r["_id"]}
+    # count stations per division and collect assigned_stations ids
+    all_stations = await stations_collection.find({}, {"_id": 1, "division_id": 1}).to_list(10000)
+    station_counts: dict = {}
+    assigned_stations_map: dict = {}
+    for s in all_stations:
+        div_id = s.get("division_id")
+        if div_id:
+            station_counts[div_id] = station_counts.get(div_id, 0) + 1
+            assigned_stations_map.setdefault(div_id, []).append(str(s["_id"]))
 
     result = []
     for d in docs:
         sd = serialize_doc(d)
+        div_id_str = str(d["_id"])
         sd["zone_name"] = zone_map.get(str(d.get("zone_id", "")), "—")
-        sd["station_count"] = station_counts.get(str(d["_id"]), 0)
+        sd["station_count"] = station_counts.get(div_id_str, 0)
+        sd["assigned_stations"] = assigned_stations_map.get(div_id_str, [])
         result.append(sd)
     return result
 

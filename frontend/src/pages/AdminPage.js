@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase, Tag, ShieldAlert, Globe, GitBranch } from 'lucide-react';
 import RemarkTagsManager from '../components/RemarkTagsManager';
 import DataHealthPanel from '../components/DataHealthPanel';
+import ZoneDivisionFilter from '../components/ZoneDivisionFilter';
 
 // Import the user management components from the old UsersPage
 const roleLabels = {
@@ -87,6 +88,8 @@ export default function AdminPage() {
   // Personnel Map filter
   const [personnelStationFilter, setPersonnelStationFilter] = useState('all');
   const [personnelDepartmentFilter, setPersonnelDepartmentFilter] = useState('all');
+  const [personnelZoneFilter, setPersonnelZoneFilter] = useState('');
+  const [personnelDivisionFilter, setPersonnelDivisionFilter] = useState('');
 
   // Transfer Supervisor tab
   const [transferFrom, setTransferFrom] = useState('');
@@ -947,23 +950,19 @@ export default function AdminPage() {
 
         {/* STATION PERSONNEL MAP TAB */}
         <TabsContent value="personnel-map" className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Label className="text-sm font-medium">Filter by Station:</Label>
-            <Select value={personnelStationFilter} onValueChange={setPersonnelStationFilter}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Stations</SelectItem>
-                {stations.map(s => (
-                  <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            <Label className="text-sm font-medium">Filter by Department:</Label>
+          <div className="flex items-center gap-3 flex-wrap">
+            <ZoneDivisionFilter
+              value={{ zoneId: personnelZoneFilter, divisionId: personnelDivisionFilter, stationId: personnelStationFilter === 'all' ? '' : personnelStationFilter }}
+              onChange={({ zoneId, divisionId, stationId }) => {
+                setPersonnelZoneFilter(zoneId || '');
+                setPersonnelDivisionFilter(divisionId || '');
+                setPersonnelStationFilter(stationId || 'all');
+              }}
+              showStation
+            />
+            <Label className="text-sm font-medium">Dept:</Label>
             <Select value={personnelDepartmentFilter} onValueChange={setPersonnelDepartmentFilter}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[180px] h-8">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -996,6 +995,8 @@ export default function AdminPage() {
                       <thead>
                         <tr className="border-b">
                           <th className="text-left p-2 text-xs font-medium text-muted-foreground">Station</th>
+                          <th className="text-left p-2 text-xs font-medium text-muted-foreground hidden md:table-cell">Zone</th>
+                          <th className="text-left p-2 text-xs font-medium text-muted-foreground hidden md:table-cell">Division</th>
                           <th className="text-left p-2 text-xs font-medium text-muted-foreground">Approving Supervisor</th>
                           <th className="text-left p-2 text-xs font-medium text-muted-foreground">Reporting Officer</th>
                           <th className="text-left p-2 text-xs font-medium text-muted-foreground">Supervisors</th>
@@ -1017,6 +1018,12 @@ export default function AdminPage() {
                             return (
                               <tr key={`${station.station_id}-${deptId}-no-ro`} className="border-b hover:bg-muted/30">
                                 <td className="p-2 text-sm font-medium">{station.station_name}</td>
+                                <td className="p-2 hidden md:table-cell">
+                                  <span className="text-xs text-muted-foreground">{station.zone_name || '—'}</span>
+                                </td>
+                                <td className="p-2 hidden md:table-cell">
+                                  <span className="text-xs text-muted-foreground">{station.division_name || '—'}</span>
+                                </td>
                                 <td className="p-2">
                                   {station.approving_supervisor ? (
                                     <button className="text-sm text-primary hover:underline">
@@ -1059,6 +1066,12 @@ export default function AdminPage() {
                                 {/* Show station name only in first row */}
                                 <td className="p-2 text-sm font-medium">
                                   {roIndex === 0 ? station.station_name : ''}
+                                </td>
+                                <td className="p-2 hidden md:table-cell">
+                                  {roIndex === 0 ? <span className="text-xs text-muted-foreground">{station.zone_name || '—'}</span> : ''}
+                                </td>
+                                <td className="p-2 hidden md:table-cell">
+                                  {roIndex === 0 ? <span className="text-xs text-muted-foreground">{station.division_name || '—'}</span> : ''}
                                 </td>
                                 <td className="p-2">
                                   {roIndex === 0 && station.approving_supervisor ? (
