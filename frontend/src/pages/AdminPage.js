@@ -825,7 +825,7 @@ export default function AdminPage() {
           </div>
           
           {/* Group users by role */}
-          {['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor'].map(role => {
+          {['superadmin', 'divisional_admin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor'].map(role => {
             const roleUsers = users.filter(u => {
               const matchRole = u.role === role;
               if (!matchRole) return false;
