@@ -226,6 +226,9 @@ async def create_asset(asset: AssetCreate):
         "last_inspected": None,
         "next_due": None,
         "defective_since": None,
+        "identification_photo": asset.identification_photo or None,
+        "geo_lat": asset.geo_lat,
+        "geo_lng": asset.geo_lng,
         "created_at": now_ist()
     }
     result = await assets_collection.insert_one(doc)
@@ -357,7 +360,12 @@ async def update_asset(asset_id: str, asset: AssetCreate):
         "asset_number": asset.asset_number,
         "description": asset.description,
         "schedule_frequency": asset.schedule_frequency if asset.schedule_frequency else None,
+        "geo_lat": asset.geo_lat,
+        "geo_lng": asset.geo_lng,
     }
+    # Only update photo if provided (None means keep existing)
+    if asset.identification_photo is not None:
+        update_data["identification_photo"] = asset.identification_photo
     result = await assets_collection.update_one(
         {"_id": ObjectId(asset_id)},
         {"$set": update_data}

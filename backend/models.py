@@ -162,6 +162,9 @@ class AssetCreate(BaseModel):
     asset_number: str
     description: Optional[str] = None
     schedule_frequency: Optional[int] = None  # number of days between inspections
+    identification_photo: Optional[str] = None  # base64-encoded image (client-resized ≤200 KB)
+    geo_lat: Optional[float] = None             # GPS latitude (WGS-84)
+    geo_lng: Optional[float] = None             # GPS longitude (WGS-84)
 
 
 class AssetResponse(BaseModel):
@@ -178,6 +181,9 @@ class AssetResponse(BaseModel):
     schedule_frequency: Optional[int] = None  # days between inspections
     last_inspected: Optional[str] = None
     next_due: Optional[str] = None
+    identification_photo: Optional[str] = None
+    geo_lat: Optional[float] = None
+    geo_lng: Optional[float] = None
     created_at: str
 
 

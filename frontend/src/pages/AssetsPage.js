@@ -12,10 +12,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Label } from '../components/ui/label';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { toast } from 'sonner';
-import { Plus, Search, Box, Trash2, Pencil, ChevronDown, MoreVertical, AlertTriangle, History } from 'lucide-react';
+import { Plus, Search, Box, Trash2, Pencil, ChevronDown, MoreVertical, AlertTriangle, History, Camera, MapPin, X } from 'lucide-react';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 import MarkDefectiveDialog from '../components/dialogs/MarkDefectiveDialog';
 import Pagination from '../components/Pagination';
+import exifr from 'exifr';
 
 const PAGE_SIZE = 50;
 
@@ -39,8 +40,10 @@ export default function AssetsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const searchDebounce = useRef(null);
   const [formData, setFormData] = useState({
-    asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: ''
+    asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '',
+    identification_photo: null, geo_lat: '', geo_lng: '',
   });
+  const [photoLoading, setPhotoLoading] = useState(false);
 
   useEffect(() => { loadStaticData(); }, []);
 
@@ -108,6 +111,8 @@ export default function AssetsPage() {
       await assetsAPI.create({
         ...formData,
         schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
+        geo_lat: formData.geo_lat ? parseFloat(formData.geo_lat) : null,
+        geo_lng: formData.geo_lng ? parseFloat(formData.geo_lng) : null,
       });
       toast.success('Asset created successfully');
       setShowCreate(false);
@@ -127,6 +132,9 @@ export default function AssetsPage() {
       asset_number: asset.asset_number || '',
       description: asset.description || '',
       schedule_frequency: asset.schedule_frequency || '',
+      identification_photo: asset.identification_photo || null,
+      geo_lat: asset.geo_lat != null ? String(asset.geo_lat) : '',
+      geo_lng: asset.geo_lng != null ? String(asset.geo_lng) : '',
     });
     loadLocations(asset.station_id);
     setShowEdit(true);
@@ -141,6 +149,8 @@ export default function AssetsPage() {
       await assetsAPI.update(editingAsset._id, {
         ...formData,
         schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
+        geo_lat: formData.geo_lat ? parseFloat(formData.geo_lat) : null,
+        geo_lng: formData.geo_lng ? parseFloat(formData.geo_lng) : null,
       });
       toast.success('Asset updated successfully');
       setShowEdit(false);
@@ -164,8 +174,49 @@ export default function AssetsPage() {
   };
 
   const resetForm = () => {
-    setFormData({ asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '' });
+    setFormData({ asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', identification_photo: null, geo_lat: '', geo_lng: '' });
     setLocations([]);
+  };
+
+  // Resize image to ≤1024px and convert to base64 JPEG (≈50-150 KB)
+  const resizeAndEncode = (file) => new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1024;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const handleAssetPhotoUpload = async (file) => {
+    if (!file) return;
+    setPhotoLoading(true);
+    try {
+      // Extract GPS from EXIF
+      try {
+        const gps = await exifr.gps(file);
+        if (gps && gps.latitude != null && gps.longitude != null) {
+          setFormData(prev => ({ ...prev, geo_lat: String(gps.latitude.toFixed(6)), geo_lng: String(gps.longitude.toFixed(6)) }));
+          toast.success('GPS extracted from photo EXIF');
+        }
+      } catch (_) { /* no EXIF GPS — that's fine */ }
+      const base64 = await resizeAndEncode(file);
+      setFormData(prev => ({ ...prev, identification_photo: base64 }));
+    } finally {
+      setPhotoLoading(false);
+    }
   };
 
   const filteredAssets = assets.filter(a => {
@@ -249,6 +300,88 @@ export default function AssetsPage() {
           placeholder="e.g., 7 (inspect every 7 days)"
         />
       </div>
+
+      {/* Identification Photo + GPS */}
+      <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Identification Photo &amp; GPS</Label>
+
+        {/* Photo upload */}
+        <div>
+          {formData.identification_photo ? (
+            <div className="relative inline-block">
+              <img
+                src={formData.identification_photo}
+                alt="Asset"
+                className="h-32 w-auto rounded-lg border object-cover"
+                data-testid="asset-photo-preview"
+              />
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, identification_photo: null }))}
+                className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-destructive text-white flex items-center justify-center shadow"
+                title="Remove photo"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <label
+              className="flex flex-col items-center gap-1 p-4 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+              data-testid="asset-photo-upload"
+            >
+              {photoLoading
+                ? <span className="text-xs text-muted-foreground">Processing…</span>
+                : <>
+                    <Camera className="h-6 w-6 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Upload photo (GPS auto-extracted from EXIF)</span>
+                  </>
+              }
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handleAssetPhotoUpload(e.target.files[0])}
+                disabled={photoLoading}
+              />
+            </label>
+          )}
+        </div>
+
+        {/* GPS fields */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-xs">Latitude</Label>
+            <Input
+              value={formData.geo_lat}
+              onChange={(e) => setFormData(prev => ({ ...prev, geo_lat: e.target.value }))}
+              placeholder="e.g., 23.795771"
+              className="text-xs h-8"
+              data-testid="asset-geo-lat"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Longitude</Label>
+            <Input
+              value={formData.geo_lng}
+              onChange={(e) => setFormData(prev => ({ ...prev, geo_lng: e.target.value }))}
+              placeholder="e.g., 86.429551"
+              className="text-xs h-8"
+              data-testid="asset-geo-lng"
+            />
+          </div>
+        </div>
+        {formData.geo_lat && formData.geo_lng && (
+          <a
+            href={`https://maps.google.com/?q=${formData.geo_lat},${formData.geo_lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <MapPin className="h-3 w-3" /> View on Google Maps
+          </a>
+        )}
+      </div>
+
       <Button onClick={isEdit ? handleUpdate : handleCreate} className="w-full">
         {isEdit ? 'Update Asset' : 'Create Asset'}
       </Button>
@@ -258,16 +391,32 @@ export default function AssetsPage() {
   const AssetCard = ({ asset }) => (
     <div className="flex items-center justify-between p-3 border-l-2 border-primary/20 hover:border-primary/50 hover:bg-accent/30 transition-all">
       <div className="flex items-center gap-3 flex-1">
-        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-          <Box className="h-4 w-4 text-primary" />
+        <div className="relative h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          {asset.identification_photo
+            ? <img src={asset.identification_photo} alt="" className="h-full w-full object-cover" />
+            : <Box className="h-4 w-4 text-primary" />
+          }
         </div>
         <div className="flex-1 min-w-0">
-          <button
-            onClick={() => setAssetHistory({ id: asset._id, number: asset.asset_number })}
-            className="font-medium text-sm hover:text-primary transition-colors text-left"
-          >
-            {asset.asset_number}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setAssetHistory({ id: asset._id, number: asset.asset_number })}
+              className="font-medium text-sm hover:text-primary transition-colors text-left"
+            >
+              {asset.asset_number}
+            </button>
+            {asset.geo_lat && asset.geo_lng && (
+              <a
+                href={`https://maps.google.com/?q=${asset.geo_lat},${asset.geo_lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="View on map"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MapPin className="h-3 w-3 text-primary/60 hover:text-primary" />
+              </a>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground truncate">
             {asset.station_name} &middot; {asset.location_name}
           </p>
