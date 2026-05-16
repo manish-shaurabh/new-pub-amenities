@@ -28,7 +28,36 @@ Superadmin → Admin → Reporting Officer (RO) → Approving Supervisor (ASUP) 
 
 ## What's Been Implemented
 
-### Feb 2026 — Health Explorer (new default dashboard) + Viewer-Builder access
+### May 2026 — Sprint A: Asset Identification Photo + GPS + Inspection UI Overhaul
+
+**Asset Photo & GPS (Phase 1)**
+- `models.py`: Added `identification_photo` (Optional[str] - base64 data URL, client-resized ≤1024px), `geo_lat` (Optional[float]), `geo_lng` (Optional[float]) to `AssetCreate` and `AssetResponse`.
+- `routers/assets.py`: `create_asset` stores all three new fields. `update_asset` only updates `identification_photo` if non-null (null = keep existing photo).
+- `pages/AssetsPage.js`: New "IDENTIFICATION PHOTO & GPS" section in Add/Edit form. Photo upload uses FileReader + Canvas API to resize to max 1024px @ 75% JPEG quality. `exifr` (v7.1.3) extracts GPS coordinates from photo EXIF data automatically on upload. Manual lat/lng fields with Google Maps link.
+- Asset card shows photo thumbnail and MapPin icon (links to Google Maps) when GPS is stored.
+
+**Inspection UI Overhaul (Phase 2)**
+- `pages/InspectionPage.js` fully rewritten (~550 lines) with best-of-a/b/c design.
+- **Top card**: TYPE (Individual/SIG tabs), STATION selector, DATE/TIME in a single compact row.
+- **Progress banner**: "X of Y assets queued" with colored progress bar + "Clear all" shortcut.
+- **Dual-pane on desktop** (hidden on mobile): Left sidebar sticky "LOCATIONS" nav with per-location counts and selected count indicators. Clicking a location scrolls-to the location block.
+- **Mobile**: Horizontal scroll chip strip for location quick-nav.
+- **Location blocks**: Each location has a sticky sub-header with name, asset count, selected count badge, and "Select all / Deselect all" bulk toggle.
+- **Asset rows** (`AssetInspectionRow`): Checkbox (select/deselect), optional photo thumbnail, asset number (links to history), asset type badge, status badge, GPS map link, defective-since text.
+- **Inline form expansion**: When asset is checked, form expands in-place with:
+  - OK/Not OK/Needs Repair radio pill buttons
+  - Defective Since date/time picker (auto-shown for NOT OK/NEEDS REPAIR)
+  - Rectified On date/time picker (auto-shown for OK + asset.status=defective)
+  - Collapsible Checklist (with pass/fail toggles and item counter)
+  - Remarks textarea
+  - Photo upload (Camera + Files)
+- **Sticky bottom submit bar** with per-status breakdown (X OK · Y Not OK · Z Needs Repair).
+- Deep-link (`?asset_id=`) still supported for QR-code-style single-asset inspections.
+- SIG participant selector rendered inline in top card when SIG mode is active.
+
+**Tested** (iteration_27): backend 16/16 PASS, frontend 100% — dual-pane layout, bulk-select, inline form, defective-since/rectified-on pickers, progress banner, sticky submit bar, full submit lifecycle all verified.
+
+
 **Health Explorer dashboard** — mirrors `Comparative Reports → Section A` layout but for ASSET HEALTH (not MTTR). Mounted as the **default tab** at `/` with "Classic Dashboard" as a secondary tab. Replaces no existing functionality — additive.
 
 **Backend** (`/app/backend/routers/health_explorer.py` — new, ~275 lines)
