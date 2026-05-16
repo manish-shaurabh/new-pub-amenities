@@ -46,6 +46,7 @@ function DefectBadge({ defects }) {
 
 export default function HealthTree({ userId, scopeZoneId, scopeDivisionId }) {
   const [stationHealth, setStationHealth] = useState([]);
+  const [stationNames, setStationNames] = useState({}); // id → name fallback
   const [zones, setZones] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -57,14 +58,23 @@ export default function HealthTree({ userId, scopeZoneId, scopeDivisionId }) {
     if (!userId) return;
     setLoading(true);
     try {
-      const [healthRes, zonesRes, divsRes] = await Promise.all([
+      const [healthRes, zonesRes, divsRes, stationsRes] = await Promise.all([
         axios.get(`${BACKEND}/api/dashboard/health-explorer/${userId}?mode=station`),
         axios.get(`${BACKEND}/api/zones`),
         axios.get(`${BACKEND}/api/divisions`),
+        axios.get(`${BACKEND}/api/stations`).catch(() => ({ data: [] })),
       ]);
       setStationHealth(healthRes.data?.rows || []);
       setZones(zonesRes.data || []);
       setDivisions(divsRes.data || []);
+      // Build station id → name map (for stations with no assets, they won't be
+      // in healthRes.rows so we need a fallback name source).
+      const nameMap = {};
+      (stationsRes.data || []).forEach(s => {
+        const sid = String(s._id || s.id || '');
+        if (sid) nameMap[sid] = s.name || s.code || sid;
+      });
+      setStationNames(nameMap);
       // Auto-expand first zone/division
       const zs = zonesRes.data || [];
       const ds = divsRes.data || [];
@@ -102,8 +112,9 @@ export default function HealthTree({ userId, scopeZoneId, scopeDivisionId }) {
       const divRows = visibleDivs.map(div => {
         const divStns = (div.assigned_stations || []).map(sid => {
           const h = stationHealthMap[sid];
+          const fallbackName = stationNames[sid] || sid;
           return h ? { id: sid, name: h.label, pct: h.value, n: h.n, defects: 0 }
-                   : { id: sid, name: sid, pct: 100, n: 0, defects: 0 };
+                   : { id: sid, name: fallbackName, pct: 100, n: 0, defects: 0 };
         });
         const total = divStns.reduce((a, s) => a + s.n, 0);
         const healthy = divStns.reduce((a, s) => a + Math.round((s.pct / 100) * s.n), 0);
@@ -123,7 +134,7 @@ export default function HealthTree({ userId, scopeZoneId, scopeDivisionId }) {
 
       return { ...zone, pct: zonePct, divisions: divRows, total: zoneTot, defects: zoneDefects };
     });
-  }, [zones, divisions, stationHealth, scopeZoneId, scopeDivisionId]);
+  }, [zones, divisions, stationHealth, stationNames, scopeZoneId, scopeDivisionId]);
 
   if (loading) {
     return (

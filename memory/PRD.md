@@ -599,3 +599,30 @@ A 68-check cross-system audit was run covering 17 test phases with variable-date
 
 4. **Test result**: 26/26 pytest backend tests pass; all frontend flows verified via Playwright (iteration_29)
 
+
+
+## Sprint E — Station Dashboard Drill-Down (Feb 16, 2026)
+
+**Goal**: Make the Health Explorer drill from Division naturally progress through a "Station Dashboard" view instead of shortcutting straight to inspection history.
+
+**New drill path (By Division mode)**: Division → Station → **Asset Type within Station** → Asset → Inspection History (AssetHistoryDrawer)
+
+**Implementation:**
+1. **Backend** (`/app/backend/routers/health_explorer.py`)
+   - Division mode realigned: L1 (divisions) → L2 (stations) → L3 (asset types within station) → L4 (assets). Replaces previous L3=location.
+   - Response now includes `station_card` metadata `{id, name, code, division_id, division_name, zone_id}` whenever `station_id` is in scope.
+
+2. **New component** `/app/frontend/src/components/StationDashboardHeader.js`
+   - Compact banner: station name + code badge, division/zone/asset count, large % healthy, bucket chips (Working/Yellow/Orange/Red), optional "Full History" button (opens `InspectionHistoryDrawer`).
+   - Updates dynamically as the user drills further (e.g., scoped to that asset type at L4).
+
+3. **`HealthExplorer.js`**
+   - Removed the `isSelectingStation` intercept that hijacked station bar clicks to open Inspection History drawer.
+   - Division mode L3 click now sets `asset_type_id` (drills into asset types of that station).
+   - Renders `StationDashboardHeader` above the CylinderBar whenever `drill.station_id` is set.
+
+4. **Station Name Lookup Bug Fix** (Iteration 30 finding)
+   - `HealthTree.js` now fetches `/api/stations` in parallel and builds a station-id→name fallback map. Stations with zero assets no longer fall back to raw Mongo `_id` in the tree.
+
+**Tests run:** Manual curl on all 4 levels confirmed; Playwright screenshot verified L1 → L2 → L3 Station Dashboard banner → L4 assets → AssetHistoryDrawer flow end-to-end.
+

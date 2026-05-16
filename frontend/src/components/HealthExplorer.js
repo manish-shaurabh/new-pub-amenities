@@ -24,6 +24,7 @@ import CylinderBar from './CylinderBar';
 import AssetHistoryDrawer from './AssetHistoryDrawer';
 import InspectionHistoryDrawer from './InspectionHistoryDrawer';
 import HealthTree from './HealthTree';
+import StationDashboardHeader from './StationDashboardHeader';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -171,27 +172,20 @@ export default function HealthExplorer() {
 
   const onBarSelect = (row) => {
     if (!row.drillable) {
-      // Level 4 — open asset history drawer
+      // Level 4 — open asset history drawer (inspection history for the asset)
       setOpenAsset({ id: row.id, asset_number: row.asset_number || row.label });
       return;
     }
     const level = data?.level || 1;
-    // Determine if we're selecting a STATION → open Inspection History drawer
-    const isSelectingStation = (
-      (mode === 'station' && level === 1) ||
-      (mode === 'division' && level === 2 && !drill.station_id) ||
-      (mode === 'asset_type' && level === 2 && drill.asset_type_id)
-    );
-    if (isSelectingStation) {
-      const stationOpt = (filterOpts.stations || []).find(s => s.id === row.id);
-      setHistoryStation({ id: row.id, name: stationOpt?.name || row.label });
-      return;
-    }
     if (mode === 'division') {
       if (level === 1) {
         setDrill({ division_id: row.id, asset_type_id: null, station_id: null, location_id: null });
-      } else if (level === 2) setDrill(d => ({ ...d, station_id: row.id }));
-      else if (level === 3) setDrill(d => ({ ...d, location_id: row.id }));
+      } else if (level === 2) {
+        setDrill(d => ({ ...d, station_id: row.id }));
+      } else if (level === 3) {
+        // Asset types within a station → drill to individual assets of that type
+        setDrill(d => ({ ...d, asset_type_id: row.id }));
+      }
     } else if (mode === 'asset_type') {
       if (level === 1) setDrill(d => ({ ...d, asset_type_id: row.id }));
       else if (level === 2) setDrill(d => ({ ...d, station_id: row.id }));
@@ -252,7 +246,7 @@ export default function HealthExplorer() {
               <div>
                 <CardTitle className="text-base">Health Explorer</CardTitle>
                 <p className="text-xs text-slate-500">
-                  Drill from {mode === 'division' ? 'Division → Station' : mode === 'asset_type' ? 'Asset Type → Station' : 'Station → Asset Type'} · Click station → Inspection History
+                  Drill from {mode === 'division' ? 'Division → Station → Asset Type' : mode === 'asset_type' ? 'Asset Type → Station' : 'Station → Asset Type'} · Click an asset to view its Inspection History
                 </p>
               </div>
             </div>
@@ -371,6 +365,20 @@ export default function HealthExplorer() {
         </div>
       )}
 
+      {/* Station Dashboard banner — visible when drilled into a station */}
+      {view === 'chart' && drill.station_id && data?.station_card && (
+        <StationDashboardHeader
+          stationCard={data.station_card}
+          summary={data.summary}
+          zoneName={
+            data.station_card.zone_id
+              ? ((filterOpts.zones || []).find(z => z._id === data.station_card.zone_id)?.name || '')
+              : ''
+          }
+          onOpenHistory={() => setHistoryStation({ id: data.station_card.id, name: data.station_card.name })}
+        />
+      )}
+
       {/* Chart / Tree */}
       <Card>
         <CardContent className="pt-4 pb-3">
@@ -386,7 +394,7 @@ export default function HealthExplorer() {
             <>
               {worstN !== 'all' && (data?.level || 1) === 1 && (
                 <p className="text-[11px] text-muted-foreground mb-2 text-center">
-                  Showing <strong>{displayedRows.length}</strong> worst-performing · click a bar to view Inspection History
+                  Showing <strong>{displayedRows.length}</strong> worst-performing · click a bar to drill deeper
                 </p>
               )}
               <CylinderBar data={displayedRows} stat="median" p90={null} maxLabel="%" onSelect={onBarSelect} />

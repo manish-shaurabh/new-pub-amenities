@@ -132,17 +132,16 @@ async def health_explorer(
         scoped = [a for a in scoped if a.get("location_id") == location_id]
 
     # ── Division mode: level logic ──────────────────────────────────────────
+    # 4-level drill: Division → Station → AssetType → Asset (no location level)
     if mode == "division":
-        if location_id:
-            level = 4
-        elif station_id and asset_type_id:
-            level = 3
-        elif station_id and division_id:
-            level = 2  # showing stations within chosen division... show asset types
+        if station_id and asset_type_id:
+            level = 4  # individual assets of given type at given station
+        elif station_id:
+            level = 3  # asset types within the chosen station (Station Dashboard)
         elif division_id:
-            level = 2  # showing stations in the chosen division
+            level = 2  # stations within the chosen division
         else:
-            level = 1  # showing all divisions
+            level = 1  # all divisions
     else:
         # Determine current level from ancestors set (existing logic)
         if location_id:
@@ -219,8 +218,8 @@ async def health_explorer(
                 group_key = "division"   # special — group by station's division_id
             elif level == 2:
                 group_key = "station_id"
-            else:  # level 3
-                group_key = "location_id"
+            else:  # level 3 → asset types within the chosen station
+                group_key = "asset_type_id"
         elif level == 1:
             group_key = "asset_type_id" if mode == "asset_type" else "station_id"
         elif level == 2:
@@ -270,11 +269,27 @@ async def health_explorer(
     s_healthy = summary_bucket["working"] + summary_bucket["yellow"]
     s_pct = round((s_healthy / s_total * 100), 1) if s_total else 100.0
 
+    # ── Station Dashboard card metadata (when drilled into a station) ───────
+    station_card = None
+    if station_id:
+        st = U["station_by_id"].get(station_id, {}) or {}
+        div_id = str(st.get("division_id") or "") or None
+        div_doc = U.get("division_by_id", {}).get(div_id, {}) if div_id else {}
+        station_card = {
+            "id": station_id,
+            "name": st.get("name") or "—",
+            "code": st.get("code") or "",
+            "division_id": div_id,
+            "division_name": (div_doc.get("name") if div_doc else None) or "",
+            "zone_id": str(div_doc.get("zone_id")) if div_doc and div_doc.get("zone_id") else None,
+        }
+
     return {
         "mode": mode,
         "level": level,
         "breadcrumb": breadcrumb,
         "rows": rows,
+        "station_card": station_card,
         "summary": {
             "total": s_total,
             "healthy": s_healthy,
