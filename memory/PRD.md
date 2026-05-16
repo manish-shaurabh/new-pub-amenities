@@ -626,3 +626,51 @@ A 68-check cross-system audit was run covering 17 test phases with variable-date
 
 **Tests run:** Manual curl on all 4 levels confirmed; Playwright screenshot verified L1 → L2 → L3 Station Dashboard banner → L4 assets → AssetHistoryDrawer flow end-to-end.
 
+
+## Sprint F — Grouped Assets & Sub-Zones (Feb 17, 2026)
+
+**Goal**: Add count-based "grouped assets" for high-volume identical units (fans, taps, lights). Instead of tracking 120 fans individually, treat them as a single record with `total_count: 120` inspected via count entry (Needs Repair / Not Working).
+
+### New Hierarchy Layer: Sub-Zone
+- `Station → Location → Sub-Zone → Asset`
+- New collection `sub_zones`: `{ name, code, station_id, location_id, description, order }`
+- Full CRUD via `/api/sub-zones` (GET filters by `location_id` / `station_id`; DELETE refuses if any asset references it)
+
+### Asset Type — `tracking_mode`
+- New field on `asset_types`: `'individual'` (default, legacy behavior) | `'grouped'` (count-based)
+- Admin toggles per type in Admin Panel → Asset Types form (Individual / Grouped cards)
+- Amber "Grouped" badge in list
+
+### Grouped Asset Schema (extends `assets`)
+- `sub_zone_id` (required when grouped)
+- `total_count` (required, > 0)
+- `needs_repair_count`, `not_working_count` (defaults 0, updated by inspections)
+- `asset_number` auto-generated: `{TYPE}-{STATION_CODE}-{LOCATION}-{SUBZONE_CODE}` with uniqueness suffix
+
+### Inspection Flow
+- New `InspectionItemRecord.group_counts: { needs_repair, not_working }`
+- Backend `POST /api/inspections` normalizes grouped items: validates `nr + nw <= total`, computes `defective + pct_defective`, derives `status` (any defect → `not_ok`), persists snapshot `{ needs_repair, not_working, total, defective, pct_defective }`, and mirrors counts onto the asset.
+- Existing OL pipeline auto-fires (asset.status flips to `defective`, OL entry created with `defective_since`)
+- Re-inspection with all counts at 0 triggers the existing yellow-list pending-approval flow
+
+### Status Color Thresholds
+- 0% defective → green (working)
+- 1-30% → yellow (some defective)
+- 30-60% → orange (high)
+- 60+% → red (critical)
+
+### Frontend Components
+- `AdminPage.js` — nested sub-zone CRUD inside each Location row; `at-mode-individual`/`at-mode-grouped` toggles; amber "Grouped" badge
+- `AssetsPage.js` — when asset type is grouped: hides manual asset_number, shows sub-zone select + total_count + auto-gen preview
+- `InspectionPage.js` — grouped row swaps the status radio for 3-column count grid (Needs Repair / Not Working / Working auto) + live status pill + visual stack bar
+
+### Test Coverage
+- Backend: 11/11 pytest pass (`/app/backend/tests/test_grouped_assets_iter31.py`)
+- Frontend testids verified via Playwright
+
+### Pending / Future
+- Phase 4: Migration tool "Group N selected individuals"
+- Health Explorer rendering with `8/120 defective` sub-text on grouped rows
+- Sub-zone drill level in Health Explorer
+
+
