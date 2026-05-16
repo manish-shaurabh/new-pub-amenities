@@ -82,21 +82,22 @@ function MultiSelectChip({ label, options, selected, onChange, testid }) {
 
 export default function HealthExplorer() {
   const { user } = useAuth();
+  const isSA = user?.role === 'superadmin';
   const [mode, setMode] = useState(() => {
     try { return localStorage.getItem(MODE_KEY) || 'asset_type'; } catch { return 'asset_type'; }
   });
   const [filters, setFilters] = useState({ stations: [], depts: [], types: [] });
-  const [filterOpts, setFilterOpts] = useState({ stations: [], departments: [], asset_types: [] });
+  const [filterOpts, setFilterOpts] = useState({ stations: [], departments: [], asset_types: [], divisions: [] });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [drill, setDrill] = useState({ asset_type_id: null, station_id: null, location_id: null });
+  const [drill, setDrill] = useState({ division_id: null, asset_type_id: null, station_id: null, location_id: null });
   const [openAsset, setOpenAsset] = useState(null);  // {id, asset_number}
 
   useEffect(() => { try { localStorage.setItem(MODE_KEY, mode); } catch {} }, [mode]);
 
   // Reset drill when mode changes
   useEffect(() => {
-    setDrill({ asset_type_id: null, station_id: null, location_id: null });
+    setDrill({ division_id: null, asset_type_id: null, station_id: null, location_id: null });
   }, [mode]);
 
   // Load filter options once
@@ -109,6 +110,7 @@ export default function HealthExplorer() {
 
   const queryParams = useMemo(() => {
     const p = new URLSearchParams({ mode });
+    if (drill.division_id) p.set('division_id', drill.division_id);
     if (drill.asset_type_id) p.set('asset_type_id', drill.asset_type_id);
     if (drill.station_id) p.set('station_id', drill.station_id);
     if (drill.location_id) p.set('location_id', drill.location_id);
@@ -137,9 +139,14 @@ export default function HealthExplorer() {
       setOpenAsset({ id: row.id, asset_number: row.asset_number || row.label });
       return;
     }
-    // Drill deeper based on current level and mode
     const level = data?.level || 1;
-    if (mode === 'asset_type') {
+    if (mode === 'division') {
+      if (level === 1) {
+        // Clicked a division → switch to station mode scoped to this division
+        setDrill({ division_id: row.id, asset_type_id: null, station_id: null, location_id: null });
+      } else if (level === 2) setDrill(d => ({ ...d, station_id: row.id }));
+      else if (level === 3) setDrill(d => ({ ...d, location_id: row.id }));
+    } else if (mode === 'asset_type') {
       if (level === 1) setDrill(d => ({ ...d, asset_type_id: row.id }));
       else if (level === 2) setDrill(d => ({ ...d, station_id: row.id }));
       else if (level === 3) setDrill(d => ({ ...d, location_id: row.id }));
@@ -153,17 +160,18 @@ export default function HealthExplorer() {
   const onCrumbClick = (idx) => {
     // Drop ancestors beyond idx
     const crumbs = data?.breadcrumb || [];
-    const next = { asset_type_id: null, station_id: null, location_id: null };
+    const next = { division_id: null, asset_type_id: null, station_id: null, location_id: null };
     for (let i = 0; i <= idx; i++) {
       const c = crumbs[i];
-      if (c.kind === 'asset_type') next.asset_type_id = c.id;
+      if (c.kind === 'division') next.division_id = c.id;
+      else if (c.kind === 'asset_type') next.asset_type_id = c.id;
       else if (c.kind === 'station') next.station_id = c.id;
       else if (c.kind === 'location') next.location_id = c.id;
     }
     setDrill(next);
   };
 
-  const goHome = () => setDrill({ asset_type_id: null, station_id: null, location_id: null });
+  const goHome = () => setDrill({ division_id: null, asset_type_id: null, station_id: null, location_id: null });
 
   const s = data?.summary;
   const buckets = s?.buckets || { working: 0, yellow: 0, orange: 0, red: 0 };
@@ -182,7 +190,7 @@ export default function HealthExplorer() {
               <div>
                 <CardTitle className="text-base">Health Explorer</CardTitle>
                 <p className="text-xs text-slate-500">
-                  Drill from {mode === 'asset_type' ? 'Asset Type' : 'Station'} → Station → Location → Individual Asset
+                  Drill from {mode === 'division' ? 'Division → Station' : mode === 'asset_type' ? 'Asset Type → Station' : 'Station → Asset Type'} → Location → Asset
                 </p>
               </div>
             </div>
@@ -222,6 +230,13 @@ export default function HealthExplorer() {
                 className={`px-3 py-1 text-xs rounded-full transition ${
                   mode === 'station' ? 'bg-white shadow text-teal-700 font-semibold' : 'text-slate-500'
                 }`}>By Station</button>
+              {isSA && (
+                <button data-testid="he-mode-division"
+                  onClick={() => setMode('division')}
+                  className={`px-3 py-1 text-xs rounded-full transition ${
+                    mode === 'division' ? 'bg-white shadow text-teal-700 font-semibold' : 'text-slate-500'
+                  }`}>By Division</button>
+              )}
             </div>
 
             <div className="mx-1 h-5 w-px bg-slate-200" />

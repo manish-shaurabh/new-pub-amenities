@@ -344,3 +344,25 @@ export const profilesAPI = {
     return api.get(`/profiles/${userId}?${p.toString()}`);
   },
 };
+
+// Zones
+const _uid = () => { try { const u = JSON.parse(localStorage.getItem('user') || '{}'); return u._id || u.id || ''; } catch { return ''; } };
+
+export const zonesAPI = {
+  list: () => api.get('/zones'),
+  create: (data) => api.post(`/zones?current_user_id=${_uid()}`, data),
+  update: (id, data) => api.put(`/zones/${id}?current_user_id=${_uid()}`, data),
+  delete: (id) => api.delete(`/zones/${id}?current_user_id=${_uid()}`),
+};
+
+// Divisions
+export const divisionsAPI = {
+  list: () => api.get('/divisions'),
+  get: (id) => api.get(`/divisions/${id}`),
+  create: (data) => api.post(`/divisions?current_user_id=${_uid()}`, data),
+  update: (id, data) => api.put(`/divisions/${id}?current_user_id=${_uid()}`, data),
+  delete: (id) => api.delete(`/divisions/${id}?current_user_id=${_uid()}`),
+  getStations: (id) => api.get(`/divisions/${id}/stations`),
+  assignStations: (id, station_ids) =>
+    api.post(`/divisions/${id}/assign-stations?current_user_id=${_uid()}`, station_ids),
+};

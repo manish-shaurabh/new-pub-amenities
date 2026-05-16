@@ -13,7 +13,7 @@ from database import (now_ist,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
     inspections_collection, orange_list_collection, notifications_collection,
-    schedules_collection, audit_log_collection,
+    schedules_collection, audit_log_collection, divisions_collection,
 )
 from models import (
     DepartmentCreate, StationCreate, LocationCreate,
@@ -78,6 +78,7 @@ async def create_user(user: UserCreate):
         "email": user.email,
         "phone": user.phone,
         "reports_to_id": user.reports_to_id,
+        "assigned_division_id": user.assigned_division_id or None,
         "is_active": True,
         "created_at": now_ist()
     }
@@ -108,11 +109,19 @@ async def list_users(role: Optional[str] = None, department_id: Optional[str] = 
     if reports_to_ids:
         reports_to_docs = await users_collection.find({"_id": {"$in": [ObjectId(rid) for rid in reports_to_ids]}}).to_list(1000)
         reports_to_map = {str(u["_id"]): u["name"] for u in reports_to_docs}
-    
+
+    # Batch fetch divisions
+    div_ids = list(set(d.get("assigned_division_id") for d in docs if d.get("assigned_division_id")))
+    div_map = {}
+    if div_ids:
+        div_docs = await divisions_collection.find({"_id": {"$in": [ObjectId(did) for did in div_ids]}}).to_list(1000)
+        div_map = {str(d["_id"]): d.get("name", "—") for d in div_docs}
+
     for doc in docs:
         doc.pop("password", None)
         doc["department_name"] = depts_map.get(doc.get("department_id", ""), "")
         doc["reports_to_name"] = reports_to_map.get(doc.get("reports_to_id", ""), None)
+        doc["assigned_division_name"] = div_map.get(doc.get("assigned_division_id", ""), None)
     return [serialize_doc(d) for d in docs]
 
 
@@ -192,7 +201,8 @@ async def update_user(user_id: str, user: UserCreate):
         "assigned_stations": user.assigned_stations,
         "email": user.email,
         "phone": user.phone,
-        "reports_to_id": user.reports_to_id
+        "reports_to_id": user.reports_to_id,
+        "assigned_division_id": user.assigned_division_id or None,
     }
     if user.password:
         import bcrypt

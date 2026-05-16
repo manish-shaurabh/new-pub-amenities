@@ -44,6 +44,7 @@ from routers import (
     comparative_export,
     data_health,
     health_explorer,
+    zones_divisions,
 )
 
 app = FastAPI(title="Railway Asset Inspection Management System")
@@ -77,6 +78,46 @@ async def _ensure_indexes():
         await _seed_default_tags()
     except Exception as e:
         print(f"[startup] could not seed remark tags: {e}")
+
+    # Migrate: ensure ECR zone, Dhanbad Division, and tag all existing stations
+    try:
+        await _migrate_zones_divisions()
+    except Exception as e:
+        print(f"[startup] zone/division migration failed: {e}")
+
+
+async def _migrate_zones_divisions():
+    """Idempotent: create ECR zone + Dhanbad Division and tag all un-tagged stations."""
+    from database import zones_collection, divisions_collection, stations_collection, now_ist
+    # 1. ECR zone
+    ecr = await zones_collection.find_one({"code": "ECR"})
+    if not ecr:
+        res = await zones_collection.insert_one({
+            "name": "East Central Railway", "code": "ECR", "created_at": now_ist()
+        })
+        ecr_id = str(res.inserted_id)
+        print("[migration] Created ECR zone")
+    else:
+        ecr_id = str(ecr["_id"])
+
+    # 2. Dhanbad Division
+    dhn = await divisions_collection.find_one({"code": "DHN"})
+    if not dhn:
+        res = await divisions_collection.insert_one({
+            "name": "Dhanbad Division", "code": "DHN", "zone_id": ecr_id, "created_at": now_ist()
+        })
+        dhn_id = str(res.inserted_id)
+        print("[migration] Created Dhanbad Division")
+    else:
+        dhn_id = str(dhn["_id"])
+
+    # 3. Tag all stations that don't have division_id yet
+    result = await stations_collection.update_many(
+        {"$or": [{"division_id": {"$exists": False}}, {"division_id": None}]},
+        {"$set": {"division_id": dhn_id}},
+    )
+    if result.modified_count:
+        print(f"[migration] Tagged {result.modified_count} station(s) → Dhanbad Division")
 
 
 # CORS
@@ -120,6 +161,7 @@ for r in (
     comparative_export.router,
     data_health.router,
     health_explorer.router,
+    zones_divisions.router,
 ):
     app.include_router(r)
 

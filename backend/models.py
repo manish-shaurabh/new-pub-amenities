@@ -8,6 +8,7 @@ import re
 # Enums
 class UserRole(str, Enum):
     SUPERADMIN = "superadmin"
+    DIVISIONAL_ADMIN = "divisional_admin"
     ADMIN = "admin"
     REPORTING_OFFICER = "reporting_officer"
     APPROVING_SUPERVISOR = "approving_supervisor"
@@ -94,13 +95,44 @@ class DepartmentResponse(BaseModel):
     created_at: str
 
 
+# Zone
+class ZoneCreate(BaseModel):
+    name: str
+    code: str
+
+
+class ZoneResponse(BaseModel):
+    id: str
+    name: str
+    code: str
+    created_at: str
+
+
+# Division
+class DivisionCreate(BaseModel):
+    name: str
+    code: str
+    zone_id: str
+
+
+class DivisionResponse(BaseModel):
+    id: str
+    name: str
+    code: str
+    zone_id: str
+    zone_name: Optional[str] = None
+    station_count: Optional[int] = 0
+    created_at: str
+
+
 # Station
 class StationCreate(BaseModel):
     name: str
     code: str
     zone: Optional[str] = None
     division: Optional[str] = None
-    approving_supervisor_id: Optional[str] = None  # NEW: Each station has one Approving Supervisor
+    division_id: Optional[str] = None            # structured FK to divisions collection
+    approving_supervisor_id: Optional[str] = None
 
 
 class StationResponse(BaseModel):
@@ -109,8 +141,10 @@ class StationResponse(BaseModel):
     code: str
     zone: Optional[str] = None
     division: Optional[str] = None
-    approving_supervisor_id: Optional[str] = None  # NEW
-    approving_supervisor_name: Optional[str] = None  # NEW
+    division_id: Optional[str] = None
+    division_name: Optional[str] = None
+    approving_supervisor_id: Optional[str] = None
+    approving_supervisor_name: Optional[str] = None
     created_at: str
 
 
@@ -197,7 +231,8 @@ class UserCreate(BaseModel):
     password: str
     email: Optional[str] = None
     phone: Optional[str] = None
-    reports_to_id: Optional[str] = None  # NEW: Supervisor links to Reporting Officer
+    reports_to_id: Optional[str] = None
+    assigned_division_id: Optional[str] = None  # for divisional_admin role
 
 
 class UserResponse(BaseModel):
@@ -211,8 +246,10 @@ class UserResponse(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     is_active: bool = True
-    reports_to_id: Optional[str] = None  # NEW
-    reports_to_name: Optional[str] = None  # NEW
+    reports_to_id: Optional[str] = None
+    reports_to_name: Optional[str] = None
+    assigned_division_id: Optional[str] = None
+    assigned_division_name: Optional[str] = None
     created_at: str
 
 

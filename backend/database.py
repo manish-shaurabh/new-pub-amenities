@@ -43,6 +43,8 @@ remark_tags_collection = db["remark_tags"]
 saved_reports_collection = db["saved_reports"]
 report_runs_collection = db["report_runs"]
 saved_dossiers_collection = db["saved_dossiers"]
+zones_collection = db["zones"]
+divisions_collection = db["divisions"]
 
 
 def get_db():

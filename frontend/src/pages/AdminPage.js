@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI, remarksAPI } from '../lib/api';
+import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI, remarksAPI, zonesAPI, divisionsAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -13,13 +13,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase, Tag, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase, Tag, ShieldAlert, Globe, GitBranch } from 'lucide-react';
 import RemarkTagsManager from '../components/RemarkTagsManager';
 import DataHealthPanel from '../components/DataHealthPanel';
 
 // Import the user management components from the old UsersPage
 const roleLabels = {
   superadmin: 'Super Admin',
+  divisional_admin: 'Divisional Admin',
   admin: 'Admin',
   reporting_officer: 'Reporting Officer',
   approving_supervisor: 'Approving Supervisor',
@@ -28,6 +29,7 @@ const roleLabels = {
 
 const roleColors = {
   superadmin: 'bg-primary/10 text-primary border-primary/20',
+  divisional_admin: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300',
   admin: 'bg-[hsl(var(--info))]/10 text-[hsl(var(--info))] border-[hsl(var(--info))]/20',
   reporting_officer: 'bg-[hsl(var(--pending))]/10 text-[hsl(var(--pending))] border-[hsl(var(--pending))]/20',
   approving_supervisor: 'bg-accent text-accent-foreground border-accent',
@@ -37,6 +39,7 @@ const roleColors = {
 export default function AdminPage() {
   const { user } = useAuth();
   const isSuperadmin = user?.role === 'superadmin';
+  const isDivAdmin = user?.role === 'divisional_admin';
   const [activeTab, setActiveTab] = useState('stations');
   const [loading, setLoading] = useState(true);
   
@@ -46,6 +49,8 @@ export default function AdminPage() {
   const [locations, setLocations] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
   const [users, setUsers] = useState([]);
+  const [zones, setZones] = useState([]);
+  const [divisions, setDivisions] = useState([]);
   const [stationStaff, setStationStaff] = useState([]);
   const [approvingSupervisors, setApprovingSupervisors] = useState([]);
   
@@ -56,15 +61,24 @@ export default function AdminPage() {
   const [editingItem, setEditingItem] = useState(null);
   
   // Forms
-  const [stationForm, setStationForm] = useState({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
+  const [stationForm, setStationForm] = useState({ name: '', code: '', zone: '', division: '', division_id: '', approving_supervisor_id: '' });
   const [locationForm, setLocationForm] = useState({ name: '', station_id: '', description: '' });
   const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [] });
   const [departmentForm, setDepartmentForm] = useState({ name: '', code: '', description: '' });
   const [deptFieldErrors, setDeptFieldErrors] = useState({});
   const [userForm, setUserForm] = useState({
     employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], 
-    password: '', email: '', phone: '', reports_to_id: ''
+    password: '', email: '', phone: '', reports_to_id: '', assigned_division_id: '',
   });
+  // Zone/Division inline CRUD state
+  const [zoneForm, setZoneForm] = useState({ name: '', code: '' });
+  const [divisionForm, setDivisionForm] = useState({ name: '', code: '', zone_id: '' });
+  const [editingZone, setEditingZone] = useState(null);
+  const [editingDivision, setEditingDivision] = useState(null);
+  const [showZoneForm, setShowZoneForm] = useState(false);
+  const [showDivisionForm, setShowDivisionForm] = useState(false);
+  const [divisionStationAssign, setDivisionStationAssign] = useState(null); // division being assigned
+  const [assigningStations, setAssigningStations] = useState([]);
   
   // Link Supervisors tab
   const [selectedRO, setSelectedRO] = useState('');
@@ -114,18 +128,33 @@ export default function AdminPage() {
 
   const loadAll = async () => {
     try {
-      const [deptsRes, stationsRes, locsRes, typesRes, usersRes] = await Promise.all([
+      const [deptsRes, stationsRes, locsRes, typesRes, usersRes, zonesRes, divisionsRes] = await Promise.all([
         departmentsAPI.list(),
         stationsAPI.list(),
         locationsAPI.list(),
         assetTypesAPI.list(),
-        usersAPI.list({})
+        usersAPI.list({}),
+        zonesAPI.list(),
+        divisionsAPI.list(),
       ]);
       setDepartments(deptsRes.data);
-      setStations(stationsRes.data);
+      const allStations = stationsRes.data;
+      // Divisional Admin sees only their division's stations
+      setStations(isDivAdmin
+        ? allStations.filter(s => s.division_id === user?.assigned_division_id)
+        : allStations);
       setLocations(locsRes.data);
       setAssetTypes(typesRes.data);
-      setUsers(usersRes.data);
+      const allUsers = usersRes.data;
+      setUsers(isDivAdmin
+        ? allUsers.filter(u => {
+            if (u.role === 'divisional_admin') return u.assigned_division_id === user?.assigned_division_id;
+            const myStationIds = new Set(allStations.filter(s => s.division_id === user?.assigned_division_id).map(s => s._id));
+            return u.assigned_stations?.some(sid => myStationIds.has(sid));
+          })
+        : allUsers);
+      setZones(zonesRes.data);
+      setDivisions(divisionsRes.data);
       
       // Get approving supervisors
       const asups = usersRes.data.filter(u => u.role === 'approving_supervisor');
@@ -209,6 +238,73 @@ export default function AdminPage() {
     } catch (e) {
       toast.error(errString(e, 'Failed to delete — remove dependent asset types first'));
     }
+  };
+
+  // ========== Zone CRUD ==========
+  const handleCreateZone = async () => {
+    if (!zoneForm.name || !zoneForm.code) { toast.error('Name and code required'); return; }
+    try {
+      await zonesAPI.create({ name: zoneForm.name.trim(), code: zoneForm.code.trim().toUpperCase() });
+      toast.success('Zone created');
+      setZoneForm({ name: '', code: '' });
+      setShowZoneForm(false);
+      loadAll();
+    } catch (e) { toast.error(errString(e, 'Failed')); }
+  };
+  const handleUpdateZone = async () => {
+    try {
+      await zonesAPI.update(editingZone._id, { name: zoneForm.name.trim(), code: zoneForm.code.trim().toUpperCase() });
+      toast.success('Zone updated');
+      setEditingZone(null);
+      setShowZoneForm(false);
+      loadAll();
+    } catch (e) { toast.error(errString(e, 'Failed')); }
+  };
+  const handleDeleteZone = async (id) => {
+    if (!window.confirm('Delete this zone? Fails if divisions reference it.')) return;
+    try {
+      await zonesAPI.delete(id);
+      toast.success('Zone deleted');
+      loadAll();
+    } catch (e) { toast.error(errString(e, 'Failed — remove dependent divisions first')); }
+  };
+
+  // ========== Division CRUD ==========
+  const handleCreateDivision = async () => {
+    if (!divisionForm.name || !divisionForm.code || !divisionForm.zone_id) { toast.error('Name, code, and zone required'); return; }
+    try {
+      await divisionsAPI.create(divisionForm);
+      toast.success('Division created');
+      setDivisionForm({ name: '', code: '', zone_id: '' });
+      setShowDivisionForm(false);
+      loadAll();
+    } catch (e) { toast.error(errString(e, 'Failed')); }
+  };
+  const handleUpdateDivision = async () => {
+    try {
+      await divisionsAPI.update(editingDivision._id, divisionForm);
+      toast.success('Division updated');
+      setEditingDivision(null);
+      setShowDivisionForm(false);
+      loadAll();
+    } catch (e) { toast.error(errString(e, 'Failed')); }
+  };
+  const handleDeleteDivision = async (id) => {
+    if (!window.confirm('Delete this division? Fails if stations are assigned to it.')) return;
+    try {
+      await divisionsAPI.delete(id);
+      toast.success('Division deleted');
+      loadAll();
+    } catch (e) { toast.error(errString(e, 'Cannot delete — reassign its stations first')); }
+  };
+  const handleAssignStationsToDivision = async () => {
+    try {
+      await divisionsAPI.assignStations(divisionStationAssign, assigningStations);
+      toast.success('Stations assigned');
+      setDivisionStationAssign(null);
+      setAssigningStations([]);
+      loadAll();
+    } catch (e) { toast.error(errString(e, 'Failed')); }
   };
 
   // ========== Station CRUD ==========
@@ -396,10 +492,10 @@ export default function AdminPage() {
     setDeptFieldErrors({});
     // Reset forms based on type
     if (type === 'department') setDepartmentForm({ name: '', code: '', description: '' });
-    else if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', approving_supervisor_id: '' });
+    else if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', division_id: '', approving_supervisor_id: '' });
     else if (type === 'location') setLocationForm({ name: '', station_id: '', description: '' });
     else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [] });
-    else if (type === 'user') setUserForm({ employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], password: '', email: '', phone: '', reports_to_id: '' });
+    else if (type === 'user') setUserForm({ employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], password: '', email: '', phone: '', reports_to_id: '', assigned_division_id: '' });
     setDialogOpen(true);
   };
 
@@ -411,13 +507,13 @@ export default function AdminPage() {
       setDeptFieldErrors({});
       setDepartmentForm({ name: item.name, code: item.code || '', description: item.description || '' });
     } else if (type === 'station') {
-      setStationForm({ name: item.name, code: item.code, zone: item.zone || '', division: item.division || '', approving_supervisor_id: item.approving_supervisor_id || '' });
+      setStationForm({ name: item.name, code: item.code, zone: item.zone || '', division: item.division || '', division_id: item.division_id || '', approving_supervisor_id: item.approving_supervisor_id || '' });
     } else if (type === 'location') {
       setLocationForm({ name: item.name, station_id: item.station_id, description: item.description || '' });
     } else if (type === 'asset-type') {
       setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [] });
     } else if (type === 'user') {
-      setUserForm({ employee_id: item.employee_id, name: item.name, role: item.role, department_id: item.department_id || '', assigned_stations: item.assigned_stations || [], password: '', email: item.email || '', phone: item.phone || '', reports_to_id: item.reports_to_id || '' });
+      setUserForm({ employee_id: item.employee_id, name: item.name, role: item.role, department_id: item.department_id || '', assigned_stations: item.assigned_stations || [], password: '', email: item.email || '', phone: item.phone || '', reports_to_id: item.reports_to_id || '', assigned_division_id: item.assigned_division_id || '' });
     }
     setDialogOpen(true);
   };
@@ -508,17 +604,19 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-10">
-          <TabsTrigger value="departments" data-testid="tab-departments"><Briefcase className="h-4 w-4 mr-2" /> Depts</TabsTrigger>
-          <TabsTrigger value="stations"><Building2 className="h-4 w-4 mr-2" /> Stations</TabsTrigger>
-          <TabsTrigger value="locations"><MapPin className="h-4 w-4 mr-2" /> Locations</TabsTrigger>
-          <TabsTrigger value="asset-types"><Layers className="h-4 w-4 mr-2" /> Asset Types</TabsTrigger>
-          <TabsTrigger value="users"><Users className="h-4 w-4 mr-2" /> Users</TabsTrigger>
-          <TabsTrigger value="link-supervisors"><Link className="h-4 w-4 mr-2" /> Link</TabsTrigger>
-          <TabsTrigger value="personnel-map"><TableIcon className="h-4 w-4 mr-2" /> Personnel Map</TabsTrigger>
-          <TabsTrigger value="transfer"><ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer</TabsTrigger>
-          <TabsTrigger value="tags" data-testid="tab-tags"><Tag className="h-4 w-4 mr-2" /> Tags</TabsTrigger>
-          <TabsTrigger value="data-health" data-testid="tab-data-health"><ShieldAlert className="h-4 w-4 mr-2" /> Health</TabsTrigger>
+        <TabsList className={`grid w-full ${isSuperadmin ? 'grid-cols-4 sm:grid-cols-12' : 'grid-cols-3 sm:grid-cols-10'} overflow-x-auto`}>
+          <TabsTrigger value="departments" data-testid="tab-departments"><Briefcase className="h-4 w-4 mr-2 hidden sm:inline" /> Depts</TabsTrigger>
+          <TabsTrigger value="stations"><Building2 className="h-4 w-4 mr-2 hidden sm:inline" /> Stations</TabsTrigger>
+          <TabsTrigger value="locations"><MapPin className="h-4 w-4 mr-2 hidden sm:inline" /> Locations</TabsTrigger>
+          <TabsTrigger value="asset-types"><Layers className="h-4 w-4 mr-2 hidden sm:inline" /> Asset Types</TabsTrigger>
+          <TabsTrigger value="users"><Users className="h-4 w-4 mr-2 hidden sm:inline" /> Users</TabsTrigger>
+          <TabsTrigger value="link-supervisors"><Link className="h-4 w-4 mr-2 hidden sm:inline" /> Link</TabsTrigger>
+          <TabsTrigger value="personnel-map"><TableIcon className="h-4 w-4 mr-2 hidden sm:inline" /> Personnel Map</TabsTrigger>
+          <TabsTrigger value="transfer"><ArrowRightLeft className="h-4 w-4 mr-2 hidden sm:inline" /> Transfer</TabsTrigger>
+          <TabsTrigger value="tags" data-testid="tab-tags"><Tag className="h-4 w-4 mr-2 hidden sm:inline" /> Tags</TabsTrigger>
+          <TabsTrigger value="data-health" data-testid="tab-data-health"><ShieldAlert className="h-4 w-4 mr-2 hidden sm:inline" /> Health</TabsTrigger>
+          {isSuperadmin && <TabsTrigger value="zones" data-testid="tab-zones"><Globe className="h-4 w-4 mr-2 hidden sm:inline" /> Zones</TabsTrigger>}
+          {isSuperadmin && <TabsTrigger value="divisions" data-testid="tab-divisions"><GitBranch className="h-4 w-4 mr-2 hidden sm:inline" /> Divisions</TabsTrigger>}
         </TabsList>
 
         {/* DEPARTMENTS TAB */}
@@ -1080,6 +1178,156 @@ export default function AdminPage() {
         <TabsContent value="data-health" className="space-y-3">
           <DataHealthPanel currentUser={user} />
         </TabsContent>
+
+        {/* ZONES TAB — SA only */}
+        {isSuperadmin && (
+          <TabsContent value="zones" className="space-y-3" data-testid="tab-zones-content">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-medium">{zones.length} Railway Zones</h3>
+              <Button size="sm" onClick={() => { setZoneForm({ name: '', code: '' }); setEditingZone(null); setShowZoneForm(v => !v); }}>
+                <Plus className="h-4 w-4 mr-1" /> Add Zone
+              </Button>
+            </div>
+            {showZoneForm && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardContent className="p-4 space-y-3">
+                  <p className="text-sm font-medium">{editingZone ? 'Edit Zone' : 'New Zone'}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">Name *</Label>
+                      <Input value={zoneForm.name} onChange={e => setZoneForm(p => ({...p, name: e.target.value}))} placeholder="East Central Railway" data-testid="zone-name-input" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Code *</Label>
+                      <Input value={zoneForm.code} onChange={e => setZoneForm(p => ({...p, code: e.target.value.toUpperCase()}))} placeholder="ECR" data-testid="zone-code-input" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={editingZone ? handleUpdateZone : handleCreateZone} data-testid="zone-submit-button">
+                      {editingZone ? 'Update' : 'Create'}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setShowZoneForm(false); setEditingZone(null); }}>Cancel</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            <div className="space-y-2">
+              {zones.map(zone => (
+                <Card key={zone._id} data-testid={`zone-row-${zone._id}`}>
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{zone.name}</p>
+                      <p className="text-xs text-muted-foreground">Code: {zone.code}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="icon" onClick={() => { setZoneForm({ name: zone.name, code: zone.code }); setEditingZone(zone); setShowZoneForm(true); }}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteZone(zone._id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+        )}
+
+        {/* DIVISIONS TAB — SA only */}
+        {isSuperadmin && (
+          <TabsContent value="divisions" className="space-y-3" data-testid="tab-divisions-content">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-medium">{divisions.length} Divisions</h3>
+              <Button size="sm" onClick={() => { setDivisionForm({ name: '', code: '', zone_id: '' }); setEditingDivision(null); setShowDivisionForm(v => !v); }}>
+                <Plus className="h-4 w-4 mr-1" /> Add Division
+              </Button>
+            </div>
+            {showDivisionForm && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardContent className="p-4 space-y-3">
+                  <p className="text-sm font-medium">{editingDivision ? 'Edit Division' : 'New Division'}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">Name *</Label>
+                      <Input value={divisionForm.name} onChange={e => setDivisionForm(p => ({...p, name: e.target.value}))} placeholder="Dhanbad Division" data-testid="division-name-input" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Code *</Label>
+                      <Input value={divisionForm.code} onChange={e => setDivisionForm(p => ({...p, code: e.target.value.toUpperCase()}))} placeholder="DHN" data-testid="division-code-input" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Zone *</Label>
+                    <Select value={divisionForm.zone_id} onValueChange={v => setDivisionForm(p => ({...p, zone_id: v}))}>
+                      <SelectTrigger data-testid="division-zone-select"><SelectValue placeholder="Select zone" /></SelectTrigger>
+                      <SelectContent>
+                        {zones.map(z => <SelectItem key={z._id} value={z._id}>{z.name} ({z.code})</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={editingDivision ? handleUpdateDivision : handleCreateDivision} data-testid="division-submit-button">
+                      {editingDivision ? 'Update' : 'Create'}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setShowDivisionForm(false); setEditingDivision(null); }}>Cancel</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            <div className="space-y-2">
+              {divisions.map(div => (
+                <Card key={div._id} data-testid={`division-row-${div._id}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{div.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Code: {div.code} &middot; Zone: {div.zone_name} &middot; {div.station_count} station(s)
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => { setDivisionStationAssign(div._id); setAssigningStations([]); }} data-testid={`assign-stations-btn-${div._id}`}>
+                          <MapPin className="h-3 w-3 mr-1" /> Assign Stations
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setDivisionForm({ name: div.name, code: div.code, zone_id: div.zone_id }); setEditingDivision(div); setShowDivisionForm(true); }}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteDivision(div._id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    {/* Station assignment panel */}
+                    {divisionStationAssign === div._id && (
+                      <div className="mt-3 pt-3 border-t">
+                        <p className="text-xs font-medium mb-2">Select stations to assign to {div.name}:</p>
+                        <div className="grid grid-cols-2 gap-1 max-h-[200px] overflow-y-auto">
+                          {stations.map(s => (
+                            <label key={s._id} className="flex items-center gap-2 text-xs p-1 rounded hover:bg-muted cursor-pointer">
+                              <Checkbox
+                                checked={assigningStations.includes(s._id)}
+                                onCheckedChange={() => setAssigningStations(prev => prev.includes(s._id) ? prev.filter(x => x !== s._id) : [...prev, s._id])}
+                              />
+                              <span className="truncate">{s.name}</span>
+                              {s.division_id === div._id && <Badge className="text-[9px] py-0 px-1 ml-auto">current</Badge>}
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <Button size="sm" onClick={handleAssignStationsToDivision} disabled={assigningStations.length === 0}>
+                            Assign {assigningStations.length} station(s)
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setDivisionStationAssign(null)}>Cancel</Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* UNIVERSAL DIALOG */}
@@ -1179,12 +1427,14 @@ export default function AdminPage() {
                 <Input value={stationForm.code} onChange={(e) => setStationForm({...stationForm, code: e.target.value})} />
               </div>
               <div>
-                <Label>Zone</Label>
-                <Input value={stationForm.zone} onChange={(e) => setStationForm({...stationForm, zone: e.target.value})} />
-              </div>
-              <div>
                 <Label>Division</Label>
-                <Input value={stationForm.division} onChange={(e) => setStationForm({...stationForm, division: e.target.value})} />
+                <Select value={stationForm.division_id || 'none'} onValueChange={(v) => setStationForm({...stationForm, division_id: v === 'none' ? '' : v})}>
+                  <SelectTrigger data-testid="station-division-select"><SelectValue placeholder="Select Division" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {divisions.map(d => <SelectItem key={d._id} value={d._id}>{d.name} ({d.code})</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Approving Supervisor (Optional)</Label>
@@ -1286,17 +1536,31 @@ export default function AdminPage() {
               <div>
                 <Label>Role *</Label>
                 <Select value={userForm.role} onValueChange={(v) => setUserForm({...userForm, role: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger data-testid="user-role-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="supervisor">Supervisor</SelectItem>
                     <SelectItem value="approving_supervisor">Approving Supervisor</SelectItem>
                     <SelectItem value="reporting_officer">Reporting Officer</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
+                    {isSuperadmin && <SelectItem value="divisional_admin">Divisional Admin</SelectItem>}
                     {isSuperadmin && <SelectItem value="superadmin">Super Admin</SelectItem>}
                     {isSuperadmin && <SelectItem value="viewer">Viewer (Read-only)</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
+              {/* Division assignment — only for divisional_admin role */}
+              {userForm.role === 'divisional_admin' && (
+                <div>
+                  <Label className="text-xs">Assigned Division *</Label>
+                  <Select value={userForm.assigned_division_id || 'none'} onValueChange={v => setUserForm(p => ({...p, assigned_division_id: v === 'none' ? '' : v}))}>
+                    <SelectTrigger data-testid="user-division-select"><SelectValue placeholder="Select Division" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {divisions.map(d => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
                 <Label>Department</Label>
                 <Select value={userForm.department_id || 'none'} onValueChange={(v) => setUserForm({...userForm, department_id: v === 'none' ? '' : v})}>

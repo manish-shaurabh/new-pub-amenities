@@ -37,11 +37,15 @@ export function AuthProvider({ children }) {
   };
 
   const isAdmin = () => {
-    return user?.role === 'superadmin' || user?.role === 'admin';
+    return ['superadmin', 'divisional_admin', 'admin'].includes(user?.role);
   };
 
   const isSuperadmin = () => {
     return user?.role === 'superadmin';
+  };
+
+  const isDivisionalAdmin = () => {
+    return user?.role === 'divisional_admin';
   };
 
   const isViewer = () => {
@@ -49,15 +53,15 @@ export function AuthProvider({ children }) {
   };
 
   const canApprove = () => {
-    return ['superadmin', 'admin', 'approving_supervisor'].includes(user?.role);
+    return ['superadmin', 'divisional_admin', 'admin', 'approving_supervisor'].includes(user?.role);
   };
 
   const canInspect = () => {
-    return ['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor'].includes(user?.role);
+    return ['superadmin', 'divisional_admin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor'].includes(user?.role);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, isSuperadmin, isViewer, canApprove, canInspect }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, isSuperadmin, isDivisionalAdmin, isViewer, canApprove, canInspect }}>
       {children}
     </AuthContext.Provider>
   );

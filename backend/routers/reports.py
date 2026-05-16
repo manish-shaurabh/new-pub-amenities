@@ -25,6 +25,7 @@ from database import (
     users_collection, assets_collection, asset_types_collection,
     stations_collection, locations_collection, departments_collection,
     orange_list_collection, inspections_collection, remarks_collection, now_ist,
+    divisions_collection,
 )
 
 router = APIRouter()
@@ -162,14 +163,16 @@ async def _load_universe():
     stations = await stations_collection.find({}).to_list(2000)
     locations = await locations_collection.find({}).to_list(2000)
     depts = await departments_collection.find({}).to_list(500)
+    divisions = await divisions_collection.find({}).to_list(500)
     open_ols = await orange_list_collection.find({"status": {"$ne": "resolved"}}).to_list(20000)
     # ALL OLs (incl. resolved) — needed for 30-day trend reconstruction
     all_ols = await orange_list_collection.find({}).to_list(50000)
     users = await users_collection.find({}).to_list(5000)
     type_by_id = {str(t["_id"]): t for t in types}
     station_by_id = {str(s["_id"]): s for s in stations}
-    location_by_id = {str(l["_id"]): l for l in locations}
+    location_by_id = {str(loc["_id"]): loc for loc in locations}
     dept_by_id = {str(d["_id"]): d for d in depts}
+    division_by_id = {str(d["_id"]): d for d in divisions}
     user_by_id = {str(u["_id"]): u for u in users}
     ol_by_asset = {ol["asset_id"]: ol for ol in open_ols}
     # Group ALL ols by asset_id (list, since multiple resolved entries can exist)
@@ -179,8 +182,10 @@ async def _load_universe():
             all_ols_by_asset[ol["asset_id"]].append(ol)
     return {
         "assets": assets, "types": types, "stations": stations, "locations": locations,
+        "divisions": divisions,
         "type_by_id": type_by_id, "station_by_id": station_by_id,
         "location_by_id": location_by_id, "dept_by_id": dept_by_id,
+        "division_by_id": division_by_id,
         "user_by_id": user_by_id, "ol_by_asset": ol_by_asset,
         "all_ols_by_asset": all_ols_by_asset,
     }
@@ -193,6 +198,13 @@ def _filter_assets_for_user(U: dict, user: dict) -> List[dict]:
     dept_id = user.get("department_id")
     if role in ("admin", "superadmin", "viewer"):
         return U["assets"]
+    if role == "divisional_admin":
+        div_id = str(user.get("assigned_division_id") or "")
+        div_station_ids = {
+            str(s["_id"]) for s in U["stations"]
+            if str(s.get("division_id") or "") == div_id
+        }
+        return [a for a in U["assets"] if a.get("station_id") in div_station_ids]
     if role == "approving_supervisor":
         return [a for a in U["assets"] if a.get("station_id") in assigned]
     if role == "reporting_officer":

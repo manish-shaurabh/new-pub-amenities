@@ -23,7 +23,7 @@ const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, roles: 'all' },
   { path: '/assets', label: 'Asset Registry', icon: Box, roles: ['superadmin', 'viewer'] },
   { path: '/inspection', label: 'New Inspection', icon: ClipboardCheck,
-    roles: ['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor'] },
+    roles: ['superadmin', 'admin', 'divisional_admin', 'reporting_officer', 'approving_supervisor', 'supervisor'] },
   { path: '/inspection-history', label: 'Inspection History', icon: History, roles: 'all' },
   {
     path: '/orange-list', label: 'Orange / Red List', icon: AlertTriangle,
@@ -32,7 +32,7 @@ const navItems = [
   { path: '/schedules', label: 'Schedules', icon: Calendar, roles: 'all' },
   { path: '/reports', label: 'Reports', icon: FileBarChart, roles: 'all' },
   { path: '/notifications', label: 'Notifications', icon: Bell, roles: 'all' },
-  { path: '/admin', label: 'Admin Panel', icon: Settings, roles: ['superadmin', 'admin'] },
+  { path: '/admin', label: 'Admin Panel', icon: Settings, roles: ['superadmin', 'admin', 'divisional_admin'] },
   {
     path: '/profile', label: 'My Profile', icon: UserCircle,
     roles: ['supervisor', 'approving_supervisor', 'reporting_officer']
@@ -41,6 +41,7 @@ const navItems = [
 
 const roleLabels = {
   superadmin: 'Super Admin',
+  divisional_admin: 'Divisional Admin',
   admin: 'Admin',
   reporting_officer: 'Reporting Officer',
   approving_supervisor: 'Approving Supervisor',

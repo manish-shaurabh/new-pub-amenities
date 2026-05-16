@@ -13,7 +13,7 @@ from database import (now_ist,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
     inspections_collection, orange_list_collection, notifications_collection,
-    schedules_collection, audit_log_collection,
+    schedules_collection, audit_log_collection, divisions_collection,
 )
 from models import (
     DepartmentCreate, StationCreate, LocationCreate,
@@ -35,6 +35,7 @@ async def create_station(station: StationCreate):
         "code": station.code,
         "zone": station.zone,
         "division": station.division,
+        "division_id": station.division_id or None,
         "approving_supervisor_id": station.approving_supervisor_id,
         "created_at": now_ist()
     }
@@ -52,9 +53,16 @@ async def list_stations():
     if asup_ids:
         asup_docs = await users_collection.find({"_id": {"$in": [ObjectId(aid) for aid in asup_ids]}}).to_list(1000)
         asup_map = {str(u["_id"]): u["name"] for u in asup_docs}
-    
+    # Batch fetch division names
+    div_ids = list(set(d.get("division_id") for d in docs if d.get("division_id")))
+    div_map = {}
+    if div_ids:
+        div_docs = await divisions_collection.find({"_id": {"$in": [ObjectId(did) for did in div_ids]}}).to_list(1000)
+        div_map = {str(d["_id"]): d.get("name", "—") for d in div_docs}
+
     for doc in docs:
         doc["approving_supervisor_name"] = asup_map.get(doc.get("approving_supervisor_id", ""), None)
+        doc["division_name"] = div_map.get(doc.get("division_id", ""), None)
     return [serialize_doc(d) for d in docs]
 
 
@@ -75,6 +83,7 @@ async def update_station(station_id: str, station: StationCreate):
             "code": station.code,
             "zone": station.zone,
             "division": station.division,
+            "division_id": station.division_id or None,
             "approving_supervisor_id": station.approving_supervisor_id
         }}
     )

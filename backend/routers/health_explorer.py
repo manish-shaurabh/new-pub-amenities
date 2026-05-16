@@ -34,7 +34,7 @@ from typing import Dict, List, Optional
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query
 
-from database import users_collection, now_ist
+from database import users_collection, now_ist, divisions_collection
 from routers.reports import _load_universe, _filter_assets_for_user, _classify, _empty_bucket
 
 router = APIRouter()
@@ -79,8 +79,9 @@ def _bucket_to_row(rid: str, label: str, bucket: Dict[str, int], *,
 @router.get("/api/dashboard/health-explorer/{user_id}")
 async def health_explorer(
     user_id: str,
-    mode: str = Query("asset_type", regex="^(asset_type|station)$"),
+    mode: str = Query("asset_type", regex="^(asset_type|station|division)$"),
     # Drill ancestors (all optional; presence implies deeper level)
+    division_id: Optional[str] = None,
     asset_type_id: Optional[str] = None,
     station_id: Optional[str] = None,
     location_id: Optional[str] = None,
@@ -113,6 +114,15 @@ async def health_explorer(
         scoped = [a for a in scoped
                   if U["type_by_id"].get(a.get("asset_type_id"), {}).get("department_id") in f_depts]
 
+    # Division scope filter — when division_id given, restrict to that division's stations
+    div_station_ids: set = set()
+    if division_id:
+        div_station_ids = {
+            str(s["_id"]) for s in U["stations"]
+            if str(s.get("division_id") or "") == division_id
+        }
+        scoped = [a for a in scoped if a.get("station_id") in div_station_ids]
+
     # Apply drill-ancestor filters
     if asset_type_id:
         scoped = [a for a in scoped if a.get("asset_type_id") == asset_type_id]
@@ -121,20 +131,44 @@ async def health_explorer(
     if location_id:
         scoped = [a for a in scoped if a.get("location_id") == location_id]
 
-    # Determine current level from ancestors set
-    if location_id:
-        level = 4
-    elif (mode == "asset_type" and asset_type_id and station_id) or \
-         (mode == "station" and station_id and asset_type_id):
-        level = 3
-    elif (mode == "asset_type" and asset_type_id) or (mode == "station" and station_id):
-        level = 2
+    # ── Division mode: level logic ──────────────────────────────────────────
+    if mode == "division":
+        if location_id:
+            level = 4
+        elif station_id and asset_type_id:
+            level = 3
+        elif station_id and division_id:
+            level = 2  # showing stations within chosen division... show asset types
+        elif division_id:
+            level = 2  # showing stations in the chosen division
+        else:
+            level = 1  # showing all divisions
     else:
-        level = 1
+        # Determine current level from ancestors set (existing logic)
+        if location_id:
+            level = 4
+        elif (mode == "asset_type" and asset_type_id and station_id) or \
+             (mode == "station" and station_id and asset_type_id):
+            level = 3
+        elif (mode == "asset_type" and asset_type_id) or (mode == "station" and station_id):
+            level = 2
+        else:
+            level = 1
 
     # Build breadcrumb
     breadcrumb: List[dict] = []
-    if mode == "asset_type":
+    if mode == "division":
+        if division_id:
+            div_doc = U.get("division_by_id", {}).get(division_id, {})
+            breadcrumb.append({"kind": "division", "id": division_id,
+                                "label": div_doc.get("name") or "—"})
+        if station_id:
+            s = U["station_by_id"].get(station_id, {})
+            breadcrumb.append({"kind": "station", "id": station_id, "label": s.get("name") or "—"})
+        if asset_type_id:
+            t = U["type_by_id"].get(asset_type_id, {})
+            breadcrumb.append({"kind": "asset_type", "id": asset_type_id, "label": t.get("name") or "—"})
+    elif mode == "asset_type":
         if asset_type_id:
             t = U["type_by_id"].get(asset_type_id, {})
             breadcrumb.append({"kind": "asset_type", "id": asset_type_id, "label": t.get("name") or "—"})
@@ -180,7 +214,14 @@ async def health_explorer(
         rows.sort(key=lambda r: order.get(r.get("status"), 99))
     else:
         # Decide grouping key for this level
-        if level == 1:
+        if mode == "division":
+            if level == 1:
+                group_key = "division"   # special — group by station's division_id
+            elif level == 2:
+                group_key = "station_id"
+            else:  # level 3
+                group_key = "location_id"
+        elif level == 1:
             group_key = "asset_type_id" if mode == "asset_type" else "station_id"
         elif level == 2:
             group_key = "station_id" if mode == "asset_type" else "asset_type_id"
@@ -191,10 +232,18 @@ async def health_explorer(
         agg: Dict[str, Dict[str, int]] = {}
         labels: Dict[str, str] = {}
         for a in scoped:
-            k = a.get(group_key) or "—"
+            if mode == "division" and level == 1:
+                # Use the station's division_id as the grouping key
+                st = U["station_by_id"].get(a.get("station_id") or "", {})
+                k = str(st.get("division_id") or "—")
+            else:
+                k = a.get(group_key) or "—"
             if k not in agg:
                 agg[k] = _empty_bucket()
-                if group_key == "asset_type_id":
+                if mode == "division" and level == 1:
+                    div_doc = U.get("division_by_id", {}).get(k, {})
+                    labels[k] = div_doc.get("name") or "—"
+                elif group_key == "asset_type_id":
                     labels[k] = U["type_by_id"].get(k, {}).get("name") or "—"
                 elif group_key == "station_id":
                     labels[k] = U["station_by_id"].get(k, {}).get("name") or "—"
@@ -271,4 +320,7 @@ async def health_explorer_filters(user_id: str):
         "asset_types": [{"id": tid, "name": U["type_by_id"].get(tid, {}).get("name") or "—",
                          "department_id": U["type_by_id"].get(tid, {}).get("department_id")}
                         for tid in asset_type_ids],
+        "divisions": [{"id": str(d["_id"]), "name": d.get("name") or "—",
+                       "code": d.get("code") or ""}
+                      for d in U.get("divisions", [])],
     }
