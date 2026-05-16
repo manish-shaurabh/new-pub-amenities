@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 31 — Grouped Assets feature. BACKEND: 11/11 pytest pass (sub-zones CRUD, AT tracking_mode, grouped asset create with validations & auto-numbering, grouped inspection with group_counts derivation/snapshot/asset-update, regression on individual flow). FRONTEND: critical gap — none of the advertised data-testid attributes for the new grouped UI were found on the running app. Admin Panel → Asset Types tab does not expose [data-testid=at-mode-individual]/[at-mode-grouped], Locations tab does not expose [data-testid=subzone-form] or sub-zone expanders, InspectionPage does not expose [data-testid=group-needs-repair-*], [group-not-working-*], [group-working-*], [group-status-*], [group-stack-*], and AssetsPage create form does not expose [data-testid=asset-subzone-select] or [data-testid=asset-total-count]. No 'Grouped' badge is visible in the Asset Types list. Backend feature is complete and correct; frontend integration appears to be missing or not deployed to the preview URL.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminPage → Asset Types", "issue": "tracking_mode toggle buttons not rendered — [data-testid=at-mode-individual] and [data-testid=at-mode-grouped] missing in DOM; no 'Grouped' badge visible on existing grouped types (e.g., 'Test Group Fan')", "selector": "[data-testid=at-mode-individual], [data-testid=at-mode-grouped]", "priority": "HIGH"},
+      {"component": "AdminPage → Locations", "issue": "Nested sub-zone UI not rendered — no expand toggle and [data-testid=subzone-form] not in DOM", "selector": "[data-testid=subzone-form]", "priority": "HIGH"},
+      {"component": "AssetsPage create form", "issue": "Grouped-mode conditional fields not rendered — [data-testid=asset-subzone-select] and [data-testid=asset-total-count] missing", "selector": "[data-testid=asset-subzone-select], [data-testid=asset-total-count]", "priority": "HIGH"},
+      {"component": "InspectionPage", "issue": "Grouped AssetInspectionRow 3-column count grid not rendered — group-needs-repair-*, group-not-working-*, group-working-*, group-status-*, group-stack-* testids absent. (Note: station selector did not auto-populate during automation; verify manually with DHANBAD selected — the existing 'TEST-GROUP-FAN-DHN-PLATFORM-1-SZ-A' asset should yield a grouped row.)", "selector": "[data-testid^=group-needs-repair-]", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Grouped inspection submission from UI", "issue": "Could not verify group_counts payload because the grouped row UI is not rendered (see above).", "affected_selectors": ["[data-testid^=group-needs-repair-]", "[data-testid^=group-not-working-]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_grouped_assets_iter31.py",
+    "/app/test_reports/pytest/iter31_grouped.xml"
+  ],
+  "action_items": [
+    "Verify frontend build/deploy of AdminPage.js, AssetsPage.js, InspectionPage.js to preview URL — the new data-testids advertised in the review request are NOT in the served DOM (login → /admin → Asset Types/Locations and /inspection inspected via Playwright).",
+    "If the code is shipped but conditional, confirm the render paths: AssetType form must always show at-mode-* toggles (not hidden behind a sub-tab); Locations tab must render the sub-zone expander row per location; AssetsPage form must switch to grouped fields when asset_type.tracking_mode==='grouped'; InspectionPage must render the grouped 3-col count grid when asset.tracking_mode==='grouped'.",
+    "Add a 'Grouped' amber badge to the Asset Types list row for tracking_mode==='grouped' (currently no badge visible for 'Test Group Fan')."
+  ],
+  "critical_code_review_comments": [
+    "Backend correctly clamps group_counts (max(0,…)) and rejects nr+nw>total with 400 — good.",
+    "Sub-zone delete refusal correctly checks assets_collection.count_documents({'sub_zone_id': sub_zone_id}) — good.",
+    "Auto-generated asset_number uses station.code|name + location.name + sub_zone.code|name with slug + uniqueness suffix — good.",
+    "create_inspection persists snapshot {needs_repair, not_working, total, defective, pct_defective} and mirrors counts onto the asset — good.",
+    "Individual asset regression flow unaffected — defective flip and OL creation still work.",
+    "Minor: routers/inspections.py is ~990 lines (>700 LOC guideline) — consider splitting (approval helpers, group-counts normalization, scoping logic) into modules.",
+    "Minor: OL endpoint /api/orange-list does not appear to filter by ?asset_id (returns full list); ok since not part of this feature, but worth a server-side filter."
+  ],
+  "updated_files": ["/app/backend/tests/test_grouped_assets_iter31.py (NEW)"],
+  "success_rate": {"backend": "100% (11/11 pytest passed in 13s)", "frontend": "0% — required data-testids absent from served UI"},
+  "test_credentials": {"SA001": "admin123"},
+  "seed_data_creation": "Tests create TEST_-prefixed asset-types, sub-zones, and grouped assets and clean them up in fixtures.",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Backend grouped-asset feature is fully verified via /app/backend/tests/test_grouped_assets_iter31.py. Frontend testids are missing on the preview deployment; if the main agent ships the UI integration, re-run the same Playwright probe (login → /admin Asset Types/Locations, /assets add-asset, /inspection with DHANBAD selected) and check for [data-testid=at-mode-individual], [at-mode-grouped], [subzone-form], [asset-subzone-select], [asset-total-count], [group-needs-repair-*], [group-not-working-*], [group-working-*], [group-status-*], [group-stack-*].",
+  "rca_of_issue": "The new UI code (AdminPage/AssetsPage/InspectionPage grouped feature) is not visible on the running frontend at https://rail-ops-center.preview.emergentagent.com. Either the changes are committed but not yet built into the preview, the render paths are gated by data not seeded, or the testids were not actually added. Backend endpoints respond correctly, so the data layer is ready — the gap is purely frontend."
+}

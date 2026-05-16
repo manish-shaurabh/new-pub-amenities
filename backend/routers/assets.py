@@ -13,7 +13,7 @@ from database import (now_ist,
     departments_collection, stations_collection, locations_collection,
     asset_types_collection, assets_collection, users_collection,
     inspections_collection, orange_list_collection, notifications_collection,
-    schedules_collection, audit_log_collection,
+    schedules_collection, audit_log_collection, sub_zones_collection,
 )
 from models import (
     DepartmentCreate, StationCreate, LocationCreate,
@@ -214,12 +214,46 @@ async def create_asset(asset: AssetCreate):
     location = await locations_collection.find_one({"_id": ObjectId(asset.location_id)})
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
-    
+
+    tracking_mode = asset_type.get("tracking_mode") or "individual"
+    asset_number = (asset.asset_number or "").strip()
+
+    sub_zone_doc = None
+    if tracking_mode == "grouped":
+        # Grouped assets MUST have sub_zone + positive total_count.
+        if not asset.sub_zone_id:
+            raise HTTPException(status_code=400, detail="Grouped assets require a sub_zone_id")
+        if not asset.total_count or int(asset.total_count) <= 0:
+            raise HTTPException(status_code=400, detail="Grouped assets require total_count > 0")
+        sub_zone_doc = await sub_zones_collection.find_one({"_id": ObjectId(asset.sub_zone_id)})
+        if not sub_zone_doc:
+            raise HTTPException(status_code=404, detail="Sub-zone not found")
+        if str(sub_zone_doc.get("location_id") or "") != asset.location_id:
+            raise HTTPException(status_code=400, detail="Sub-zone does not belong to the chosen location")
+        # Auto-generate canonical asset_number: TYPE-STATION-LOCATION-SUBZONE
+        def _slug(s: str) -> str:
+            return "".join(ch.upper() if ch.isalnum() else "-"
+                           for ch in (s or "").strip())[:24].strip("-") or "X"
+        type_slug = _slug(asset_type.get("name") or "")
+        stn_slug = _slug(station.get("code") or station.get("name") or "")
+        loc_slug = _slug(location.get("name") or "")
+        sub_slug = _slug(sub_zone_doc.get("code") or sub_zone_doc.get("name") or "")
+        asset_number = f"{type_slug}-{stn_slug}-{loc_slug}-{sub_slug}"
+        # Enforce uniqueness — append numeric suffix on conflict
+        base = asset_number
+        n = 1
+        while await assets_collection.find_one({"asset_number": asset_number}):
+            n += 1
+            asset_number = f"{base}-{n}"
+    else:
+        if not asset_number:
+            raise HTTPException(status_code=400, detail="asset_number is required for individual assets")
+
     doc = {
         "asset_type_id": asset.asset_type_id,
         "station_id": asset.station_id,
         "location_id": asset.location_id,
-        "asset_number": asset.asset_number,
+        "asset_number": asset_number,
         "status": AssetStatus.WORKING.value,
         "description": asset.description,
         "schedule_frequency": asset.schedule_frequency if asset.schedule_frequency else None,
@@ -229,6 +263,11 @@ async def create_asset(asset: AssetCreate):
         "identification_photo": asset.identification_photo or None,
         "geo_lat": asset.geo_lat,
         "geo_lng": asset.geo_lng,
+        "tracking_mode": tracking_mode,
+        "sub_zone_id": asset.sub_zone_id if tracking_mode == "grouped" else None,
+        "total_count": int(asset.total_count) if tracking_mode == "grouped" else None,
+        "needs_repair_count": 0 if tracking_mode == "grouped" else None,
+        "not_working_count": 0 if tracking_mode == "grouped" else None,
         "created_at": now_ist()
     }
     result = await assets_collection.insert_one(doc)
@@ -294,14 +333,17 @@ async def list_assets(
     type_ids = list(set(d["asset_type_id"] for d in docs if d.get("asset_type_id")))
     station_ids = list(set(d["station_id"] for d in docs if d.get("station_id")))
     location_ids = list(set(d["location_id"] for d in docs if d.get("location_id")))
+    sub_zone_ids = list(set(d.get("sub_zone_id") for d in docs if d.get("sub_zone_id")))
     types_map = {}
     types_checklist_map = {}
     types_dept_map = {}
+    types_mode_map = {}
     if type_ids:
         types_docs = await asset_types_collection.find({"_id": {"$in": [ObjectId(tid) for tid in type_ids]}}).to_list(1000)
         types_map = {str(t["_id"]): t["name"] for t in types_docs}
         types_checklist_map = {str(t["_id"]): t.get("checklist", []) for t in types_docs}
         types_dept_map = {str(t["_id"]): t.get("department_id") for t in types_docs}
+        types_mode_map = {str(t["_id"]): (t.get("tracking_mode") or "individual") for t in types_docs}
     stations_map = {}
     if station_ids:
         stations_docs = await stations_collection.find({"_id": {"$in": [ObjectId(sid) for sid in station_ids]}}).to_list(1000)
@@ -310,6 +352,10 @@ async def list_assets(
     if location_ids:
         locs_docs = await locations_collection.find({"_id": {"$in": [ObjectId(lid) for lid in location_ids]}}).to_list(1000)
         locations_map = {str(l["_id"]): l["name"] for l in locs_docs}
+    sub_zones_map = {}
+    if sub_zone_ids:
+        sz_docs = await sub_zones_collection.find({"_id": {"$in": [ObjectId(zid) for zid in sub_zone_ids]}}).to_list(1000)
+        sub_zones_map = {str(z["_id"]): z.get("name") for z in sz_docs}
 
     for doc in docs:
         doc["asset_type_name"] = types_map.get(doc["asset_type_id"], "Unknown")
@@ -317,6 +363,10 @@ async def list_assets(
         doc["location_name"] = locations_map.get(doc["location_id"], "Unknown")
         doc["checklist"] = types_checklist_map.get(doc["asset_type_id"], [])
         doc["department_id"] = types_dept_map.get(doc["asset_type_id"])
+        # Tracking-mode and grouped enrichment
+        doc["tracking_mode"] = doc.get("tracking_mode") or types_mode_map.get(doc["asset_type_id"], "individual")
+        if doc.get("sub_zone_id"):
+            doc["sub_zone_name"] = sub_zones_map.get(doc["sub_zone_id"], "—")
         doc["schedule_frequency"] = _normalize_freq_days(doc.get("schedule_frequency"))
 
     items_serialized = [serialize_doc(d) for d in docs]
@@ -346,6 +396,10 @@ async def get_asset(asset_id: str):
     doc["location_name"] = location["name"] if location else "Unknown"
     if asset_type:
         doc["checklist"] = asset_type.get("checklist", [])
+    doc["tracking_mode"] = doc.get("tracking_mode") or (asset_type.get("tracking_mode") if asset_type else "individual") or "individual"
+    if doc.get("sub_zone_id"):
+        sz = await sub_zones_collection.find_one({"_id": ObjectId(doc["sub_zone_id"])})
+        doc["sub_zone_name"] = sz.get("name") if sz else "—"
     doc["schedule_frequency"] = _normalize_freq_days(doc.get("schedule_frequency"))
     return serialize_doc(doc)
 
@@ -353,16 +407,31 @@ async def get_asset(asset_id: str):
 # Change 5: Asset EDIT endpoint
 @router.put("/api/assets/{asset_id}")
 async def update_asset(asset_id: str, asset: AssetCreate):
+    existing = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    tracking_mode = existing.get("tracking_mode") or "individual"
     update_data = {
         "asset_type_id": asset.asset_type_id,
         "station_id": asset.station_id,
         "location_id": asset.location_id,
-        "asset_number": asset.asset_number,
         "description": asset.description,
         "schedule_frequency": asset.schedule_frequency if asset.schedule_frequency else None,
         "geo_lat": asset.geo_lat,
         "geo_lng": asset.geo_lng,
     }
+    # For grouped assets, allow editing sub_zone + total_count; asset_number stays auto-generated.
+    if tracking_mode == "grouped":
+        if asset.sub_zone_id:
+            update_data["sub_zone_id"] = asset.sub_zone_id
+        if asset.total_count is not None:
+            if int(asset.total_count) <= 0:
+                raise HTTPException(status_code=400, detail="total_count must be > 0")
+            update_data["total_count"] = int(asset.total_count)
+    else:
+        # Individual asset — allow renaming
+        if asset.asset_number:
+            update_data["asset_number"] = asset.asset_number
     # Only update photo if provided (None means keep existing)
     if asset.identification_photo is not None:
         update_data["identification_photo"] = asset.identification_photo

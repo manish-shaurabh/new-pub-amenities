@@ -176,6 +176,7 @@ class AssetTypeCreate(BaseModel):
     department_id: str
     checklist: List[ChecklistItem] = []
     description: Optional[str] = None
+    tracking_mode: str = "individual"  # "individual" | "grouped"
 
 
 class AssetTypeResponse(BaseModel):
@@ -185,6 +186,7 @@ class AssetTypeResponse(BaseModel):
     department_name: Optional[str] = None
     checklist: List[Dict[str, Any]] = []
     description: Optional[str] = None
+    tracking_mode: str = "individual"
     created_at: str
 
 
@@ -193,12 +195,28 @@ class AssetCreate(BaseModel):
     asset_type_id: str
     station_id: str
     location_id: str
-    asset_number: str
+    asset_number: Optional[str] = None  # Auto-generated for grouped assets
     description: Optional[str] = None
     schedule_frequency: Optional[int] = None  # number of days between inspections
     identification_photo: Optional[str] = None  # base64-encoded image (client-resized ≤200 KB)
     geo_lat: Optional[float] = None             # GPS latitude (WGS-84)
     geo_lng: Optional[float] = None             # GPS longitude (WGS-84)
+    # ── Grouped-asset fields (used when asset_type.tracking_mode == 'grouped') ─
+    sub_zone_id: Optional[str] = None
+    total_count: Optional[int] = None
+    needs_repair_count: Optional[int] = 0
+    not_working_count: Optional[int] = 0
+
+
+# Sub-Zone (clusters of identical grouped assets within a location, e.g.,
+# "Platform 1 → Sub-Zone A" containing 120 fans tracked as a single group).
+class SubZoneCreate(BaseModel):
+    name: str
+    code: Optional[str] = None
+    station_id: str
+    location_id: str
+    description: Optional[str] = None
+    order: Optional[int] = 0
 
 
 class AssetResponse(BaseModel):
@@ -268,6 +286,10 @@ class InspectionItemRecord(BaseModel):
     photo_urls: List[str] = []
     defective_since: Optional[str] = None  # ISO date-time string when defect started
     rectified_on: Optional[str] = None     # NEW: ISO date-time when fixed/marked OK
+    # ── Grouped asset counts (used only when asset.tracking_mode == 'grouped') ─
+    # Inspector enters how many units need repair / are not working out of the
+    # group's total_count. status is derived server-side from these counts.
+    group_counts: Optional[Dict[str, int]] = None  # {needs_repair, not_working}
 
 
 class InspectionCreate(BaseModel):

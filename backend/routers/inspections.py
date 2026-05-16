@@ -78,6 +78,52 @@ async def create_inspection(inspection: InspectionCreate):
         item_dict["reviewed_by"] = None
         item_dict["reviewed_at"] = None
         item_dict["reviewer_remarks"] = None
+
+        # ── Grouped-asset normalization ────────────────────────────────────
+        # If this item references a grouped asset, the inspector enters
+        # needs_repair_count + not_working_count instead of a single status.
+        # Derive the asset-level status (ok / not_ok) from those counts and
+        # persist a snapshot in the item record so the asset state machine
+        # (OL creation, status flip, defective_since) stays unchanged.
+        gc = item_dict.get("group_counts")
+        if gc and isinstance(gc, dict):
+            asset_doc = await assets_collection.find_one({"_id": ObjectId(item_dict["asset_id"])})
+            if asset_doc and (asset_doc.get("tracking_mode") == "grouped"):
+                total = int(asset_doc.get("total_count") or 0)
+                nr = max(0, int(gc.get("needs_repair") or 0))
+                nw = max(0, int(gc.get("not_working") or 0))
+                if total > 0 and (nr + nw) > total:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Defective count ({nr + nw}) cannot exceed total ({total})",
+                    )
+                defective = nr + nw
+                # Persist the snapshot — used by Health Explorer & Inspection History
+                item_dict["group_counts"] = {
+                    "needs_repair": nr,
+                    "not_working": nw,
+                    "total": total,
+                    "defective": defective,
+                    "pct_defective": round((defective / total * 100), 1) if total else 0.0,
+                }
+                # Derive status: any defect → not_ok at asset level (binary).
+                # Cylinder-bar coloring uses pct elsewhere; the asset's discrete
+                # status only needs to flip the OL/state machine.
+                derived_status = (
+                    InspectionItemStatus.OK.value if defective == 0
+                    else InspectionItemStatus.NOT_OK.value
+                )
+                item_dict["status"] = derived_status
+                # Also reflect counts onto the asset so list-view + dashboards
+                # see them without scanning every inspection.
+                await assets_collection.update_one(
+                    {"_id": asset_doc["_id"]},
+                    {"$set": {
+                        "needs_repair_count": nr,
+                        "not_working_count": nw,
+                    }}
+                )
+
         items_data.append(item_dict)
 
     # Resolve participant names for SIG

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI, remarksAPI, zonesAPI, divisionsAPI } from '../lib/api';
+import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI, remarksAPI, zonesAPI, divisionsAPI, subZonesAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -49,6 +49,7 @@ export default function AdminPage() {
   const [stations, setStations] = useState([]);
   const [locations, setLocations] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
+  const [subZones, setSubZones] = useState([]);
   const [users, setUsers] = useState([]);
   const [zones, setZones] = useState([]);
   const [divisions, setDivisions] = useState([]);
@@ -64,7 +65,9 @@ export default function AdminPage() {
   // Forms
   const [stationForm, setStationForm] = useState({ name: '', code: '', zone: '', division: '', division_id: '', approving_supervisor_id: '' });
   const [locationForm, setLocationForm] = useState({ name: '', station_id: '', description: '' });
-  const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [] });
+  // Sub-Zone form (children of a Location)
+  const [subZoneForm, setSubZoneForm] = useState({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0 });
+  const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual' });
   const [departmentForm, setDepartmentForm] = useState({ name: '', code: '', description: '' });
   const [deptFieldErrors, setDeptFieldErrors] = useState({});
   const [userForm, setUserForm] = useState({
@@ -131,7 +134,7 @@ export default function AdminPage() {
 
   const loadAll = async () => {
     try {
-      const [deptsRes, stationsRes, locsRes, typesRes, usersRes, zonesRes, divisionsRes] = await Promise.all([
+      const [deptsRes, stationsRes, locsRes, typesRes, usersRes, zonesRes, divisionsRes, subZonesRes] = await Promise.all([
         departmentsAPI.list(),
         stationsAPI.list(),
         locationsAPI.list(),
@@ -139,6 +142,7 @@ export default function AdminPage() {
         usersAPI.list({}),
         zonesAPI.list(),
         divisionsAPI.list(),
+        subZonesAPI.list().catch(() => ({ data: [] })),
       ]);
       setDepartments(deptsRes.data);
       const allStations = stationsRes.data;
@@ -148,6 +152,7 @@ export default function AdminPage() {
         : allStations);
       setLocations(locsRes.data);
       setAssetTypes(typesRes.data);
+      setSubZones(subZonesRes.data || []);
       const allUsers = usersRes.data;
       setUsers(isDivAdmin
         ? allUsers.filter(u => {
@@ -386,6 +391,44 @@ export default function AdminPage() {
     }
   };
 
+  // ========== Sub-Zone CRUD ==========
+  const handleCreateSubZone = async () => {
+    if (!subZoneForm.name || !subZoneForm.location_id || !subZoneForm.station_id) {
+      toast.error('Please fill required fields');
+      return;
+    }
+    try {
+      await subZonesAPI.create({ ...subZoneForm, order: Number(subZoneForm.order) || 0 });
+      toast.success('Sub-zone created');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error(errString(e, 'Failed to create sub-zone'));
+    }
+  };
+
+  const handleUpdateSubZone = async () => {
+    try {
+      await subZonesAPI.update(editingItem._id, { ...subZoneForm, order: Number(subZoneForm.order) || 0 });
+      toast.success('Sub-zone updated');
+      setDialogOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error(errString(e, 'Failed to update'));
+    }
+  };
+
+  const handleDeleteSubZone = async (id) => {
+    if (!window.confirm('Delete this sub-zone? This will fail if assets still reference it.')) return;
+    try {
+      await subZonesAPI.delete(id);
+      toast.success('Deleted');
+      loadAll();
+    } catch (e) {
+      toast.error(errString(e, 'Failed to delete'));
+    }
+  };
+
   // ========== Asset Type CRUD ==========
   const handleCreateAssetType = async () => {
     if (!assetTypeForm.name || !assetTypeForm.department_id) {
@@ -497,7 +540,8 @@ export default function AdminPage() {
     if (type === 'department') setDepartmentForm({ name: '', code: '', description: '' });
     else if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', division_id: '', approving_supervisor_id: '' });
     else if (type === 'location') setLocationForm({ name: '', station_id: '', description: '' });
-    else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [] });
+    else if (type === 'sub-zone') setSubZoneForm({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0 });
+    else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual' });
     else if (type === 'user') setUserForm({ employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], password: '', email: '', phone: '', reports_to_id: '', assigned_division_id: '' });
     setDialogOpen(true);
   };
@@ -513,8 +557,13 @@ export default function AdminPage() {
       setStationForm({ name: item.name, code: item.code, zone: item.zone || '', division: item.division || '', division_id: item.division_id || '', approving_supervisor_id: item.approving_supervisor_id || '' });
     } else if (type === 'location') {
       setLocationForm({ name: item.name, station_id: item.station_id, description: item.description || '' });
+    } else if (type === 'sub-zone') {
+      setSubZoneForm({
+        name: item.name, code: item.code || '', station_id: item.station_id,
+        location_id: item.location_id, description: item.description || '', order: item.order || 0,
+      });
     } else if (type === 'asset-type') {
-      setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [] });
+      setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [], tracking_mode: item.tracking_mode || 'individual' });
     } else if (type === 'user') {
       setUserForm({ employee_id: item.employee_id, name: item.name, role: item.role, department_id: item.department_id || '', assigned_stations: item.assigned_stations || [], password: '', email: item.email || '', phone: item.phone || '', reports_to_id: item.reports_to_id || '', assigned_division_id: item.assigned_division_id || '' });
     }
@@ -526,12 +575,14 @@ export default function AdminPage() {
       if (dialogType === 'department') handleCreateDepartment();
       else if (dialogType === 'station') handleCreateStation();
       else if (dialogType === 'location') handleCreateLocation();
+      else if (dialogType === 'sub-zone') handleCreateSubZone();
       else if (dialogType === 'asset-type') handleCreateAssetType();
       else if (dialogType === 'user') handleCreateUser();
     } else {
       if (dialogType === 'department') handleUpdateDepartment();
       else if (dialogType === 'station') handleUpdateStation();
       else if (dialogType === 'location') handleUpdateLocation();
+      else if (dialogType === 'sub-zone') handleUpdateSubZone();
       else if (dialogType === 'asset-type') handleUpdateAssetType();
       else if (dialogType === 'user') handleUpdateUser();
     }
@@ -751,19 +802,74 @@ export default function AdminPage() {
                     </CollapsibleTrigger>
                     <CollapsibleContent>
                       <CardContent className="p-3 pt-0 space-y-1">
-                        {stationLocs.map(loc => (
-                          <div key={loc._id} className="flex items-center justify-between p-2 rounded hover:bg-muted">
-                            <span className="text-sm">{loc.name}</span>
-                            <div className="flex gap-2">
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog('location', loc)}>
-                                <Pencil className="h-3 w-3" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteLocation(loc._id)}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                        {stationLocs.map(loc => {
+                          const locSubZones = subZones.filter(z => z.location_id === loc._id);
+                          return (
+                            <Collapsible key={loc._id}>
+                              <div className="flex items-center justify-between p-2 rounded hover:bg-muted">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <CollapsibleTrigger asChild>
+                                    <button className="text-muted-foreground hover:text-foreground" data-testid={`loc-expand-${loc._id}`}>
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    </button>
+                                  </CollapsibleTrigger>
+                                  <span className="text-sm">{loc.name}</span>
+                                  {locSubZones.length > 0 && (
+                                    <Badge variant="secondary" className="text-[10px]">
+                                      {locSubZones.length} sub-zone{locSubZones.length === 1 ? '' : 's'}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex gap-1">
+                                  <Button variant="ghost" size="icon" className="h-7 w-7"
+                                    data-testid={`loc-add-subzone-${loc._id}`}
+                                    onClick={() => {
+                                      setDialogType('sub-zone');
+                                      setDialogMode('create');
+                                      setEditingItem(null);
+                                      setSubZoneForm({
+                                        name: '', code: '', station_id: station._id,
+                                        location_id: loc._id, description: '', order: 0,
+                                      });
+                                      setDialogOpen(true);
+                                    }}
+                                    title="Add sub-zone">
+                                    <Plus className="h-3 w-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog('location', loc)}>
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteLocation(loc._id)}>
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                              {locSubZones.length > 0 && (
+                                <CollapsibleContent>
+                                  <div className="ml-7 pl-3 border-l-2 border-dashed border-muted space-y-1 py-1">
+                                    {locSubZones.map(sz => (
+                                      <div key={sz._id} className="flex items-center justify-between p-1.5 rounded hover:bg-accent/40" data-testid={`subzone-row-${sz._id}`}>
+                                        <div className="flex items-center gap-2 min-w-0 text-xs">
+                                          <span className="font-medium text-slate-700">{sz.name}</span>
+                                          {sz.code && <Badge variant="outline" className="text-[9px] py-0">{sz.code}</Badge>}
+                                          {sz.description && <span className="text-muted-foreground truncate max-w-[200px]">· {sz.description}</span>}
+                                        </div>
+                                        <div className="flex gap-1">
+                                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditDialog('sub-zone', sz)}>
+                                            <Pencil className="h-3 w-3" />
+                                          </Button>
+                                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDeleteSubZone(sz._id)}>
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </CollapsibleContent>
+                              )}
+                            </Collapsible>
+                          );
+                        })}
                       </CardContent>
                     </CollapsibleContent>
                   </Card>
@@ -786,7 +892,14 @@ export default function AdminPage() {
               <Card key={type._id}>
                 <CardContent className="p-4 flex items-center justify-between">
                   <div>
-                    <p className="font-medium">{type.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{type.name}</p>
+                      {type.tracking_mode === 'grouped' && (
+                        <Badge className="bg-amber-100 text-amber-800 border-amber-300 text-[10px]" data-testid={`at-mode-badge-${type._id}`}>
+                          Grouped
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Department: {type.department_name} • {type.checklist?.length || 0} checklist items
                     </p>
@@ -1493,6 +1606,51 @@ export default function AdminPage() {
             </div>
           )}
 
+          {/* SUB-ZONE FORM */}
+          {dialogType === 'sub-zone' && (
+            <div className="space-y-3" data-testid="subzone-form">
+              <div>
+                <Label>Name *</Label>
+                <Input data-testid="subzone-name" value={subZoneForm.name} onChange={(e) => setSubZoneForm({...subZoneForm, name: e.target.value})} placeholder="e.g., Sub-Zone A" />
+              </div>
+              <div>
+                <Label>Code</Label>
+                <Input data-testid="subzone-code" value={subZoneForm.code} onChange={(e) => setSubZoneForm({...subZoneForm, code: e.target.value})} placeholder="e.g., SZ-A (used in auto asset IDs)" />
+              </div>
+              <div>
+                <Label>Station *</Label>
+                <Select value={subZoneForm.station_id} onValueChange={(v) => setSubZoneForm({...subZoneForm, station_id: v, location_id: ''})}>
+                  <SelectTrigger data-testid="subzone-station"><SelectValue placeholder="Select Station" /></SelectTrigger>
+                  <SelectContent>
+                    {stations.map(s => <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Location *</Label>
+                <Select value={subZoneForm.location_id} onValueChange={(v) => setSubZoneForm({...subZoneForm, location_id: v})}>
+                  <SelectTrigger data-testid="subzone-location"><SelectValue placeholder="Select Location" /></SelectTrigger>
+                  <SelectContent>
+                    {locations.filter(l => l.station_id === subZoneForm.station_id).map(l => (
+                      <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input value={subZoneForm.description} onChange={(e) => setSubZoneForm({...subZoneForm, description: e.target.value})} placeholder="Optional" />
+              </div>
+              <div>
+                <Label>Display Order</Label>
+                <Input type="number" min="0" value={subZoneForm.order} onChange={(e) => setSubZoneForm({...subZoneForm, order: e.target.value})} />
+              </div>
+              <Button data-testid="subzone-submit" onClick={handleDialogSubmit} className="w-full">
+                {dialogMode === 'create' ? 'Create Sub-Zone' : 'Update Sub-Zone'}
+              </Button>
+            </div>
+          )}
+
           {/* ASSET TYPE FORM */}
           {dialogType === 'asset-type' && (
             <div className="space-y-3">
@@ -1512,6 +1670,29 @@ export default function AdminPage() {
               <div>
                 <Label>Description</Label>
                 <Input value={assetTypeForm.description} onChange={(e) => setAssetTypeForm({...assetTypeForm, description: e.target.value})} />
+              </div>
+              <div>
+                <Label>Tracking Mode *</Label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    type="button"
+                    data-testid="at-mode-individual"
+                    onClick={() => setAssetTypeForm({...assetTypeForm, tracking_mode: 'individual'})}
+                    className={`rounded-md border p-3 text-left transition ${assetTypeForm.tracking_mode === 'individual' ? 'border-teal-600 bg-teal-50/50 ring-1 ring-teal-600' : 'border-slate-200 hover:bg-slate-50'}`}
+                  >
+                    <div className="text-sm font-semibold text-slate-800">Individual</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">Each unit tracked separately (Lift, Escalator, AC, etc.)</div>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="at-mode-grouped"
+                    onClick={() => setAssetTypeForm({...assetTypeForm, tracking_mode: 'grouped'})}
+                    className={`rounded-md border p-3 text-left transition ${assetTypeForm.tracking_mode === 'grouped' ? 'border-teal-600 bg-teal-50/50 ring-1 ring-teal-600' : 'border-slate-200 hover:bg-slate-50'}`}
+                  >
+                    <div className="text-sm font-semibold text-slate-800">Grouped (Count-based)</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">Bulk units in a sub-zone, e.g., 120 fans on a platform</div>
+                  </button>
+                </div>
               </div>
               <div>
                 <Label>Checklist Items</Label>

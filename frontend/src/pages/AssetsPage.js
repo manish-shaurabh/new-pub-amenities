@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { assetsAPI, stationsAPI, locationsAPI, assetTypesAPI } from '../lib/api';
+import { assetsAPI, stationsAPI, locationsAPI, assetTypesAPI, subZonesAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -42,8 +42,14 @@ export default function AssetsPage() {
   const [formData, setFormData] = useState({
     asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '',
     identification_photo: null, geo_lat: '', geo_lng: '',
+    sub_zone_id: '', total_count: '',
   });
+  const [subZones, setSubZones] = useState([]);
   const [photoLoading, setPhotoLoading] = useState(false);
+
+  // Currently-selected asset type — drives grouped vs individual form layout
+  const selectedAssetType = assetTypes.find(t => t._id === formData.asset_type_id);
+  const isGroupedType = (selectedAssetType?.tracking_mode || 'individual') === 'grouped';
 
   useEffect(() => { loadStaticData(); }, []);
 
@@ -102,14 +108,37 @@ export default function AssetsPage() {
     }
   };
 
+  // Load sub-zones for a given location (used by grouped asset form)
+  const loadSubZonesFor = async (locationId) => {
+    if (!locationId) { setSubZones([]); return; }
+    try {
+      const r = await subZonesAPI.list({ location_id: locationId });
+      setSubZones(r.data || []);
+    } catch { setSubZones([]); }
+  };
+
   const handleCreate = async () => {
-    if (!formData.asset_type_id || !formData.station_id || !formData.location_id || !formData.asset_number) {
+    // Asset-type, station, location are always required
+    if (!formData.asset_type_id || !formData.station_id || !formData.location_id) {
       toast.error('Please fill all required fields');
       return;
+    }
+    // Mode-specific validation
+    if (isGroupedType) {
+      if (!formData.sub_zone_id) { toast.error('Sub-zone is required for grouped assets'); return; }
+      if (!formData.total_count || Number(formData.total_count) <= 0) {
+        toast.error('Total count must be > 0'); return;
+      }
+    } else if (!formData.asset_number) {
+      toast.error('Asset number is required'); return;
     }
     try {
       await assetsAPI.create({
         ...formData,
+        // Auto-clear asset_number for grouped (backend generates); server validates total_count.
+        asset_number: isGroupedType ? null : formData.asset_number,
+        sub_zone_id: isGroupedType ? formData.sub_zone_id : null,
+        total_count: isGroupedType ? Number(formData.total_count) : null,
         schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
         geo_lat: formData.geo_lat ? parseFloat(formData.geo_lat) : null,
         geo_lng: formData.geo_lng ? parseFloat(formData.geo_lng) : null,
@@ -135,19 +164,28 @@ export default function AssetsPage() {
       identification_photo: asset.identification_photo || null,
       geo_lat: asset.geo_lat != null ? String(asset.geo_lat) : '',
       geo_lng: asset.geo_lng != null ? String(asset.geo_lng) : '',
+      sub_zone_id: asset.sub_zone_id || '',
+      total_count: asset.total_count != null ? String(asset.total_count) : '',
     });
     loadLocations(asset.station_id);
+    if (asset.location_id) loadSubZonesFor(asset.location_id);
     setShowEdit(true);
   };
 
   const handleUpdate = async () => {
-    if (!formData.asset_type_id || !formData.station_id || !formData.location_id || !formData.asset_number) {
+    if (!formData.asset_type_id || !formData.station_id || !formData.location_id) {
       toast.error('Please fill all required fields');
       return;
+    }
+    if (!isGroupedType && !formData.asset_number) {
+      toast.error('Asset number is required'); return;
     }
     try {
       await assetsAPI.update(editingAsset._id, {
         ...formData,
+        asset_number: isGroupedType ? null : formData.asset_number,
+        sub_zone_id: isGroupedType ? formData.sub_zone_id : null,
+        total_count: isGroupedType && formData.total_count ? Number(formData.total_count) : null,
         schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
         geo_lat: formData.geo_lat ? parseFloat(formData.geo_lat) : null,
         geo_lng: formData.geo_lng ? parseFloat(formData.geo_lng) : null,
@@ -174,8 +212,9 @@ export default function AssetsPage() {
   };
 
   const resetForm = () => {
-    setFormData({ asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', identification_photo: null, geo_lat: '', geo_lng: '' });
+    setFormData({ asset_type_id: '', station_id: '', location_id: '', asset_number: '', description: '', schedule_frequency: '', identification_photo: null, geo_lat: '', geo_lng: '', sub_zone_id: '', total_count: '' });
     setLocations([]);
+    setSubZones([]);
   };
 
   // Resize image to ≤1024px and convert to base64 JPEG (≈50-150 KB)
@@ -264,8 +303,9 @@ export default function AssetsPage() {
       <div>
         <Label>Station *</Label>
         <Select value={formData.station_id} onValueChange={(v) => {
-          setFormData({...formData, station_id: v, location_id: ''});
+          setFormData({...formData, station_id: v, location_id: '', sub_zone_id: ''});
           loadLocations(v);
+          setSubZones([]);
         }}>
           <SelectTrigger><SelectValue placeholder="Select station" /></SelectTrigger>
           <SelectContent>
@@ -275,17 +315,53 @@ export default function AssetsPage() {
       </div>
       <div>
         <Label>Location *</Label>
-        <Select value={formData.location_id} onValueChange={(v) => setFormData({...formData, location_id: v})}>
+        <Select value={formData.location_id} onValueChange={(v) => {
+          setFormData({...formData, location_id: v, sub_zone_id: ''});
+          if (isGroupedType) loadSubZonesFor(v);
+        }}>
           <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
           <SelectContent>
             {locations.map(l => <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
-      <div>
-        <Label>Asset Number *</Label>
-        <Input value={formData.asset_number} onChange={(e) => setFormData({...formData, asset_number: e.target.value})} placeholder="e.g., FAN-P1-001" />
-      </div>
+
+      {/* GROUPED MODE: Sub-Zone + Total Count + auto asset number preview */}
+      {isGroupedType ? (
+        <>
+          <div>
+            <Label>Sub-Zone *</Label>
+            <Select value={formData.sub_zone_id} onValueChange={(v) => setFormData({...formData, sub_zone_id: v})}>
+              <SelectTrigger data-testid="asset-subzone-select"><SelectValue placeholder={subZones.length ? 'Select sub-zone' : 'No sub-zones in this location'} /></SelectTrigger>
+              <SelectContent>
+                {subZones.map(z => <SelectItem key={z._id} value={z._id}>{z.name}{z.code ? ` (${z.code})` : ''}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {subZones.length === 0 && formData.location_id && (
+              <p className="text-[11px] text-amber-700 mt-1">No sub-zones in this location. Create one in Admin → Locations.</p>
+            )}
+          </div>
+          <div>
+            <Label>Total Count *</Label>
+            <Input
+              data-testid="asset-total-count"
+              type="number" min="1"
+              value={formData.total_count}
+              onChange={(e) => setFormData({...formData, total_count: e.target.value})}
+              placeholder="e.g., 120 (total units in this sub-zone)"
+            />
+          </div>
+          <div className="rounded-md bg-slate-50 border border-dashed p-2.5 text-xs text-slate-600">
+            <span className="font-medium text-slate-700">Asset ID:</span> Auto-generated on save · e.g.{' '}
+            <code className="text-teal-700">FAN-DHN-PLATFORM-1-SUB-A</code>
+          </div>
+        </>
+      ) : (
+        <div>
+          <Label>Asset Number *</Label>
+          <Input value={formData.asset_number} onChange={(e) => setFormData({...formData, asset_number: e.target.value})} placeholder="e.g., FAN-P1-001" />
+        </div>
+      )}
       <div>
         <Label>Description</Label>
         <Input value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Optional description" />

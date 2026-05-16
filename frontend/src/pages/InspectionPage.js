@@ -50,12 +50,20 @@ function AssetInspectionRow({ item, asset, onUpdate, onToggle, onPhotoUpload, on
   const selected = !!item;
   const [checklistOpen, setChecklistOpen] = useState(false);
   const hasChecklist = asset.checklist && asset.checklist.length > 0;
+  const isGrouped = (asset.tracking_mode || 'individual') === 'grouped';
 
   const handlePhotoInput = async (files) => {
     if (onPhotoUpload) onPhotoUpload(asset._id, Array.from(files));
   };
 
-  const statusCfg = item ? STATUS_CONFIG[item.status] : null;
+  // For grouped: derive a "live" status from counts for the badge.
+  const liveGroupedStatus = (() => {
+    if (!isGrouped || !item) return null;
+    const nr = Number(item.needs_repair_count) || 0;
+    const nw = Number(item.not_working_count) || 0;
+    return (nr + nw) === 0 ? 'ok' : 'not_ok';
+  })();
+  const statusCfg = item ? STATUS_CONFIG[isGrouped ? liveGroupedStatus : item.status] : null;
 
   return (
     <div
@@ -93,6 +101,11 @@ function AssetInspectionRow({ item, asset, onUpdate, onToggle, onPhotoUpload, on
               {asset.asset_number}
             </button>
             <Badge variant="outline" className="text-[10px] py-0 px-1.5">{asset.asset_type_name}</Badge>
+            {isGrouped && (
+              <Badge className="bg-amber-100 text-amber-800 border-amber-300 text-[10px] py-0 px-1.5" data-testid={`grouped-badge-${asset._id}`}>
+                Group · {asset.total_count || 0}
+              </Badge>
+            )}
             <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${ASSET_STATUS_COLOR[asset.status] || ''}`}>
               {asset.status?.replace('_', ' ')}
             </span>
@@ -122,7 +135,80 @@ function AssetInspectionRow({ item, asset, onUpdate, onToggle, onPhotoUpload, on
       {/* Expanded form when selected */}
       {selected && item && (
         <div className="px-3 pb-3 pt-0 space-y-3 border-t border-primary/10 mt-0" data-testid={`asset-form-${asset._id}`}>
-          {/* Status radio */}
+          {/* GROUPED ASSET — count-based inspection (replaces status radio) */}
+          {isGrouped ? (() => {
+            const nr = Number(item.needs_repair_count) || 0;
+            const nw = Number(item.not_working_count) || 0;
+            const total = Number(item.total_count) || 0;
+            const defective = nr + nw;
+            const working = Math.max(0, total - defective);
+            const pctDef = total > 0 ? (defective / total) * 100 : 0;
+            // Color thresholds from spec: 100% = green, any defect = yellow,
+            // >30% = orange, >60% = red
+            let bandColor = '#059669', bandLabel = 'All Working';
+            if (pctDef > 60) { bandColor = '#dc2626'; bandLabel = 'Critical'; }
+            else if (pctDef > 30) { bandColor = '#f97316'; bandLabel = 'High'; }
+            else if (defective > 0) { bandColor = '#eab308'; bandLabel = 'Some defective'; }
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Group Counts · Total <strong className="text-foreground">{total}</strong>
+                  </Label>
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{ background: bandColor + '22', color: bandColor }}
+                    data-testid={`group-status-${asset._id}`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: bandColor }} />
+                    {bandLabel} · {pctDef.toFixed(1)}% defective
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-2">
+                    <Label className="text-[10px] text-amber-700 uppercase tracking-wide">Needs Repair</Label>
+                    <Input
+                      type="number" min="0" max={total || undefined}
+                      value={item.needs_repair_count}
+                      onChange={(e) => onUpdate(asset._id, 'needs_repair_count', Math.max(0, Math.min(Number(e.target.value) || 0, total - nw)))}
+                      className="h-9 mt-1 text-base font-semibold text-amber-700"
+                      data-testid={`group-needs-repair-${asset._id}`}
+                    />
+                  </div>
+                  <div className="rounded-md border border-red-200 bg-red-50 p-2">
+                    <Label className="text-[10px] text-red-700 uppercase tracking-wide">Not Working</Label>
+                    <Input
+                      type="number" min="0" max={total || undefined}
+                      value={item.not_working_count}
+                      onChange={(e) => onUpdate(asset._id, 'not_working_count', Math.max(0, Math.min(Number(e.target.value) || 0, total - nr)))}
+                      className="h-9 mt-1 text-base font-semibold text-red-700"
+                      data-testid={`group-not-working-${asset._id}`}
+                    />
+                  </div>
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 opacity-90">
+                    <Label className="text-[10px] text-emerald-700 uppercase tracking-wide">Working (auto)</Label>
+                    <Input
+                      type="number"
+                      value={working}
+                      readOnly
+                      className="h-9 mt-1 text-base font-semibold text-emerald-700 bg-emerald-50"
+                      data-testid={`group-working-${asset._id}`}
+                    />
+                  </div>
+                </div>
+                {/* Visual stack bar */}
+                {total > 0 && (
+                  <div className="rounded-full overflow-hidden h-2 flex" data-testid={`group-stack-${asset._id}`}>
+                    <div style={{ width: `${(working / total) * 100}%`, background: '#059669' }} />
+                    <div style={{ width: `${(nr / total) * 100}%`, background: '#f59e0b' }} />
+                    <div style={{ width: `${(nw / total) * 100}%`, background: '#dc2626' }} />
+                  </div>
+                )}
+              </div>
+            );
+          })() : (
+          <>
+          {/* Status radio (individual mode only) */}
           <div>
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Inspection Result *</Label>
             <RadioGroup
@@ -144,9 +230,10 @@ function AssetInspectionRow({ item, asset, onUpdate, onToggle, onPhotoUpload, on
               ))}
             </RadioGroup>
           </div>
+          </>)}
 
-          {/* Defective since */}
-          {(item.status === 'not_ok' || item.status === 'needs_repair') && (
+          {/* Defective since — only for individual mode + defective statuses */}
+          {!isGrouped && (item.status === 'not_ok' || item.status === 'needs_repair') && (
             <div className="p-2.5 bg-destructive/5 border border-destructive/20 rounded-lg">
               <Label className="text-xs font-medium text-destructive">Defective Since (Date &amp; Time) *</Label>
               <div className="flex gap-2 mt-1.5 flex-wrap">
@@ -179,7 +266,7 @@ function AssetInspectionRow({ item, asset, onUpdate, onToggle, onPhotoUpload, on
           )}
 
           {/* Rectified on */}
-          {item.status === 'ok' && asset.status === 'defective' && (
+          {!isGrouped && item.status === 'ok' && asset.status === 'defective' && (
             <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 rounded-lg">
               <Label className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Rectified On (optional)</Label>
               <div className="flex gap-2 mt-1.5 flex-wrap">
@@ -475,21 +562,29 @@ export default function InspectionPage() {
   };
 
   // ── Item management ──
-  const makeItem = (asset) => ({
-    asset_id: asset._id,
-    asset_number: asset.asset_number,
-    asset_status: asset.status,
-    defective_since_existing: asset.defective_since,
-    status: 'ok',
-    checklist_responses: (asset.checklist || []).map(c => ({ name: c.name, value: '', status: 'pass' })),
-    remarks: '',
-    remarks_by: user.name,
-    photo_urls: [],
-    defective_since_date: null,
-    defective_since_time: '',
-    rectified_on_date: null,
-    rectified_on_time: '',
-  });
+  const makeItem = (asset) => {
+    const isGrouped = (asset.tracking_mode || 'individual') === 'grouped';
+    return {
+      asset_id: asset._id,
+      asset_number: asset.asset_number,
+      asset_status: asset.status,
+      defective_since_existing: asset.defective_since,
+      tracking_mode: asset.tracking_mode || 'individual',
+      total_count: asset.total_count || 0,
+      // Pre-fill counts from current asset snapshot so editing feels natural
+      needs_repair_count: isGrouped ? (asset.needs_repair_count || 0) : 0,
+      not_working_count: isGrouped ? (asset.not_working_count || 0) : 0,
+      status: 'ok',
+      checklist_responses: (asset.checklist || []).map(c => ({ name: c.name, value: '', status: 'pass' })),
+      remarks: '',
+      remarks_by: user.name,
+      photo_urls: [],
+      defective_since_date: null,
+      defective_since_time: '',
+      rectified_on_date: null,
+      rectified_on_time: '',
+    };
+  };
 
   const addItem = useCallback((asset) => {
     setInspectionItems(prev => {
@@ -552,7 +647,17 @@ export default function InspectionPage() {
     if (inspectionItems.length === 0) { toast.error('Please select at least one asset'); return; }
     if (inspectionType === 'sig' && participants.length === 0) { toast.error('Please select SIG participants'); return; }
     for (const item of inspectionItems) {
-      if ((item.status === 'not_ok' || item.status === 'needs_repair') && !item.defective_since_date) {
+      if (item.tracking_mode === 'grouped') {
+        const nr = Number(item.needs_repair_count) || 0;
+        const nw = Number(item.not_working_count) || 0;
+        if (nr < 0 || nw < 0) {
+          toast.error(`Counts cannot be negative for ${item.asset_number}`); return;
+        }
+        if (item.total_count && (nr + nw) > item.total_count) {
+          toast.error(`${item.asset_number}: defective (${nr + nw}) exceeds total (${item.total_count})`);
+          return;
+        }
+      } else if ((item.status === 'not_ok' || item.status === 'needs_repair') && !item.defective_since_date) {
         toast.error(`Set defective-since date for ${item.asset_number}`);
         return;
       }
@@ -566,6 +671,30 @@ export default function InspectionPage() {
         inspector_id: user._id,
         inspection_at: inspectionAtLiteral,
         items: inspectionItems.map(item => {
+          // Grouped item — backend derives status from counts; we just send the counts.
+          if (item.tracking_mode === 'grouped') {
+            const nr = Number(item.needs_repair_count) || 0;
+            const nw = Number(item.not_working_count) || 0;
+            const defective = nr + nw;
+            // If defective>0 and no defective_since chosen, default to inspection_at.
+            let defective_since = null;
+            if (defective > 0) {
+              defective_since = item.defective_since_date
+                ? toIstLiteral(item.defective_since_date, item.defective_since_time)
+                : inspectionAtLiteral;
+            }
+            return {
+              asset_id: item.asset_id,
+              status: defective === 0 ? 'ok' : 'not_ok',
+              checklist_responses: item.checklist_responses,
+              remarks: item.remarks,
+              remarks_by: item.remarks_by,
+              photo_urls: item.photo_urls,
+              defective_since,
+              rectified_on: null,
+              group_counts: { needs_repair: nr, not_working: nw },
+            };
+          }
           let defective_since = null;
           if ((item.status === 'not_ok' || item.status === 'needs_repair') && item.defective_since_date) {
             defective_since = toIstLiteral(item.defective_since_date, item.defective_since_time);

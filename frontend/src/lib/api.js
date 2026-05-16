@@ -69,6 +69,14 @@ export const locationsAPI = {
   delete: (id) => api.delete(`/locations/${id}`),
 };
 
+// Sub-Zones (clusters of identical grouped assets within a location)
+export const subZonesAPI = {
+  list: (params) => api.get('/sub-zones', { params }),
+  create: (data) => api.post('/sub-zones', data),
+  update: (id, data) => api.put(`/sub-zones/${id}`, data),
+  delete: (id) => api.delete(`/sub-zones/${id}`),
+};
+
 // Asset Types
 export const assetTypesAPI = {
   list: (departmentId) => api.get('/asset-types', { params: { department_id: departmentId } }),

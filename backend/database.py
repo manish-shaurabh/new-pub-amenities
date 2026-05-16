@@ -45,6 +45,7 @@ report_runs_collection = db["report_runs"]
 saved_dossiers_collection = db["saved_dossiers"]
 zones_collection = db["zones"]
 divisions_collection = db["divisions"]
+sub_zones_collection = db["sub_zones"]
 
 
 def get_db():

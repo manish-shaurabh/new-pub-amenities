@@ -35,6 +35,7 @@ async def create_asset_type(asset_type: AssetTypeCreate):
         "department_id": asset_type.department_id,
         "checklist": [item.model_dump() for item in asset_type.checklist],
         "description": asset_type.description,
+        "tracking_mode": asset_type.tracking_mode if asset_type.tracking_mode in ("individual", "grouped") else "individual",
         "created_at": now_ist()
     }
     result = await asset_types_collection.insert_one(doc)
@@ -56,6 +57,8 @@ async def list_asset_types(department_id: Optional[str] = None):
         depts_map = {str(d["_id"]): d["name"] for d in depts_docs}
     for doc in docs:
         doc["department_name"] = depts_map.get(doc["department_id"], "Unknown")
+        # Default for legacy records that pre-date the tracking_mode field
+        doc.setdefault("tracking_mode", "individual")
     return [serialize_doc(d) for d in docs]
 
 
@@ -67,7 +70,8 @@ async def update_asset_type(asset_type_id: str, asset_type: AssetTypeCreate):
             "name": asset_type.name,
             "department_id": asset_type.department_id,
             "checklist": [item.model_dump() for item in asset_type.checklist],
-            "description": asset_type.description
+            "description": asset_type.description,
+            "tracking_mode": asset_type.tracking_mode if asset_type.tracking_mode in ("individual", "grouped") else "individual",
         }}
     )
     if result.matched_count == 0:
