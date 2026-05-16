@@ -36,6 +36,7 @@ function shade(hex, amt) {
 
 export default function CylinderBar({
   data, stat = 'median', p90, maxLabel = 'hrs', onSelect, width = 920,
+  onHistoryClick,   // optional: (item) => void — renders "History →" link per row
 }) {
   const safeData = data || [];
   const filterId = useId();
@@ -218,6 +219,19 @@ export default function CylinderBar({
             {d.meta && has && (
               <text x={Math.min(width - PAD_R, barAreaX + w + 10)} y={cy + 14}
                     fontSize="8.5" fill="#64748b">{d.meta}</text>
+            )}
+
+            {/* History shortcut link (only when onHistoryClick is provided) */}
+            {onHistoryClick && has && (
+              <text
+                x={width - PAD_R} y={cy + 14}
+                fontSize="8.5" fill="#0891b2" textAnchor="end"
+                style={{ cursor: 'pointer', userSelect: 'none', textDecoration: 'underline' }}
+                onClick={(e) => { e.stopPropagation(); onHistoryClick(d); }}
+                data-testid={`history-link-${d.id}`}
+              >
+                History →
+              </text>
             )}
           </g>
         );
