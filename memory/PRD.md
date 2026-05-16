@@ -570,3 +570,32 @@ A 68-check cross-system audit was run covering 17 test phases with variable-date
 - **Note:** This is consistent with Phase 1 (removal of `assigned_supervisor_id`); the `reported_by` OR clause was a pre-Phase-1 remnant.
 
 **Audit result: 68/68 PASS** — All dashboards (Superadmin, Admin, SUP, ASUP, RO), orange-list endpoint, stats, station health, drill-downs, filter consistency, remarks thread, yellow lifecycle, and role-scoping containment (SUP ⊆ ASUP ⊆ SA) all verified consistent.
+
+
+### Sprint C — Inspection Compliance Monitor + Enhanced Dual-Panel UI (May 2026)
+
+1. **Enhanced Dual-Panel Inspection UI** (`InspectionPage.js`)
+   - Left sidebar: per-location asset-type breakdown bars (inspected/total + mini progress bar)
+   - Hybrid type filter: click type bar = filter right panel to that type; click again = back to All; "All ↺" reset button
+   - Right panel: assets grouped by asset type with sticky sub-headers + per-type progress bars when no filter active
+   - Top banner: "X/Y assets queued · Z defects" live counter including defect count
+
+2. **Inspection Compliance Monitor** (New page + Dashboard tab)
+   - Route: `/inspection-monitor` (top-level nav visible to Admin/SA/DA/RO/AS roles)
+   - Dashboard "Inspection Monitor" tab added alongside Health Explorer & Classic tabs
+   - **By Supervisor tab**: Table with last individual/SIG dates, 7d/30d inspection counts, status badges
+   - **Missing Inspections Heatmap tab**: Station × Asset-Type grid heat-coded by days since last inspection
+   - **SIG History tab**: Paginated SIG inspection cards with participant chips + PDF export
+   - **SIG PDF**: Footer on every page (participant names + micro sig lines) + dedicated signature certificate page
+   - **Threshold Settings**: Admin/SA/DA configurable, stored in `system_settings` MongoDB collection (default 7d, range 1–90d)
+
+3. **New Backend** `/app/backend/routers/inspection_compliance.py` (6 endpoints):
+   - `GET /api/inspection-compliance/supervisor-activity/{user_id}`
+   - `GET /api/inspection-compliance/missing-heatmap/{user_id}`
+   - `GET /api/inspection-compliance/sig-history/{user_id}`
+   - `POST /api/inspection-compliance/sig/{inspection_id}/export/pdf`
+   - `GET /api/settings/compliance-threshold`
+   - `PUT /api/settings/compliance-threshold`
+
+4. **Test result**: 26/26 pytest backend tests pass; all frontend flows verified via Playwright (iteration_29)
+
