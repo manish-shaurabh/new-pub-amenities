@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { assetsAPI, stationsAPI, locationsAPI, inspectionsAPI, usersAPI, uploadAPI } from '../lib/api';
 import { errString } from '../lib/err';
@@ -294,9 +294,39 @@ function AssetInspectionRow({ item, asset, onUpdate, onToggle, onPhotoUpload, on
 // ────────────────────────────────────────────────────────────────
 // Location block — groups assets under a location header
 // ────────────────────────────────────────────────────────────────
-function LocationBlock({ location, assets, inspectionItems, onToggle, onBulkToggle, onUpdate, onPhotoUpload, onPhotoDelete, onHistory, openLightbox, locationRef }) {
+function LocationBlock({ location, assets, inspectionItems, onToggle, onBulkToggle, onUpdate, onPhotoUpload, onPhotoDelete, onHistory, openLightbox, locationRef, groupByType }) {
   const selectedInLocation = assets.filter(a => inspectionItems.find(i => i.asset_id === a._id)).length;
   const allSelected = assets.length > 0 && selectedInLocation === assets.length;
+
+  // Group assets by asset type when groupByType is true
+  const assetGroups = useMemo(() => {
+    if (!groupByType) return null;
+    const groups = {};
+    assets.forEach(a => {
+      const key = a.asset_type_id || 'other';
+      if (!groups[key]) groups[key] = { name: a.asset_type_name || 'Other', assets: [] };
+      groups[key].assets.push(a);
+    });
+    return Object.values(groups);
+  }, [assets, groupByType]);
+
+  const renderAssets = (assetList) => (
+    <div className="space-y-2">
+      {assetList.map(asset => (
+        <AssetInspectionRow
+          key={asset._id}
+          asset={asset}
+          item={inspectionItems.find(i => i.asset_id === asset._id) || null}
+          onToggle={onToggle}
+          onUpdate={onUpdate}
+          onPhotoUpload={onPhotoUpload}
+          onPhotoDelete={onPhotoDelete}
+          onHistory={onHistory}
+          openLightbox={openLightbox}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div ref={locationRef} data-location-id={location._id} className="scroll-mt-24">
@@ -323,22 +353,31 @@ function LocationBlock({ location, assets, inspectionItems, onToggle, onBulkTogg
         </Button>
       </div>
 
-      {/* Asset rows */}
-      <div className="space-y-2">
-        {assets.map(asset => (
-          <AssetInspectionRow
-            key={asset._id}
-            asset={asset}
-            item={inspectionItems.find(i => i.asset_id === asset._id) || null}
-            onToggle={onToggle}
-            onUpdate={onUpdate}
-            onPhotoUpload={onPhotoUpload}
-            onPhotoDelete={onPhotoDelete}
-            onHistory={onHistory}
-            openLightbox={openLightbox}
-          />
-        ))}
-      </div>
+      {/* Asset rows — grouped by type or flat */}
+      {assetGroups ? (
+        <div className="space-y-4">
+          {assetGroups.map(group => {
+            const selInGroup = group.assets.filter(a => inspectionItems.find(i => i.asset_id === a._id)).length;
+            return (
+              <div key={group.name}>
+                <div className="flex items-center gap-2 mb-1.5 px-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{group.name}</span>
+                  <span className="text-[10px] text-muted-foreground">{selInGroup}/{group.assets.length}</span>
+                  <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary/40 transition-all"
+                      style={{ width: group.assets.length ? `${(selInGroup / group.assets.length) * 100}%` : '0%' }}
+                    />
+                  </div>
+                </div>
+                {renderAssets(group.assets)}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        renderAssets(assets)
+      )}
     </div>
   );
 }
@@ -366,6 +405,7 @@ export default function InspectionPage() {
   const [inspectionDate, setInspectionDate] = useState(new Date());
   const [inspectionTime, setInspectionTime] = useState(format(new Date(), 'HH:mm'));
   const [activeLocId, setActiveLocId] = useState(null);
+  const [typeFilter, setTypeFilter] = useState(null); // null = all types
   const { open: openLightbox, lightbox } = useLightbox();
 
   // Refs for location scroll-spy
@@ -596,6 +636,38 @@ export default function InspectionPage() {
   const selectedCount = inspectionItems.length;
   const doneCount = inspectionItems.filter(i => i.status !== undefined).length;
 
+  // Per-location type breakdown for the sidebar filter bars
+  const typeBreakdown = useMemo(() => {
+    const result = {};
+    locationsWithAssets.forEach(loc => {
+      const byType = {};
+      loc.assets.forEach(asset => {
+        const tid = asset.asset_type_id || 'other';
+        const tname = asset.asset_type_name || 'Other';
+        if (!byType[tid]) byType[tid] = { id: tid, name: tname, total: 0, inspected: 0 };
+        byType[tid].total++;
+        if (inspectionItems.find(i => i.asset_id === asset._id)) byType[tid].inspected++;
+      });
+      result[loc._id] = Object.values(byType);
+    });
+    return result;
+  }, [locationsWithAssets, inspectionItems]);
+
+  // Filtered locations based on active type filter
+  const filteredLocationsWithAssets = useMemo(() => {
+    if (!typeFilter) return locationsWithAssets;
+    return locationsWithAssets.map(loc => ({
+      ...loc,
+      assets: loc.assets.filter(a => a.asset_type_id === typeFilter),
+    })).filter(loc => loc.assets.length > 0);
+  }, [locationsWithAssets, typeFilter]);
+
+  // Defect count for banner
+  const defectCount = useMemo(() =>
+    inspectionItems.filter(i => i.status === 'not_ok' || i.status === 'needs_repair').length,
+    [inspectionItems]
+  );
+
   const scrollToLocation = (locId) => {
     setActiveLocId(locId);
     const el = locationRefs.current[locId];
@@ -694,7 +766,10 @@ export default function InspectionPage() {
         <div className="flex items-center gap-4 p-3 rounded-lg border bg-muted/20" data-testid="inspection-progress">
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium">{selectedCount} of {totalAssets} assets queued</span>
+              <span className="text-xs font-medium">
+                {selectedCount} of {totalAssets} assets queued
+                {defectCount > 0 && <span className="text-destructive ml-2">· {defectCount} defects</span>}
+              </span>
               <span className="text-xs text-muted-foreground">{totalAssets - selectedCount} remaining</span>
             </div>
             <div className="h-2 rounded-full bg-muted overflow-hidden">
@@ -727,30 +802,71 @@ export default function InspectionPage() {
         <div className="flex gap-4 items-start">
 
           {/* Left nav sidebar */}
-          <div className="hidden lg:block w-52 flex-shrink-0 sticky top-20">
+          <div className="hidden lg:block w-56 flex-shrink-0 sticky top-20">
             <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
-              <div className="px-3 py-2 border-b bg-muted/30">
+              <div className="px-3 py-2 border-b bg-muted/30 flex items-center justify-between">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Locations</p>
+                {typeFilter && (
+                  <button
+                    onClick={() => setTypeFilter(null)}
+                    className="text-[10px] text-primary hover:underline flex items-center gap-0.5"
+                    data-testid="clear-type-filter"
+                  >
+                    All ↺
+                  </button>
+                )}
               </div>
               <nav className="p-1.5 space-y-0.5 max-h-[calc(100vh-200px)] overflow-y-auto" data-testid="location-nav">
                 {locationsWithAssets.map(loc => {
                   const selInLoc = loc.assets.filter(a => inspectionItems.find(i => i.asset_id === a._id)).length;
                   const isActive = activeLocId === loc._id;
+                  const types = typeBreakdown[loc._id] || [];
                   return (
-                    <button
-                      key={loc._id}
-                      onClick={() => scrollToLocation(loc._id)}
-                      data-testid={`nav-loc-${loc._id}`}
-                      className={`w-full text-left px-2.5 py-2 rounded-md text-xs transition-all flex items-center justify-between gap-1
-                        ${isActive ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'}`}
-                    >
-                      <span className="truncate flex-1">{loc.name}</span>
-                      <span className="flex items-center gap-0.5 shrink-0">
-                        {selInLoc > 0 && <span className="text-[9px] font-semibold text-primary">{selInLoc}/</span>}
-                        <span className="text-[9px]">{loc.assets.length}</span>
-                        <ChevronRight className="h-3 w-3 opacity-40" />
-                      </span>
-                    </button>
+                    <div key={loc._id}>
+                      {/* Location row */}
+                      <button
+                        onClick={() => scrollToLocation(loc._id)}
+                        data-testid={`nav-loc-${loc._id}`}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-all flex items-center justify-between gap-1
+                          ${isActive ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'}`}
+                      >
+                        <span className="truncate flex-1">{loc.name}</span>
+                        <span className="flex items-center gap-0.5 shrink-0">
+                          {selInLoc > 0 && <span className="text-[9px] font-semibold text-primary">{selInLoc}/</span>}
+                          <span className="text-[9px]">{loc.assets.length}</span>
+                          <ChevronRight className="h-3 w-3 opacity-40" />
+                        </span>
+                      </button>
+                      {/* Type breakdown bars */}
+                      {types.length > 0 && (
+                        <div className="ml-2 mb-1 space-y-0.5">
+                          {types.map(t => {
+                            const pct = t.total > 0 ? (t.inspected / t.total) * 100 : 0;
+                            const isFiltered = typeFilter === t.id;
+                            return (
+                              <button
+                                key={t.id}
+                                onClick={() => setTypeFilter(isFiltered ? null : t.id)}
+                                data-testid={`type-filter-${t.id}`}
+                                className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] transition-all flex items-center gap-1.5
+                                  ${isFiltered ? 'bg-primary/15 text-primary' : 'hover:bg-muted/50 text-muted-foreground'}`}
+                              >
+                                <span className="truncate flex-1 min-w-0">{t.name}</span>
+                                <span className="shrink-0 tabular-nums">{t.inspected}/{t.total}</span>
+                                <div className="w-10 h-1.5 rounded-full bg-muted overflow-hidden shrink-0">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      pct === 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-primary' : 'bg-muted-foreground/20'
+                                    }`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </nav>
@@ -759,6 +875,18 @@ export default function InspectionPage() {
 
           {/* Right main area */}
           <div className="flex-1 min-w-0 space-y-6 pb-24" data-testid="inspection-main-area">
+
+            {/* Active type filter banner */}
+            {typeFilter && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/20 text-sm">
+                <span className="text-xs font-medium text-primary">
+                  Filtered by: {assets.find(a => a.asset_type_id === typeFilter)?.asset_type_name || typeFilter}
+                </span>
+                <button onClick={() => setTypeFilter(null)} className="ml-auto text-xs text-primary hover:underline" data-testid="clear-type-filter-banner">
+                  Show All ↺
+                </button>
+              </div>
+            )}
 
             {/* Mobile location quick-nav */}
             <div className="lg:hidden flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
@@ -778,7 +906,7 @@ export default function InspectionPage() {
             </div>
 
             {/* Location blocks */}
-            {locationsWithAssets.map(loc => (
+            {filteredLocationsWithAssets.map(loc => (
               <LocationBlock
                 key={loc._id}
                 location={loc}
@@ -792,6 +920,7 @@ export default function InspectionPage() {
                 onHistory={setAssetHistory}
                 openLightbox={openLightbox}
                 locationRef={(el) => { if (el) locationRefs.current[loc._id] = el; }}
+                groupByType={!typeFilter}
               />
             ))}
 

@@ -13,6 +13,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
 import ReportsPage from './pages/ReportsPage';
 import PerformanceSheetPage from './pages/PerformanceSheetPage';
+import InspectionCompliancePage from './pages/InspectionCompliancePage';
 import AppLayout from './components/AppLayout';
 import './App.css';
 
@@ -111,6 +112,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <AppLayout>
             <PerformanceSheetPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/inspection-monitor" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <InspectionCompliancePage />
           </AppLayout>
         </ProtectedRoute>
       } />

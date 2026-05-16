@@ -355,6 +355,16 @@ export const zonesAPI = {
   delete: (id) => api.delete(`/zones/${id}?current_user_id=${_uid()}`),
 };
 
+// Inspection Compliance
+export const complianceAPI = {
+  supervisorActivity: (userId, params = {}) => api.get(`/inspection-compliance/supervisor-activity/${userId}`, { params }),
+  missingHeatmap: (userId) => api.get(`/inspection-compliance/missing-heatmap/${userId}`),
+  sigHistory: (userId, params = {}) => api.get(`/inspection-compliance/sig-history/${userId}`, { params }),
+  exportSigPdf: (inspectionId) => api.post(`/inspection-compliance/sig/${inspectionId}/export/pdf`, {}, { responseType: 'blob' }),
+  getThreshold: () => api.get('/settings/compliance-threshold'),
+  updateThreshold: (data) => api.put('/settings/compliance-threshold', data),
+};
+
 // Divisions
 export const divisionsAPI = {
   list: () => api.get('/divisions'),

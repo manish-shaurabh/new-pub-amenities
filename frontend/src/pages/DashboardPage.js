@@ -10,7 +10,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import {
   Box,
-  ChevronDown, Wrench, AlertTriangle, BarChart3, ArrowRight, ArrowLeft, Eye,
+  ChevronDown, Wrench, AlertTriangle, BarChart3, ArrowRight, ArrowLeft, Eye, Activity,
 } from 'lucide-react';
 import OrangeListPanel from '../components/OrangeListPanel';
 import SupervisorAnalyticsView from '../components/SupervisorAnalyticsView';
@@ -23,6 +23,7 @@ import OversightDashboard from '../components/dashboards/OversightDashboard';
 import AdminDashboard from '../components/dashboards/AdminDashboard';
 import SuperadminDashboard from '../components/dashboards/SuperadminDashboard';
 import HealthExplorer from '../components/HealthExplorer';
+import InspectionCompliancePage from './InspectionCompliancePage';
 
 // Health palette (matches our orange/red list semantics)
 const HEALTH_COLORS = {
@@ -382,6 +383,11 @@ export default function DashboardPage() {
           className="data-[state=active]:bg-accent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-teal-600 rounded-none px-3 py-2 text-sm">
           Health Explorer
         </TabsTrigger>
+        <TabsTrigger value="compliance" data-testid="tab-inspection-monitor"
+          className="data-[state=active]:bg-accent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-teal-600 rounded-none px-3 py-2 text-sm">
+          <Activity className="h-4 w-4 mr-1.5" />
+          Inspection Monitor
+        </TabsTrigger>
         <TabsTrigger value="classic" data-testid="tab-classic-dashboard"
           className="data-[state=active]:bg-accent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-teal-600 rounded-none px-3 py-2 text-sm">
           Classic Dashboard
@@ -389,6 +395,9 @@ export default function DashboardPage() {
       </TabsList>
       <TabsContent value="health" className="mt-3">
         <HealthExplorer />
+      </TabsContent>
+      <TabsContent value="compliance" className="mt-3">
+        <InspectionCompliancePage />
       </TabsContent>
       <TabsContent value="classic" className="mt-3">
         {classicDashboard}

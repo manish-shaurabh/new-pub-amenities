@@ -45,6 +45,7 @@ from routers import (
     data_health,
     health_explorer,
     zones_divisions,
+    inspection_compliance,
 )
 
 app = FastAPI(title="Railway Asset Inspection Management System")
@@ -162,6 +163,7 @@ for r in (
     data_health.router,
     health_explorer.router,
     zones_divisions.router,
+    inspection_compliance.router,
 ):
     app.include_router(r)
 
