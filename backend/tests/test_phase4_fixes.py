@@ -16,7 +16,7 @@ import os
 import time
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://asset-audit-dash.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://railway-defect-track.preview.emergentagent.com').rstrip('/')
 
 # ────────────────────────────────────────────────────────────────────────────
 # Known IDs from seed data (supplied by main agent context)
