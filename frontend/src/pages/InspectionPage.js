@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { assetsAPI, stationsAPI, locationsAPI, inspectionsAPI, usersAPI, uploadAPI } from '../lib/api';
+import { assetsAPI, stationsAPI, locationsAPI, inspectionsAPI, usersAPI, uploadAPI, stationCanvasAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { openInspectionReport } from '../lib/inspection-report';
 import { useAuth } from '../lib/auth-context';
@@ -18,15 +18,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { Calendar } from '../components/ui/calendar';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../components/ui/sheet';
 import { toast } from 'sonner';
 import {
   ClipboardCheck, Camera, Users, CalendarIcon, AlertTriangle,
   ChevronDown, Trash2, MapPin, CheckCircle2, XCircle, Wrench,
-  CheckSquare, Square, ChevronRight, ListChecks
+  CheckSquare, Square, ChevronRight, ListChecks, Map as MapIcon, List
 } from 'lucide-react';
 import { format } from 'date-fns';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 import { useLightbox } from '../components/PhotoLightbox';
+import PlatformBlueprint from '../components/PlatformBlueprint';
 
 // ────────────────────────────────────────────────────────────────
 // Status helpers
@@ -578,6 +580,9 @@ export default function InspectionPage() {
   const [activeLocId, setActiveLocId] = useState(null);
   const [typeFilter, setTypeFilter] = useState(null); // null = all types
   const [subZoneFilter, setSubZoneFilter] = useState(null); // null = all sub-zones (including unassigned)
+  const [viewMode, setViewMode] = useState('list');   // 'list' | 'map'
+  const [canvasData, setCanvasData] = useState(null); // location canvas data for map view
+  const [blueprintAsset, setBlueprintAsset] = useState(null); // asset tapped in map view
   const { open: openLightbox, lightbox } = useLightbox();
 
   // Refs for location scroll-spy
@@ -636,6 +641,22 @@ export default function InspectionPage() {
     if (user.role === 'supervisor') all = all.filter(a => a.department_id === user.department_id);
     setAssets(all);
   };
+
+  // Load canvas blueprint data for the current location (map view)
+  const loadCanvasData = useCallback(async (locationId) => {
+    if (!locationId) return;
+    try {
+      const res = await stationCanvasAPI.get({ location_id: locationId });
+      const locs = res.data?.locations || [];
+      setCanvasData(locs.find(l => l.id === locationId) || locs[0] || null);
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    if (viewMode === 'map' && activeLocId) {
+      loadCanvasData(activeLocId);
+    }
+  }, [viewMode, activeLocId, loadCanvasData]);
 
   const handleStationChange = (sid) => {
     setSelectedStation(sid);
@@ -1108,8 +1129,58 @@ export default function InspectionPage() {
           {/* Right main area */}
           <div className="flex-1 min-w-0 space-y-6 pb-24" data-testid="inspection-main-area">
 
-            {/* Active filter banners (type + sub-zone) */}
-            {typeFilter && (
+            {/* View mode toggle — List vs Map */}
+            {activeLocId && (
+              <div className="flex items-center gap-2 justify-end">
+                <span className="text-xs text-muted-foreground">View:</span>
+                <div className="flex rounded-lg border overflow-hidden">
+                  <button
+                    onClick={() => setViewMode('list')}
+                    data-testid="view-mode-list"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}
+                  >
+                    <List size={12} /> List
+                  </button>
+                  <button
+                    onClick={() => { setViewMode('map'); loadCanvasData(activeLocId); }}
+                    data-testid="view-mode-map"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-l transition-colors ${viewMode === 'map' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}
+                  >
+                    <MapIcon size={12} /> Map
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Map / Blueprint view */}
+            {viewMode === 'map' && activeLocId && (
+              <div>
+                {canvasData ? (
+                  <PlatformBlueprint
+                    locationData={canvasData}
+                    mode="inspection"
+                    inspectionItems={inspectionItems}
+                    onAssetClick={(asset) => {
+                      // Add to inspection list if not already there
+                      const rawAsset = assets.find(a => a._id === asset.id);
+                      if (!rawAsset) return;
+                      if (!inspectionItems.find(i => i.asset_id === asset.id)) {
+                        addItem(rawAsset);
+                      }
+                      setBlueprintAsset(rawAsset || asset);
+                    }}
+                  />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground text-sm">
+                    <MapIcon className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                    Loading blueprint…
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Active filter banners (type + sub-zone) — only in list mode */}
+            {viewMode === 'list' && typeFilter && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/20 text-sm">
                 <span className="text-xs font-medium text-primary">
                   Filtered by: {assets.find(a => a.asset_type_id === typeFilter)?.asset_type_name || typeFilter}
@@ -1120,8 +1191,8 @@ export default function InspectionPage() {
               </div>
             )}
 
-            {/* Sub-Zone filter chips — visible when station has sub-zone-tagged assets */}
-            {stationSubZones.length > 0 && (
+            {/* Sub-Zone filter chips — visible when station has sub-zone-tagged assets (list mode only) */}
+            {viewMode === 'list' && stationSubZones.length > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap" data-testid="subzone-filter-row">
                 <span className="text-[10px] text-muted-foreground uppercase tracking-wider mr-1">Sub-zone</span>
                 <button
@@ -1258,6 +1329,53 @@ export default function InspectionPage() {
         onOpenChange={(open) => !open && setAssetHistory(null)}
       />
       {lightbox}
+
+      {/* Blueprint tap-to-inspect sheet (mobile-friendly bottom sheet) */}
+      <Sheet open={!!blueprintAsset} onOpenChange={(o) => !o && setBlueprintAsset(null)}>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[80vh] overflow-y-auto">
+          <SheetHeader className="text-left pb-2">
+            <SheetTitle className="text-base">{blueprintAsset?.asset_number}</SheetTitle>
+            <p className="text-xs text-muted-foreground">{blueprintAsset?.asset_type_name} · {blueprintAsset?.location_name}</p>
+          </SheetHeader>
+          {blueprintAsset && (() => {
+            const item = inspectionItems.find(i => i.asset_id === blueprintAsset._id);
+            if (!item) return (
+              <div className="py-4 text-center">
+                <Button onClick={() => { addItem(blueprintAsset); }} className="w-full">
+                  Add to Inspection
+                </Button>
+              </div>
+            );
+            return (
+              <div className="space-y-3 pt-2">
+                <RadioGroup
+                  value={item.status || ''}
+                  onValueChange={(v) => updateItem(item.asset_id, { status: v })}
+                >
+                  {[
+                    { value: 'ok', label: 'Working OK', color: 'text-emerald-600' },
+                    { value: 'not_ok', label: 'Defective / Not OK', color: 'text-red-600' },
+                    { value: 'needs_repair', label: 'Needs Repair', color: 'text-orange-600' },
+                  ].map(opt => (
+                    <div key={opt.value} className="flex items-center gap-2 p-2 rounded-lg border hover:bg-muted/50 cursor-pointer">
+                      <RadioGroupItem value={opt.value} id={`bp-${opt.value}`} />
+                      <Label htmlFor={`bp-${opt.value}`} className={`cursor-pointer font-medium ${opt.color}`}>{opt.label}</Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+                <Textarea
+                  value={item.remarks || ''}
+                  onChange={(e) => updateItem(item.asset_id, { remarks: e.target.value })}
+                  placeholder="Remarks (optional)…"
+                  rows={2}
+                  className="text-sm"
+                />
+                <Button className="w-full" onClick={() => setBlueprintAsset(null)}>Done</Button>
+              </div>
+            );
+          })()}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

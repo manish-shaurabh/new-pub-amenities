@@ -1,15 +1,15 @@
-"""Sub-Zones — clusters of identical grouped assets within a location.
+"""Sub-Zones — clusters of assets within a location.
 
-Hierarchy: Station → Location → **Sub-Zone** → (grouped) Asset.
+Hierarchy: Station → Location → **Sub-Zone** → Asset.
 
-Example: "Platform 1 → Sub-Zone A" can host a single grouped asset of
-120 fans tracked together. Inspections record counts (needs_repair,
-not_working) instead of per-unit status.
+Sub-zones also act as canvases for the Platform Blueprint view: each
+sub-zone stores `has_divider` + `divider_orientation` so the blueprint
+renderer knows to draw a visual dividing line across the canvas.
 """
 from typing import Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from database import (
     now_ist, serialize_doc,
@@ -23,14 +23,12 @@ router = APIRouter()
 
 @router.post("/api/sub-zones")
 async def create_sub_zone(sz: SubZoneCreate):
-    # Validate FKs
     loc = await locations_collection.find_one({"_id": ObjectId(sz.location_id)})
     if not loc:
         raise HTTPException(status_code=404, detail="Location not found")
     stn = await stations_collection.find_one({"_id": ObjectId(sz.station_id)})
     if not stn:
         raise HTTPException(status_code=404, detail="Station not found")
-    # Sanity: location must belong to station
     if str(loc.get("station_id") or "") != sz.station_id:
         raise HTTPException(status_code=400, detail="Location does not belong to the given station")
     doc = {
@@ -40,6 +38,8 @@ async def create_sub_zone(sz: SubZoneCreate):
         "location_id": sz.location_id,
         "description": sz.description,
         "order": int(sz.order or 0),
+        "has_divider": bool(sz.has_divider),
+        "divider_orientation": sz.divider_orientation or "vertical",
         "created_at": now_ist(),
     }
     result = await sub_zones_collection.insert_one(doc)
@@ -55,7 +55,6 @@ async def list_sub_zones(location_id: Optional[str] = None, station_id: Optional
     if station_id:
         query["station_id"] = station_id
     docs = await sub_zones_collection.find(query).sort([("order", 1), ("name", 1)]).to_list(2000)
-    # Enrich with location & station name for client convenience
     loc_ids = list({d.get("location_id") for d in docs if d.get("location_id")})
     stn_ids = list({d.get("station_id") for d in docs if d.get("station_id")})
     loc_map, stn_map = {}, {}
@@ -86,6 +85,8 @@ async def update_sub_zone(sub_zone_id: str, sz: SubZoneCreate):
             "location_id": sz.location_id,
             "description": sz.description,
             "order": int(sz.order or 0),
+            "has_divider": bool(sz.has_divider),
+            "divider_orientation": sz.divider_orientation or "vertical",
         }},
     )
     if result.matched_count == 0:
@@ -95,15 +96,33 @@ async def update_sub_zone(sub_zone_id: str, sz: SubZoneCreate):
 
 
 @router.delete("/api/sub-zones/{sub_zone_id}")
-async def delete_sub_zone(sub_zone_id: str):
-    # Refuse if any asset still references this sub-zone
+async def delete_sub_zone(sub_zone_id: str, force: bool = Query(False)):
+    """Delete a sub-zone.
+
+    If `force=false` (default) and assets are still assigned, returns 400 with
+    the count so the frontend can prompt the user.
+
+    If `force=true`, unassigns all assets (clears sub_zone_id + canvas_x/y) and
+    then deletes the sub-zone. Does NOT delete the assets themselves.
+    """
     in_use = await assets_collection.count_documents({"sub_zone_id": sub_zone_id})
-    if in_use > 0:
+    if in_use > 0 and not force:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete — {in_use} asset(s) still belong to this sub-zone",
+            detail=f"ASSETS_ASSIGNED:{in_use}",
         )
+    unassigned = 0
+    if in_use > 0 and force:
+        res = await assets_collection.update_many(
+            {"sub_zone_id": sub_zone_id},
+            {"$set": {"sub_zone_id": None, "canvas_x": None, "canvas_y": None}},
+        )
+        unassigned = res.modified_count
+    # Also delete any canvas landmarks belonging to this sub-zone
+    from database import canvas_landmarks_collection
+    await canvas_landmarks_collection.delete_many({"sub_zone_id": sub_zone_id})
+
     result = await sub_zones_collection.delete_one({"_id": ObjectId(sub_zone_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Sub-zone not found")
-    return {"message": "Sub-zone deleted"}
+    return {"message": "Sub-zone deleted", "unassigned_assets": unassigned}

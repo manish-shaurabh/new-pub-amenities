@@ -46,6 +46,7 @@ saved_dossiers_collection = db["saved_dossiers"]
 zones_collection = db["zones"]
 divisions_collection = db["divisions"]
 sub_zones_collection = db["sub_zones"]
+canvas_landmarks_collection = db["canvas_landmarks"]
 
 
 def get_db():

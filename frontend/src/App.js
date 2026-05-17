@@ -14,6 +14,7 @@ import ProfilePage from './pages/ProfilePage';
 import ReportsPage from './pages/ReportsPage';
 import PerformanceSheetPage from './pages/PerformanceSheetPage';
 import InspectionCompliancePage from './pages/InspectionCompliancePage';
+import StationCanvasPage from './pages/StationCanvasPage';
 import AppLayout from './components/AppLayout';
 import './App.css';
 
@@ -119,6 +120,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <AppLayout>
             <InspectionCompliancePage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/station-canvas" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <StationCanvasPage />
           </AppLayout>
         </ProtectedRoute>
       } />

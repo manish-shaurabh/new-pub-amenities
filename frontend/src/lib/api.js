@@ -74,7 +74,20 @@ export const subZonesAPI = {
   list: (params) => api.get('/sub-zones', { params }),
   create: (data) => api.post('/sub-zones', data),
   update: (id, data) => api.put(`/sub-zones/${id}`, data),
-  delete: (id) => api.delete(`/sub-zones/${id}`),
+  delete: (id, force = false) => api.delete(`/sub-zones/${id}`, { params: { force } }),
+};
+
+// Canvas Landmarks (P.No reference markers on Platform Blueprint)
+export const canvasLandmarksAPI = {
+  list: (params) => api.get('/canvas-landmarks', { params }),
+  create: (data) => api.post('/canvas-landmarks', data),
+  update: (id, data) => api.put(`/canvas-landmarks/${id}`, data),
+  delete: (id) => api.delete(`/canvas-landmarks/${id}`),
+};
+
+// Station Canvas (aggregated blueprint data)
+export const stationCanvasAPI = {
+  get: (params) => api.get('/station-canvas', { params }),
 };
 
 // Asset Types
@@ -112,6 +125,10 @@ export const assetsAPI = {
   markDefective: (id, data) => api.post(`/assets/${id}/mark-defective`, data),
   bulkAssignSubZone: (assetIds, subZoneId) =>
     api.patch('/assets/bulk/sub-zone', { asset_ids: assetIds, sub_zone_id: subZoneId || null }),
+  bulkUpdateCanvasPositions: (positions) =>
+    api.patch('/assets/bulk/canvas', { positions }),
+  updateCanvasPosition: (assetId, canvasX, canvasY) =>
+    api.patch(`/assets/${assetId}/canvas`, { canvas_x: canvasX, canvas_y: canvasY }),
 };
 
 // Users

@@ -206,6 +206,9 @@ class AssetCreate(BaseModel):
     total_count: Optional[int] = None
     needs_repair_count: Optional[int] = 0
     not_working_count: Optional[int] = 0
+    # ── Canvas Blueprint position (admin-set, percentage of sub-zone canvas) ─
+    canvas_x: Optional[float] = None   # 0-100
+    canvas_y: Optional[float] = None   # 0-100
 
 
 # Sub-Zone (clusters of identical grouped assets within a location, e.g.,
@@ -217,6 +220,20 @@ class SubZoneCreate(BaseModel):
     location_id: str
     description: Optional[str] = None
     order: Optional[int] = 0
+    # Canvas Blueprint settings
+    has_divider: Optional[bool] = False          # Show center dividing line on canvas
+    divider_orientation: Optional[str] = "vertical"  # "vertical" | "horizontal"
+
+
+# Canvas Landmark (P.No markers, pole references, etc. on the platform blueprint)
+class CanvasLandmarkCreate(BaseModel):
+    sub_zone_id: str
+    location_id: str
+    station_id: str
+    label: str             # e.g. "P.No 27", "P.No 28"
+    x: float               # 0-100 percentage of canvas width
+    y: float               # 0-100 percentage of canvas height
+    landmark_type: Optional[str] = "pole"   # "pole", "point", "custom"
 
 
 class AssetResponse(BaseModel):

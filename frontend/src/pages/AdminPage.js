@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI, remarksAPI, zonesAPI, divisionsAPI, subZonesAPI } from '../lib/api';
+import { departmentsAPI, stationsAPI, locationsAPI, assetTypesAPI, usersAPI, adminAPI, remarksAPI, zonesAPI, divisionsAPI, subZonesAPI, assetsAPI, canvasLandmarksAPI } from '../lib/api';
 import { errString } from '../lib/err';
 import { useAuth } from '../lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -13,10 +13,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase, Tag, ShieldAlert, Globe, GitBranch } from 'lucide-react';
+import { Plus, Trash2, Building2, MapPin, Layers, ClipboardList, Pencil, ChevronDown, Users, Link, Table as TableIcon, User, ArrowRightLeft, Briefcase, Tag, ShieldAlert, Globe, GitBranch, Map } from 'lucide-react';
 import RemarkTagsManager from '../components/RemarkTagsManager';
 import DataHealthPanel from '../components/DataHealthPanel';
 import ZoneDivisionFilter from '../components/ZoneDivisionFilter';
+import CanvasEditor from '../components/CanvasEditor';
 
 // Import the user management components from the old UsersPage
 const roleLabels = {
@@ -66,7 +67,7 @@ export default function AdminPage() {
   const [stationForm, setStationForm] = useState({ name: '', code: '', zone: '', division: '', division_id: '', approving_supervisor_id: '' });
   const [locationForm, setLocationForm] = useState({ name: '', station_id: '', description: '' });
   // Sub-Zone form (children of a Location)
-  const [subZoneForm, setSubZoneForm] = useState({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0 });
+  const [subZoneForm, setSubZoneForm] = useState({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0, has_divider: false, divider_orientation: 'vertical' });
   const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual' });
   const [departmentForm, setDepartmentForm] = useState({ name: '', code: '', description: '' });
   const [deptFieldErrors, setDeptFieldErrors] = useState({});
@@ -97,6 +98,14 @@ export default function AdminPage() {
   // Transfer Supervisor tab
   const [transferFrom, setTransferFrom] = useState('');
   const [transferTo, setTransferTo] = useState('');
+
+  // Canvas Editor modal (for sub-zone blueprint layout)
+  const [canvasEditorOpen, setCanvasEditorOpen] = useState(false);
+  const [canvasEditorSubZone, setCanvasEditorSubZone] = useState(null);
+  const [canvasEditorAssets, setCanvasEditorAssets] = useState([]);
+  const [canvasEditorLandmarks, setCanvasEditorLandmarks] = useState([]);
+  const [forceDeleteSubZoneId, setForceDeleteSubZoneId] = useState(null);
+  const [forceDeleteAssetCount, setForceDeleteAssetCount] = useState(0);
   const [transferLoading, setTransferLoading] = useState(false);
 
   const handleTransferSupervisor = async () => {
@@ -419,13 +428,63 @@ export default function AdminPage() {
   };
 
   const handleDeleteSubZone = async (id) => {
-    if (!window.confirm('Delete this sub-zone? This will fail if assets still reference it.')) return;
     try {
-      await subZonesAPI.delete(id);
-      toast.success('Deleted');
+      await subZonesAPI.delete(id, false);
+      toast.success('Sub-zone deleted');
       loadAll();
     } catch (e) {
-      toast.error(errString(e, 'Failed to delete'));
+      const msg = e?.response?.data?.detail || '';
+      if (msg.startsWith('ASSETS_ASSIGNED:')) {
+        const count = parseInt(msg.split(':')[1], 10);
+        setForceDeleteSubZoneId(id);
+        setForceDeleteAssetCount(count);
+      } else {
+        toast.error(errString(e, 'Failed to delete sub-zone'));
+      }
+    }
+  };
+
+  const handleForceDeleteSubZone = async () => {
+    try {
+      await subZonesAPI.delete(forceDeleteSubZoneId, true);
+      toast.success(`Sub-zone deleted — ${forceDeleteAssetCount} asset(s) unassigned`);
+      setForceDeleteSubZoneId(null);
+      loadAll();
+    } catch (e) {
+      toast.error(errString(e, 'Failed to force-delete sub-zone'));
+    }
+  };
+
+  const openCanvasEditor = async (sz) => {
+    try {
+      const [assetsRes, lmRes] = await Promise.all([
+        assetsAPI.list({ sub_zone_id: sz._id }),
+        canvasLandmarksAPI.list({ sub_zone_id: sz._id }),
+      ]);
+      setCanvasEditorSubZone({
+        id: sz._id,
+        name: sz.name,
+        location_id: sz.location_id,
+        station_id: sz.station_id,
+        has_divider: sz.has_divider || false,
+        divider_orientation: sz.divider_orientation || 'vertical',
+      });
+      setCanvasEditorAssets(
+        (assetsRes.data || []).map(a => ({
+          id: a.id || a._id,
+          asset_number: a.asset_number,
+          asset_type_id: a.asset_type_id,
+          asset_type_name: a.asset_type_name || '',
+          asset_type_icon_hint: a.asset_type_icon_hint || 'default',
+          status: a.status || 'working',
+          canvas_x: a.canvas_x,
+          canvas_y: a.canvas_y,
+        }))
+      );
+      setCanvasEditorLandmarks(lmRes.data || []);
+      setCanvasEditorOpen(true);
+    } catch (e) {
+      toast.error('Failed to load canvas data');
     }
   };
 
@@ -540,7 +599,7 @@ export default function AdminPage() {
     if (type === 'department') setDepartmentForm({ name: '', code: '', description: '' });
     else if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', division_id: '', approving_supervisor_id: '' });
     else if (type === 'location') setLocationForm({ name: '', station_id: '', description: '' });
-    else if (type === 'sub-zone') setSubZoneForm({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0 });
+    else if (type === 'sub-zone') setSubZoneForm({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0, has_divider: false, divider_orientation: 'vertical' });
     else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual' });
     else if (type === 'user') setUserForm({ employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], password: '', email: '', phone: '', reports_to_id: '', assigned_division_id: '' });
     setDialogOpen(true);
@@ -561,6 +620,8 @@ export default function AdminPage() {
       setSubZoneForm({
         name: item.name, code: item.code || '', station_id: item.station_id,
         location_id: item.location_id, description: item.description || '', order: item.order || 0,
+        has_divider: item.has_divider || false,
+        divider_orientation: item.divider_orientation || 'vertical',
       });
     } else if (type === 'asset-type') {
       setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [], tracking_mode: item.tracking_mode || 'individual' });
@@ -830,6 +891,7 @@ export default function AdminPage() {
                                       setSubZoneForm({
                                         name: '', code: '', station_id: station._id,
                                         location_id: loc._id, description: '', order: 0,
+                                        has_divider: false, divider_orientation: 'vertical',
                                       });
                                       setDialogOpen(true);
                                     }}
@@ -855,6 +917,9 @@ export default function AdminPage() {
                                           {sz.description && <span className="text-muted-foreground truncate max-w-[200px]">· {sz.description}</span>}
                                         </div>
                                         <div className="flex gap-1">
+                                          <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit canvas layout" onClick={() => openCanvasEditor(sz)} data-testid={`subzone-canvas-${sz._id}`}>
+                                            <Map className="h-3 w-3" />
+                                          </Button>
                                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditDialog('sub-zone', sz)}>
                                             <Pencil className="h-3 w-3" />
                                           </Button>
@@ -1645,6 +1710,27 @@ export default function AdminPage() {
                 <Label>Display Order</Label>
                 <Input type="number" min="0" value={subZoneForm.order} onChange={(e) => setSubZoneForm({...subZoneForm, order: e.target.value})} />
               </div>
+              <div className="flex items-center gap-3 p-2 rounded border border-dashed">
+                <Checkbox
+                  id="has-divider"
+                  checked={!!subZoneForm.has_divider}
+                  onCheckedChange={v => setSubZoneForm({...subZoneForm, has_divider: !!v})}
+                />
+                <Label htmlFor="has-divider" className="cursor-pointer text-sm">
+                  Show center dividing line on blueprint canvas
+                </Label>
+                {subZoneForm.has_divider && (
+                  <Select value={subZoneForm.divider_orientation} onValueChange={v => setSubZoneForm({...subZoneForm, divider_orientation: v})}>
+                    <SelectTrigger className="h-7 text-xs w-32 ml-auto">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="vertical">Vertical</SelectItem>
+                      <SelectItem value="horizontal">Horizontal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
               <Button data-testid="subzone-submit" onClick={handleDialogSubmit} className="w-full">
                 {dialogMode === 'create' ? 'Create Sub-Zone' : 'Update Sub-Zone'}
               </Button>
@@ -1820,6 +1906,52 @@ export default function AdminPage() {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Force-Delete Sub-Zone confirmation */}
+      <Dialog open={!!forceDeleteSubZoneId} onOpenChange={() => setForceDeleteSubZoneId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Sub-Zone?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              This sub-zone has <span className="font-semibold text-foreground">{forceDeleteAssetCount} asset(s)</span> assigned to it.
+            </p>
+            <p>
+              Deleting will <span className="font-semibold">unassign</span> those assets (remove their sub-zone + canvas position) but will <span className="font-semibold">NOT delete</span> the assets themselves.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => setForceDeleteSubZoneId(null)}>Cancel</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleForceDeleteSubZone}>
+                Delete & Unassign
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Canvas Editor Dialog */}
+      <Dialog open={canvasEditorOpen} onOpenChange={(o) => !o && setCanvasEditorOpen(false)}>
+        <DialogContent className="max-w-5xl w-full" style={{ maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Map size={16} />
+              Edit Canvas Layout: {canvasEditorSubZone?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div style={{ flex: 1, overflow: 'auto', paddingTop: 8 }}>
+            {canvasEditorSubZone && (
+              <CanvasEditor
+                subZone={canvasEditorSubZone}
+                assets={canvasEditorAssets}
+                landmarks={canvasEditorLandmarks}
+                onSave={() => { setCanvasEditorOpen(false); toast.success('Canvas layout saved'); }}
+                onClose={() => setCanvasEditorOpen(false)}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -5,7 +5,7 @@ import { notificationsAPI } from '../lib/api';
 import { useEffect } from 'react';
 import {
   LayoutDashboard, Box, ClipboardCheck, AlertTriangle,
-  Users, Settings, Calendar, History, Menu, X, Bell, LogOut, ChevronDown, UserCircle, FileBarChart, Activity
+  Users, Settings, Calendar, History, Menu, X, Bell, LogOut, ChevronDown, UserCircle, FileBarChart, Activity, Map
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -29,6 +29,7 @@ const navItems = [
     path: '/orange-list', label: 'Orange / Red List', icon: AlertTriangle,
     roles: ['superadmin', 'admin', 'reporting_officer', 'approving_supervisor', 'supervisor', 'viewer']
   },
+  { path: '/station-canvas', label: 'Platform Vision', icon: Map, roles: 'all' },
   { path: '/schedules', label: 'Schedules', icon: Calendar, roles: 'all' },
   { path: '/reports', label: 'Reports', icon: FileBarChart, roles: 'all' },
   {

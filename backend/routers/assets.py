@@ -276,6 +276,8 @@ async def create_asset(asset: AssetCreate):
         "total_count": int(asset.total_count) if tracking_mode == "grouped" else None,
         "needs_repair_count": 0 if tracking_mode == "grouped" else None,
         "not_working_count": 0 if tracking_mode == "grouped" else None,
+        "canvas_x": asset.canvas_x,
+        "canvas_y": asset.canvas_y,
         "created_at": now_ist()
     }
     result = await assets_collection.insert_one(doc)
@@ -458,6 +460,10 @@ async def update_asset(asset_id: str, asset: AssetCreate):
     # Only update photo if provided (None means keep existing)
     if asset.identification_photo is not None:
         update_data["identification_photo"] = asset.identification_photo
+    # Canvas position — always update (None clears the position)
+    if asset.canvas_x is not None or asset.canvas_y is not None:
+        update_data["canvas_x"] = asset.canvas_x
+        update_data["canvas_y"] = asset.canvas_y
     result = await assets_collection.update_one(
         {"_id": ObjectId(asset_id)},
         {"$set": update_data}
@@ -519,6 +525,53 @@ async def bulk_assign_sub_zone(payload: dict):
         "modified": result.modified_count,
         "skipped_grouped": skipped_grouped,
     }
+
+
+@router.patch("/api/assets/bulk/canvas")
+async def bulk_update_canvas_positions(payload: dict):
+    """Bulk-update canvas_x / canvas_y for a list of assets.
+
+    Body: { positions: [ { asset_id, canvas_x, canvas_y } ] }
+    canvas_x/canvas_y are floats 0-100 (percentage of sub-zone canvas).
+    Pass null to clear a position.
+    """
+    positions = payload.get("positions") or []
+    if not isinstance(positions, list):
+        raise HTTPException(status_code=400, detail="positions must be a list")
+    updated = 0
+    for item in positions:
+        aid = item.get("asset_id")
+        if not aid:
+            continue
+        try:
+            oid = ObjectId(aid)
+        except Exception:
+            continue
+        cx = item.get("canvas_x")
+        cy = item.get("canvas_y")
+        await assets_collection.update_one(
+            {"_id": oid},
+            {"$set": {"canvas_x": cx, "canvas_y": cy}},
+        )
+        updated += 1
+    return {"updated": updated}
+
+
+@router.patch("/api/assets/{asset_id}/canvas")
+async def update_asset_canvas_position(asset_id: str, payload: dict):
+    """Update canvas position for a single asset."""
+    try:
+        oid = ObjectId(asset_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid asset_id")
+    doc = await assets_collection.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    await assets_collection.update_one(
+        {"_id": oid},
+        {"$set": {"canvas_x": payload.get("canvas_x"), "canvas_y": payload.get("canvas_y")}},
+    )
+    return {"ok": True, "canvas_x": payload.get("canvas_x"), "canvas_y": payload.get("canvas_y")}
 
 
 @router.delete("/api/assets/{asset_id}")
