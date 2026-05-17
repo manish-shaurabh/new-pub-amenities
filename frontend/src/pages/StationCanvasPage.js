@@ -408,7 +408,7 @@ export default function StationCanvasPage() {
     } else if (action === 'toggle_missing') {
       const newStatus = asset.status === 'missing' ? 'working' : 'missing';
       try {
-        await assetsAPI.update(asset.id, { ...asset, asset_type_id: asset.asset_type_id, status: newStatus });
+        await assetsAPI.patchStatus(asset.id, newStatus);
         toast.success(newStatus === 'missing' ? 'Marked as missing' : 'Marked as working');
         loadCanvas();
       } catch { toast.error('Failed to update status'); }
@@ -421,10 +421,14 @@ export default function StationCanvasPage() {
     if (!editAsset) return;
     try {
       await assetsAPI.update(editAsset.id, {
-        ...editAsset,
         asset_type_id: editAsset.asset_type_id,
+        station_id: selectedStation,
+        location_id: editAsset.location_id || activeLocationData?.id,
+        sub_zone_id: editAsset.sub_zone_id || null,
         asset_number: editAssetForm.asset_number,
         description: editAssetForm.description,
+        canvas_x: editAsset.canvas_x ?? null,
+        canvas_y: editAsset.canvas_y ?? null,
       });
       toast.success('Asset updated');
       setEditAsset(null);

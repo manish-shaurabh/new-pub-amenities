@@ -19,7 +19,7 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { toast } from 'sonner';
 import { assetsAPI, canvasLandmarksAPI } from '../lib/api';
-import { ICON_MAP } from './PlatformBlueprint';
+import { ICON_MAP } from '../lib/assetIcons';
 
 // ── Small draggable asset icon on the canvas ──────────────────────────────────
 function PlacedAsset({ asset, x, y, selected, onPointerDown, onRemove }) {

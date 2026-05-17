@@ -1782,6 +1782,30 @@ export default function AdminPage() {
                 </div>
               </div>
               <div>
+                <Label>Icon (for Platform Vision)</Label>
+                <div className="text-[11px] text-slate-500 mb-1">Choose an icon shown on the canvas. Auto-detected by name if blank.</div>
+                <div className="grid grid-cols-6 gap-1.5 mt-1 max-h-44 overflow-y-auto p-1 border rounded-md">
+                  {ICON_PRESETS.map(preset => {
+                    const Icon = ICON_MAP[preset.key];
+                    const auto = !assetTypeForm.icon_key && getIconHint(assetTypeForm.name) === preset.key;
+                    const selected = assetTypeForm.icon_key === preset.key;
+                    return (
+                      <button
+                        key={preset.key}
+                        type="button"
+                        data-testid={`at-icon-${preset.key}`}
+                        onClick={() => setAssetTypeForm({...assetTypeForm, icon_key: selected ? '' : preset.key})}
+                        title={preset.label + (auto ? ' (auto-detected)' : '')}
+                        className={`flex flex-col items-center gap-0.5 p-1.5 rounded border transition ${selected ? 'border-teal-600 bg-teal-50 ring-1 ring-teal-600' : auto ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 hover:bg-slate-50'}`}
+                      >
+                        <Icon className="h-4 w-4 text-slate-700" />
+                        <span className="text-[8px] text-slate-500 truncate w-full text-center">{preset.key}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
                 <Label>Checklist Items</Label>
                 <div className="space-y-1 mt-1">
                   {assetTypeForm.checklist?.map((item, idx) => (

@@ -126,6 +126,7 @@ export const assetsAPI = {
   create: (data) => api.post('/assets', data),
   update: (id, data) => api.put(`/assets/${id}`, data),
   delete: (id) => api.delete(`/assets/${id}`),
+  patchStatus: (id, status) => api.patch(`/assets/${id}/status`, { status }),
   inspections: (id, limit) => api.get(`/assets/${id}/inspections`, { params: { limit } }),
   markDefective: (id, data) => api.post(`/assets/${id}/mark-defective`, data),
   bulkAssignSubZone: (assetIds, subZoneId) =>

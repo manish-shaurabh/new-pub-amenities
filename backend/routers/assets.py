@@ -475,6 +475,32 @@ async def update_asset(asset_id: str, asset: AssetCreate):
     return serialize_doc(doc)
 
 
+@router.patch("/api/assets/{asset_id}/status")
+async def patch_asset_status(asset_id: str, payload: dict):
+    """Update an asset's lifecycle status (e.g. mark/unmark as missing).
+
+    Body: { status: "working" | "missing" }
+
+    Use specialised endpoints for `not_ok` / `needs_repair` (mark-defective)
+    and for inspection approvals. This endpoint is for simple toggles only.
+    """
+    new_status = (payload or {}).get("status")
+    if new_status not in ("working", "missing"):
+        raise HTTPException(
+            status_code=400,
+            detail="status must be 'working' or 'missing'",
+        )
+    existing = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    await assets_collection.update_one(
+        {"_id": ObjectId(asset_id)},
+        {"$set": {"status": new_status}},
+    )
+    doc = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    return serialize_doc(doc)
+
+
 @router.patch("/api/assets/bulk/sub-zone")
 async def bulk_assign_sub_zone(payload: dict):
     """Bulk-assign (or clear) a sub-zone for a list of INDIVIDUAL assets.
