@@ -14,6 +14,7 @@ from database import (now_ist,
     asset_types_collection, assets_collection, users_collection,
     inspections_collection, orange_list_collection, notifications_collection,
     schedules_collection, audit_log_collection, sub_zones_collection,
+    asset_code_counters_collection,
 )
 from models import (
     DepartmentCreate, StationCreate, LocationCreate,
@@ -200,6 +201,224 @@ async def mark_asset_defective(asset_id: str, payload: dict):
         "orange_list_id": orange_id,
         "defective_since": new_defective_since.isoformat(),
         "notified_count": notified,
+    }
+
+
+@router.post("/api/assets/auto-create")
+async def auto_create_asset(payload: dict):
+    """Canvas-first asset creation.
+
+    Identity is auto-resolved from the drop context:
+      sub_zone → location → station → division → zone, and dept from asset_type.
+    Asset code is server-generated: {ZONE}-{DIV}-{STN}-{LOC}-[{SZ}-]{TYPE}-{seq}.
+
+    Body:
+      asset_type_id (required)
+      station_id    (required when sub_zone_id is missing)
+      sub_zone_id   (optional — when missing, asset is station-level "unassigned")
+      location_id   (optional — auto-derived from sub_zone when present)
+      canvas_x, canvas_y (optional floats 0-100)
+      description   (optional)
+      asset_number_override (optional — when provided, replaces server-generated code)
+      total_count   (required for grouped types)
+    """
+    from asset_code_generator import resolve_hierarchy, generate_asset_code
+
+    asset_type_id = (payload.get("asset_type_id") or "").strip()
+    if not asset_type_id:
+        raise HTTPException(status_code=400, detail="asset_type_id is required")
+    try:
+        asset_type = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
+    except Exception:
+        asset_type = None
+    if not asset_type:
+        raise HTTPException(status_code=404, detail="Asset type not found")
+    if not (asset_type.get("department_id") or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Asset type has no department configured; please fix it in Admin → Asset Types first.",
+        )
+
+    sub_zone_id = (payload.get("sub_zone_id") or "").strip() or None
+    location_id = (payload.get("location_id") or "").strip() or None
+    station_id = (payload.get("station_id") or "").strip() or None
+
+    if not sub_zone_id and not station_id:
+        raise HTTPException(status_code=400, detail="station_id is required when sub_zone_id is missing")
+
+    try:
+        hierarchy = await resolve_hierarchy(
+            station_id=station_id or "",
+            location_id=location_id,
+            sub_zone_id=sub_zone_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    station = hierarchy["station"]
+    location = hierarchy["location"]
+    sub_zone = hierarchy["sub_zone"]
+
+    if not station:
+        raise HTTPException(status_code=404, detail="Station could not be resolved")
+
+    # Build canonical IDs
+    resolved_station_id = str(station["_id"])
+    resolved_location_id = str(location["_id"]) if location else None
+    resolved_sub_zone_id = str(sub_zone["_id"]) if sub_zone else None
+
+    tracking_mode = (asset_type.get("tracking_mode") or "individual")
+    if tracking_mode == "grouped":
+        if not resolved_sub_zone_id:
+            raise HTTPException(status_code=400, detail="Grouped assets require a sub_zone")
+        total_count = payload.get("total_count")
+        if not total_count or int(total_count) <= 0:
+            raise HTTPException(status_code=400, detail="Grouped assets require total_count > 0")
+        total_count = int(total_count)
+    else:
+        total_count = None
+
+    # Generate or accept asset code
+    override = (payload.get("asset_number_override") or "").strip()
+    if override:
+        # Must be unique
+        if await assets_collection.find_one({"asset_number": override}):
+            raise HTTPException(status_code=409, detail=f"Asset number '{override}' already exists")
+        asset_number = override
+    else:
+        try:
+            asset_number, _ = await generate_asset_code(
+                asset_type=asset_type,
+                station=station,
+                location=location,
+                sub_zone=sub_zone,
+                division=hierarchy["division"],
+                zone=hierarchy["zone"],
+            )
+        except RuntimeError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Canvas position (validate range)
+    def _clamp(v):
+        if v is None:
+            return None
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, min(100.0, f))
+
+    canvas_x = _clamp(payload.get("canvas_x"))
+    canvas_y = _clamp(payload.get("canvas_y"))
+
+    doc = {
+        "asset_type_id": asset_type_id,
+        "station_id": resolved_station_id,
+        "location_id": resolved_location_id,
+        "asset_number": asset_number,
+        "status": AssetStatus.WORKING.value,
+        "description": (payload.get("description") or "").strip() or None,
+        "schedule_frequency": None,
+        "last_inspected": None,
+        "next_due": None,
+        "defective_since": None,
+        "identification_photo": None,
+        "geo_lat": None,
+        "geo_lng": None,
+        "tracking_mode": tracking_mode,
+        "sub_zone_id": resolved_sub_zone_id,
+        "total_count": total_count,
+        "needs_repair_count": 0 if tracking_mode == "grouped" else None,
+        "not_working_count": 0 if tracking_mode == "grouped" else None,
+        "canvas_x": canvas_x,
+        "canvas_y": canvas_y,
+        "created_at": now_ist(),
+    }
+    result = await assets_collection.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    # Enrich response for the UI
+    out = serialize_doc(doc)
+    out["asset_type_name"] = asset_type.get("name", "")
+    out["station_name"] = station.get("name", "")
+    out["location_name"] = (location or {}).get("name") if location else None
+    out["sub_zone_name"] = (sub_zone or {}).get("name") if sub_zone else None
+    out["department_id"] = asset_type.get("department_id")
+    return out
+
+
+@router.post("/api/assets/preview-code")
+async def preview_asset_code(payload: dict):
+    """Preview what the auto-generated asset code WOULD be, without persisting.
+
+    Same body as /api/assets/auto-create. Used by the drop-popover to show a
+    suggested code to the user.
+
+    Note: This does NOT consume a sequence number. The actual create call will
+    generate a fresh code (which may differ by 1+ if a concurrent create happens).
+    """
+    from asset_code_generator import resolve_hierarchy, _slug
+
+    asset_type_id = (payload.get("asset_type_id") or "").strip()
+    if not asset_type_id:
+        raise HTTPException(status_code=400, detail="asset_type_id is required")
+    try:
+        asset_type = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
+    except Exception:
+        asset_type = None
+    if not asset_type:
+        raise HTTPException(status_code=404, detail="Asset type not found")
+
+    sub_zone_id = (payload.get("sub_zone_id") or "").strip() or None
+    location_id = (payload.get("location_id") or "").strip() or None
+    station_id = (payload.get("station_id") or "").strip() or None
+
+    if not sub_zone_id and not station_id:
+        raise HTTPException(status_code=400, detail="station_id is required when sub_zone_id is missing")
+
+    try:
+        h = await resolve_hierarchy(
+            station_id=station_id or "",
+            location_id=location_id,
+            sub_zone_id=sub_zone_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    station = h["station"]
+    location = h["location"]
+    sub_zone = h["sub_zone"]
+    division = h["division"]
+    zone = h["zone"]
+    if not station:
+        raise HTTPException(status_code=404, detail="Station could not be resolved")
+
+    zone_tok = _slug(zone.get("code") or zone.get("name") if zone else "", fallback="ZX", max_len=6)
+    div_tok = _slug(division.get("code") or division.get("name") if division else "", fallback="DX", max_len=6)
+    stn_tok = _slug(station.get("code") or station.get("name") if station else "", fallback="STN", max_len=8)
+    loc_tok = _slug(location.get("code") or location.get("name") if location else "", fallback="STN", max_len=8)
+    sz_tok = _slug(sub_zone.get("code") or sub_zone.get("name") if sub_zone else "", fallback="", max_len=6)
+    type_tok = _slug(asset_type.get("code") or asset_type.get("name") or "", fallback="TYP", max_len=8)
+    parts = [zone_tok, div_tok, stn_tok, loc_tok]
+    if sz_tok:
+        parts.append(sz_tok)
+    parts.append(type_tok)
+    bucket = ":".join(parts)
+    # Read counter without incrementing
+    cur = await asset_code_counters_collection.find_one({"_id": bucket})
+    next_seq = int(cur.get("seq", 0)) + 1 if cur else 1
+    code_preview = "-".join(parts) + f"-{next_seq:04d}"
+    return {
+        "preview_code": code_preview,
+        "context": {
+            "zone": zone.get("name") if zone else None,
+            "division": division.get("name") if division else None,
+            "station": station.get("name") if station else None,
+            "location": location.get("name") if location else None,
+            "sub_zone": sub_zone.get("name") if sub_zone else None,
+            "asset_type": asset_type.get("name"),
+            "department_id": asset_type.get("department_id"),
+            "tracking_mode": asset_type.get("tracking_mode") or "individual",
+        },
     }
 
 

@@ -18,6 +18,10 @@ import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '../components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -27,6 +31,7 @@ import { Checkbox } from '../components/ui/checkbox';
 
 import PlatformBlueprint from '../components/PlatformBlueprint';
 import AssetTypePalette from '../components/AssetTypePalette';
+import AssetDropPopover from '../components/AssetDropPopover';
 import CanvasEditor from '../components/CanvasEditor';
 import {
   stationCanvasAPI, stationsAPI, locationsAPI,
@@ -35,73 +40,6 @@ import {
 } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
 import { getIconHint } from '../lib/assetIcons';
-
-// ── Small inline mini-form after asset placement ──────────────────────────────
-function AssetQuickForm({ assetType, canvasX, canvasY, onSave, onCancel }) {
-  const [assetNumber, setAssetNumber] = useState(() => {
-    const p = (assetType.code || assetType.name.slice(0, 4)).toUpperCase().replace(/\s/g, '');
-    return `${p}-${String(Date.now()).slice(-4)}`;
-  });
-  const [description, setDescription] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    if (!assetNumber.trim()) { toast.error('Asset number required'); return; }
-    setSaving(true);
-    try { await onSave(assetNumber.trim(), description.trim()); }
-    finally { setSaving(false); }
-  };
-
-  // Clamp so form stays inside viewport
-  const leftStyle = canvasX > 70 ? 'auto' : `calc(${canvasX}% + 28px)`;
-  const rightStyle = canvasX > 70 ? `calc(${100 - canvasX}% + 28px)` : 'auto';
-  const topStyle = canvasY < 30 ? `calc(${canvasY}% + 28px)` : `calc(${canvasY}% - 75px)`;
-
-  return (
-    <div
-      onClick={e => e.stopPropagation()}
-      style={{
-        position: 'absolute', left: leftStyle, right: rightStyle, top: topStyle,
-        zIndex: 200, background: '#fff',
-        border: '1.5px solid #bae6fd', borderRadius: 10,
-        padding: '10px 12px', width: 210,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>New {assetType.name}</span>
-        <button onClick={onCancel} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={13} /></button>
-      </div>
-      <div style={{ marginBottom: 5 }}>
-        <label style={{ fontSize: 10, color: '#64748b', display: 'block', marginBottom: 2 }}>Asset Number *</label>
-        <Input
-          value={assetNumber} onChange={e => setAssetNumber(e.target.value)}
-          className="h-7 text-xs" placeholder="e.g. FAN-P1-001"
-          autoFocus
-          onKeyDown={e => e.key === 'Enter' && handleSave()}
-        />
-      </div>
-      <div style={{ marginBottom: 8 }}>
-        <label style={{ fontSize: 10, color: '#64748b', display: 'block', marginBottom: 2 }}>Description</label>
-        <Input
-          value={description} onChange={e => setDescription(e.target.value)}
-          className="h-7 text-xs" placeholder="Optional"
-          onKeyDown={e => e.key === 'Enter' && handleSave()}
-        />
-      </div>
-      <div style={{ display: 'flex', gap: 5 }}>
-        <button
-          onClick={onCancel}
-          style={{ flex: 1, padding: '4px 0', borderRadius: 6, border: '1px solid #e2e8f0', background: '#fff', fontSize: 11, cursor: 'pointer', color: '#64748b' }}
-        >Cancel</button>
-        <button
-          onClick={handleSave} disabled={saving}
-          style={{ flex: 1, padding: '4px 0', borderRadius: 6, border: 'none', background: saving ? '#94a3b8' : '#0891b2', color: '#fff', fontSize: 11, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}
-        >{saving ? '…' : 'Place'}</button>
-      </div>
-    </div>
-  );
-}
 
 // ── Sub-Zone mini form ────────────────────────────────────────────────────────
 function SubZoneForm({ locationId, stationId, existingSubZone, onSave, onClose }) {
@@ -243,8 +181,11 @@ export default function StationCanvasPage() {
   const [editMode, setEditMode] = useState(false);
   const [selectedPaletteType, setSelectedPaletteType] = useState(null);
 
-  // -- Placement --
-  const [pendingPlacement, setPendingPlacement] = useState(null); // { assetType, subZoneId, x, y }
+  // -- Placement (new drop popover) --
+  const [pendingPlacement, setPendingPlacement] = useState(null); // { assetType, subZoneId, locationId, x, y }
+
+  // -- Delete confirmation --
+  const [deleteAsset, setDeleteAssetTarget] = useState(null);  // asset to confirm deletion
 
   // -- Edit asset dialog --
   const [editAsset, setEditAsset] = useState(null);
@@ -353,7 +294,9 @@ export default function StationCanvasPage() {
   // ── Asset placement ─────────────────────────────────────────────────────────
   const handleCanvasAreaClick = (subZoneId, x, y) => {
     if (!editMode || !selectedPaletteType) return;
-    setPendingPlacement({ assetType: selectedPaletteType, subZoneId, x, y });
+    const locationId = activeLocationData?.id || selectedLocation;
+    const realSubZoneId = subZoneId && subZoneId !== '__unzoned__' ? subZoneId : null;
+    setPendingPlacement({ assetType: selectedPaletteType, subZoneId: realSubZoneId, locationId, x, y });
   };
 
   const handleCanvasDrop = (e, subZoneId, x, y) => {
@@ -362,58 +305,40 @@ export default function StationCanvasPage() {
     const type = assetTypes.find(t => (t.id || t._id) === atId);
     if (!type) return;
     setSelectedPaletteType(type);
-    setPendingPlacement({ assetType: type, subZoneId, x, y });
-  };
-
-  const handlePlacementSave = async (assetNumber, description) => {
-    if (!pendingPlacement) return;
-    const { assetType, subZoneId, x, y } = pendingPlacement;
-    // Find location_id and station_id for this sub-zone
     const locationId = activeLocationData?.id || selectedLocation;
-    const subZones = activeLocationData?.sub_zones || [];
-    const sz = subZones.find(s => s.id === subZoneId);
-    try {
-      await assetsAPI.create({
-        asset_number: assetNumber,
-        description,
-        asset_type_id: assetType.id || assetType._id,
-        location_id: locationId,
-        station_id: selectedStation,
-        sub_zone_id: subZoneId,
-        canvas_x: x,
-        canvas_y: y,
-        status: 'working',
-        tracking_mode: assetType.tracking_mode || 'individual',
-      });
-      toast.success(`${assetNumber} created and placed`);
-      setPendingPlacement(null);
-      loadCanvas();
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Failed to create asset');
-    }
+    const realSubZoneId = subZoneId && subZoneId !== '__unzoned__' ? subZoneId : null;
+    setPendingPlacement({ assetType: type, subZoneId: realSubZoneId, locationId, x, y });
   };
 
   // ── Asset actions ───────────────────────────────────────────────────────────
-  const handleAssetAction = async (asset, subZoneId, action) => {
+  const handleAssetAction = (asset, subZoneId, action) => {
     if (action === 'edit') {
       setEditAsset(asset);
       setEditAssetForm({ asset_number: asset.asset_number, description: asset.description || '' });
     } else if (action === 'delete') {
-      if (!window.confirm(`Delete asset ${asset.asset_number}? This cannot be undone.`)) return;
-      try {
-        await assetsAPI.delete(asset.id);
-        toast.success('Asset deleted');
-        loadCanvas();
-      } catch { toast.error('Failed to delete asset'); }
+      setDeleteAssetTarget(asset);
     } else if (action === 'toggle_missing') {
       const newStatus = asset.status === 'missing' ? 'working' : 'missing';
-      try {
-        await assetsAPI.patchStatus(asset.id, newStatus);
-        toast.success(newStatus === 'missing' ? 'Marked as missing' : 'Marked as working');
-        loadCanvas();
-      } catch { toast.error('Failed to update status'); }
+      assetsAPI.patchStatus(asset.id, newStatus)
+        .then(() => {
+          toast.success(newStatus === 'missing' ? 'Marked as missing' : 'Marked as working');
+          loadCanvas();
+        })
+        .catch(() => toast.error('Failed to update status'));
     } else if (action === 'move') {
       toast.info('Use the canvas editor (pencil icon) to reposition assets precisely');
+    }
+  };
+
+  const handleConfirmDeleteAsset = async () => {
+    if (!deleteAsset) return;
+    try {
+      await assetsAPI.delete(deleteAsset.id);
+      toast.success(`${deleteAsset.asset_number} deleted`);
+      setDeleteAssetTarget(null);
+      loadCanvas();
+    } catch {
+      toast.error('Failed to delete asset');
     }
   };
 
@@ -681,24 +606,29 @@ export default function StationCanvasPage() {
                   onEditCanvas={editMode ? openCanvasEditor : undefined}
                 />
 
-                {/* Pending placement mini form */}
-                {pendingPlacement && (() => {
-                  const sz = activeLocationData?.sub_zones?.find(s => s.id === pendingPlacement.subZoneId);
-                  // Position form over the correct sub-zone canvas
-                  return (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 150 }} onClick={() => setPendingPlacement(null)}>
-                      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }} onClick={e => e.stopPropagation()}>
-                        <AssetQuickForm
-                          assetType={pendingPlacement.assetType}
-                          canvasX={50}
-                          canvasY={50}
-                          onSave={handlePlacementSave}
-                          onCancel={() => setPendingPlacement(null)}
-                        />
-                      </div>
+                {/* Pending placement drop popover */}
+                {pendingPlacement && (
+                  <div
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 150, background: 'rgba(15,23,42,0.30)' }}
+                    onClick={() => setPendingPlacement(null)}
+                  >
+                    <div
+                      style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <AssetDropPopover
+                        assetType={pendingPlacement.assetType}
+                        stationId={selectedStation}
+                        locationId={pendingPlacement.locationId}
+                        subZoneId={pendingPlacement.subZoneId}
+                        canvasX={pendingPlacement.x}
+                        canvasY={pendingPlacement.y}
+                        onCreated={() => { setPendingPlacement(null); loadCanvas(); }}
+                        onClose={() => setPendingPlacement(null)}
+                      />
                     </div>
-                  );
-                })()}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -802,6 +732,34 @@ export default function StationCanvasPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Asset delete confirmation */}
+      <AlertDialog open={!!deleteAsset} onOpenChange={o => !o && setDeleteAssetTarget(null)}>
+        <AlertDialogContent data-testid="delete-asset-alert">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this asset?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteAsset && (
+                <>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{deleteAsset.asset_number}</span>
+                  {' '}({deleteAsset.asset_type_name}) will be permanently deleted along with its
+                  inspection history, orange-list entries, and schedules. This cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="delete-asset-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="delete-asset-confirm"
+              onClick={handleConfirmDeleteAsset}
+              style={{ background: '#dc2626', color: '#fff' }}
+            >
+              Delete Asset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Canvas Editor (repositioning) */}
       <Dialog open={!!canvasEditorSZ} onOpenChange={o => { if (!o) { setCanvasEditorSZ(null); loadCanvas(); } }}>

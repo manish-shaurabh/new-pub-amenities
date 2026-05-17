@@ -47,6 +47,7 @@ zones_collection = db["zones"]
 divisions_collection = db["divisions"]
 sub_zones_collection = db["sub_zones"]
 canvas_landmarks_collection = db["canvas_landmarks"]
+asset_code_counters_collection = db["asset_code_counters"]
 
 
 def get_db():

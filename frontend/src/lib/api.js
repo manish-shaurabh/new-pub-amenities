@@ -124,6 +124,8 @@ export const assetsAPI = {
   },
   get: (id) => api.get(`/assets/${id}`),
   create: (data) => api.post('/assets', data),
+  autoCreate: (data) => api.post('/assets/auto-create', data),
+  previewCode: (data) => api.post('/assets/preview-code', data),
   update: (id, data) => api.put(`/assets/${id}`, data),
   delete: (id) => api.delete(`/assets/${id}`),
   patchStatus: (id, status) => api.patch(`/assets/${id}/status`, { status }),

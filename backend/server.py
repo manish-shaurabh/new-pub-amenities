@@ -89,6 +89,36 @@ async def _ensure_indexes():
     except Exception as e:
         print(f"[startup] zone/division migration failed: {e}")
 
+    # Migrate: hard-delete asset_types without a department + cascade their assets
+    try:
+        await _migrate_asset_types_require_dept()
+    except Exception as e:
+        print(f"[startup] asset_types dept-required migration failed: {e}")
+
+
+async def _migrate_asset_types_require_dept():
+    """One-shot cleanup: asset_types must have a non-empty department_id.
+
+    Per product decision (option A): hard-delete any asset_type that violates this
+    rule AND cascade-delete every asset that references it.
+    """
+    from database import asset_types_collection, assets_collection
+    invalid_filter = {
+        "$or": [
+            {"department_id": {"$exists": False}},
+            {"department_id": None},
+            {"department_id": ""},
+        ]
+    }
+    bad_types = await asset_types_collection.find(invalid_filter).to_list(10000)
+    if not bad_types:
+        return
+    bad_type_ids = [str(t["_id"]) for t in bad_types]
+    assets_deleted = await assets_collection.delete_many({"asset_type_id": {"$in": bad_type_ids}})
+    types_deleted = await asset_types_collection.delete_many(invalid_filter)
+    print(f"[migration] Cleaned asset_types without dept: removed "
+          f"{types_deleted.deleted_count} type(s) and {assets_deleted.deleted_count} asset(s)")
+
 
 async def _migrate_zones_divisions():
     """Idempotent: create ECR zone + Dhanbad Division and tag all un-tagged stations."""

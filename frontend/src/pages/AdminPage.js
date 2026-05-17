@@ -1748,11 +1748,16 @@ export default function AdminPage() {
               <div>
                 <Label>Department *</Label>
                 <Select value={assetTypeForm.department_id} onValueChange={(v) => setAssetTypeForm({...assetTypeForm, department_id: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger data-testid="at-dept-select"><SelectValue placeholder="Select department" /></SelectTrigger>
                   <SelectContent>
                     {departments.map(d => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {!assetTypeForm.department_id && (
+                  <p className="text-[11px] text-red-600 mt-1" data-testid="at-dept-required-warn">
+                    Department is required. Asset types cannot exist without a department.
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Description</Label>
@@ -1821,7 +1826,7 @@ export default function AdminPage() {
                   </Button>
                 </div>
               </div>
-              <Button onClick={handleDialogSubmit} className="w-full">
+              <Button onClick={handleDialogSubmit} className="w-full" disabled={!assetTypeForm.name || !assetTypeForm.department_id} data-testid="at-submit">
                 {dialogMode === 'create' ? 'Create' : 'Update'}
               </Button>
             </div>

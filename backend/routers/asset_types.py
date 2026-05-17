@@ -28,11 +28,37 @@ router = APIRouter()
 
 
 # ============ ASSET TYPES ============
+def _validate_asset_type_payload(asset_type: AssetTypeCreate):
+    name = (asset_type.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Asset type name is required")
+    dept_id = (asset_type.department_id or "").strip()
+    if not dept_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Department is required. Asset types cannot exist without a department.",
+        )
+    try:
+        ObjectId(dept_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid department_id format")
+    return name, dept_id
+
+
+async def _ensure_department_exists(dept_id: str):
+    dept = await departments_collection.find_one({"_id": ObjectId(dept_id)})
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    return dept
+
+
 @router.post("/api/asset-types")
 async def create_asset_type(asset_type: AssetTypeCreate):
+    name, dept_id = _validate_asset_type_payload(asset_type)
+    await _ensure_department_exists(dept_id)
     doc = {
-        "name": asset_type.name,
-        "department_id": asset_type.department_id,
+        "name": name,
+        "department_id": dept_id,
         "checklist": [item.model_dump() for item in asset_type.checklist],
         "description": asset_type.description,
         "tracking_mode": asset_type.tracking_mode if asset_type.tracking_mode in ("individual", "grouped") else "individual",
@@ -65,11 +91,13 @@ async def list_asset_types(department_id: Optional[str] = None):
 
 @router.put("/api/asset-types/{asset_type_id}")
 async def update_asset_type(asset_type_id: str, asset_type: AssetTypeCreate):
+    name, dept_id = _validate_asset_type_payload(asset_type)
+    await _ensure_department_exists(dept_id)
     result = await asset_types_collection.update_one(
         {"_id": ObjectId(asset_type_id)},
         {"$set": {
-            "name": asset_type.name,
-            "department_id": asset_type.department_id,
+            "name": name,
+            "department_id": dept_id,
             "checklist": [item.model_dump() for item in asset_type.checklist],
             "description": asset_type.description,
             "tracking_mode": asset_type.tracking_mode if asset_type.tracking_mode in ("individual", "grouped") else "individual",

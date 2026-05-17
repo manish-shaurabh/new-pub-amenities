@@ -10,7 +10,7 @@ import pytest
 import requests
 from openpyxl import load_workbook
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://asset-health-hub-1.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://asset-canvas.preview.emergentagent.com").rstrip("/")
 SA_EMP = "SA001"
 SUP_EMP = "SSE001"
 PWD = "admin123"
