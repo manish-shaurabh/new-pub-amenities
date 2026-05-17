@@ -98,6 +98,7 @@ export const assetsAPI = {
     if (options.station_id) params.station_id = options.station_id;
     if (options.asset_type_id) params.asset_type_id = options.asset_type_id;
     if (options.location_id) params.location_id = options.location_id;
+    if (options.sub_zone_id) params.sub_zone_id = options.sub_zone_id;
     if (options.status) params.status = options.status;
     if (options.department_id) params.department_id = options.department_id;
     if (options.assigned_supervisor_id) params.assigned_supervisor_id = options.assigned_supervisor_id;
@@ -109,6 +110,8 @@ export const assetsAPI = {
   delete: (id) => api.delete(`/assets/${id}`),
   inspections: (id, limit) => api.get(`/assets/${id}/inspections`, { params: { limit } }),
   markDefective: (id, data) => api.post(`/assets/${id}/mark-defective`, data),
+  bulkAssignSubZone: (assetIds, subZoneId) =>
+    api.patch('/assets/bulk/sub-zone', { asset_ids: assetIds, sub_zone_id: subZoneId || null }),
 };
 
 // Users

@@ -385,6 +385,29 @@ function LocationBlock({ location, assets, inspectionItems, onToggle, onBulkTogg
   const selectedInLocation = assets.filter(a => inspectionItems.find(i => i.asset_id === a._id)).length;
   const allSelected = assets.length > 0 && selectedInLocation === assets.length;
 
+  // Group assets by sub-zone first (only if at least one asset has a sub-zone
+  // AND there is genuine variety — otherwise it's just visual noise).
+  const subZoneBuckets = useMemo(() => {
+    const hasAny = assets.some(a => a.sub_zone_id);
+    if (!hasAny) return null;
+    const buckets = new Map();
+    assets.forEach(a => {
+      const key = a.sub_zone_id || '__unassigned__';
+      const name = a.sub_zone_id ? (a.sub_zone_name || 'Sub-Zone') : 'Unassigned';
+      if (!buckets.has(key)) buckets.set(key, { id: key, name, assets: [] });
+      buckets.get(key).assets.push(a);
+    });
+    // If only ONE bucket exists (everything in the same sub-zone OR everything
+    // unassigned), there's no value in showing a bucket header — fall back to
+    // the flat type-grouped layout.
+    if (buckets.size <= 1) return null;
+    return Array.from(buckets.values()).sort((a, b) => {
+      if (a.id === '__unassigned__') return 1;
+      if (b.id === '__unassigned__') return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [assets]);
+
   // Group assets by asset type when groupByType is true
   const assetGroups = useMemo(() => {
     if (!groupByType) return null;
@@ -397,6 +420,7 @@ function LocationBlock({ location, assets, inspectionItems, onToggle, onBulkTogg
     return Object.values(groups);
   }, [assets, groupByType]);
 
+  // Helper: render a flat list of asset rows
   const renderAssets = (assetList) => (
     <div className="space-y-2">
       {assetList.map(asset => (
@@ -414,6 +438,36 @@ function LocationBlock({ location, assets, inspectionItems, onToggle, onBulkTogg
       ))}
     </div>
   );
+
+  // Helper: render assets grouped by type (when groupByType is on)
+  const renderGroupedByType = (assetList) => {
+    const groups = {};
+    assetList.forEach(a => {
+      const key = a.asset_type_id || 'other';
+      if (!groups[key]) groups[key] = { name: a.asset_type_name || 'Other', assets: [] };
+      groups[key].assets.push(a);
+    });
+    return (
+      <div className="space-y-3">
+        {Object.values(groups).map(g => {
+          const sel = g.assets.filter(a => inspectionItems.find(i => i.asset_id === a._id)).length;
+          return (
+            <div key={g.name}>
+              <div className="flex items-center gap-2 mb-1.5 px-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{g.name}</span>
+                <span className="text-[10px] text-muted-foreground">{sel}/{g.assets.length}</span>
+                <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full bg-primary/40 transition-all"
+                       style={{ width: g.assets.length ? `${(sel / g.assets.length) * 100}%` : '0%' }} />
+                </div>
+              </div>
+              {renderAssets(g.assets)}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div ref={locationRef} data-location-id={location._id} className="scroll-mt-24">
@@ -440,8 +494,38 @@ function LocationBlock({ location, assets, inspectionItems, onToggle, onBulkTogg
         </Button>
       </div>
 
-      {/* Asset rows — grouped by type or flat */}
-      {assetGroups ? (
+      {/* Asset rows — Sub-Zone → (optional Type) → Asset hierarchy */}
+      {subZoneBuckets ? (
+        <div className="space-y-3">
+          {subZoneBuckets.map(bucket => {
+            const sel = bucket.assets.filter(a => inspectionItems.find(i => i.asset_id === a._id)).length;
+            const all = bucket.assets.length;
+            const allSel = all > 0 && sel === all;
+            const isUnassigned = bucket.id === '__unassigned__';
+            return (
+              <div key={bucket.id} className="rounded-lg border border-slate-200 bg-slate-50/40 overflow-hidden" data-testid={`subzone-bucket-${bucket.id}`}>
+                <div className={`flex items-center gap-2 px-3 py-2 border-b ${isUnassigned ? 'bg-slate-100/80 border-slate-200' : 'bg-teal-50/80 border-teal-100'}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${isUnassigned ? 'bg-slate-400' : 'bg-teal-500'}`} />
+                  <span className={`text-[12px] font-semibold tracking-wide ${isUnassigned ? 'text-slate-600' : 'text-teal-800'}`}>
+                    {bucket.name}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">{sel}/{all}</span>
+                  <button
+                    className="ml-auto text-[11px] text-teal-700 hover:underline disabled:opacity-40"
+                    onClick={() => onBulkToggle(bucket.assets, !allSel)}
+                    data-testid={`subzone-bucket-select-${bucket.id}`}
+                  >
+                    {allSel ? 'Deselect all' : 'Select all'}
+                  </button>
+                </div>
+                <div className="p-2.5">
+                  {groupByType ? renderGroupedByType(bucket.assets) : renderAssets(bucket.assets)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : assetGroups ? (
         <div className="space-y-4">
           {assetGroups.map(group => {
             const selInGroup = group.assets.filter(a => inspectionItems.find(i => i.asset_id === a._id)).length;
@@ -493,6 +577,7 @@ export default function InspectionPage() {
   const [inspectionTime, setInspectionTime] = useState(format(new Date(), 'HH:mm'));
   const [activeLocId, setActiveLocId] = useState(null);
   const [typeFilter, setTypeFilter] = useState(null); // null = all types
+  const [subZoneFilter, setSubZoneFilter] = useState(null); // null = all sub-zones (including unassigned)
   const { open: openLightbox, lightbox } = useLightbox();
 
   // Refs for location scroll-spy
@@ -782,14 +867,32 @@ export default function InspectionPage() {
     return result;
   }, [locationsWithAssets, inspectionItems]);
 
-  // Filtered locations based on active type filter
+  // Sub-zones present across the current station's assets, used by the chip dropdown
+  const stationSubZones = useMemo(() => {
+    const map = new Map();
+    assets.forEach(a => {
+      if (a.sub_zone_id && a.sub_zone_name) map.set(a.sub_zone_id, a.sub_zone_name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [assets]);
+
+  // Filtered locations based on active type + sub-zone filters
   const filteredLocationsWithAssets = useMemo(() => {
-    if (!typeFilter) return locationsWithAssets;
-    return locationsWithAssets.map(loc => ({
-      ...loc,
-      assets: loc.assets.filter(a => a.asset_type_id === typeFilter),
-    })).filter(loc => loc.assets.length > 0);
-  }, [locationsWithAssets, typeFilter]);
+    let out = locationsWithAssets;
+    if (typeFilter) {
+      out = out.map(loc => ({ ...loc, assets: loc.assets.filter(a => a.asset_type_id === typeFilter) }));
+    }
+    if (subZoneFilter !== null) {
+      // subZoneFilter === 'unassigned' filters to assets with no sub_zone_id
+      out = out.map(loc => ({
+        ...loc,
+        assets: loc.assets.filter(a =>
+          subZoneFilter === 'unassigned' ? !a.sub_zone_id : a.sub_zone_id === subZoneFilter
+        ),
+      }));
+    }
+    return out.filter(loc => loc.assets.length > 0);
+  }, [locationsWithAssets, typeFilter, subZoneFilter]);
 
   // Defect count for banner
   const defectCount = useMemo(() =>
@@ -1005,7 +1108,7 @@ export default function InspectionPage() {
           {/* Right main area */}
           <div className="flex-1 min-w-0 space-y-6 pb-24" data-testid="inspection-main-area">
 
-            {/* Active type filter banner */}
+            {/* Active filter banners (type + sub-zone) */}
             {typeFilter && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/20 text-sm">
                 <span className="text-xs font-medium text-primary">
@@ -1014,6 +1117,33 @@ export default function InspectionPage() {
                 <button onClick={() => setTypeFilter(null)} className="ml-auto text-xs text-primary hover:underline" data-testid="clear-type-filter-banner">
                   Show All ↺
                 </button>
+              </div>
+            )}
+
+            {/* Sub-Zone filter chips — visible when station has sub-zone-tagged assets */}
+            {stationSubZones.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap" data-testid="subzone-filter-row">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider mr-1">Sub-zone</span>
+                <button
+                  onClick={() => setSubZoneFilter(null)}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] border transition-all ${subZoneFilter === null ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-card hover:bg-teal-50 border-border'}`}
+                  data-testid="subzone-filter-all"
+                >All</button>
+                {stationSubZones.map(sz => (
+                  <button
+                    key={sz.id}
+                    onClick={() => setSubZoneFilter(subZoneFilter === sz.id ? null : sz.id)}
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] border transition-all ${subZoneFilter === sz.id ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-card hover:bg-teal-50 border-border'}`}
+                    data-testid={`subzone-filter-${sz.id}`}
+                  >{sz.name}</button>
+                ))}
+                {assets.some(a => !a.sub_zone_id) && (
+                  <button
+                    onClick={() => setSubZoneFilter(subZoneFilter === 'unassigned' ? null : 'unassigned')}
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] border transition-all ${subZoneFilter === 'unassigned' ? 'bg-slate-700 text-white border-slate-700 shadow-sm' : 'bg-card hover:bg-slate-100 border-border text-muted-foreground'}`}
+                    data-testid="subzone-filter-unassigned"
+                  >Unassigned</button>
+                )}
               </div>
             )}
 

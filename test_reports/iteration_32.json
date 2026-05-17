@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 32 — Sub-Zone tagging on INDIVIDUAL assets + Bulk Assign Sub-Zone feature. BACKEND: 9/9 new pytest pass (sub_zone_id persistence on create/update/null-clear, list filter, sub-zone-location mismatch 400, bulk happy path, bulk mixed-location 400, bulk wrong-subzone 400, bulk clear-null, bulk skips grouped). Regression: prior 11/11 iter31 grouped tests still pass. FRONTEND: ALL advertised testids verified present and functional in the served preview — asset-filter-station/location/subzone cascade (3 levels) renders correctly when station→location selected, bulk-mode-toggle activates per-row asset-bulk-check-* checkboxes (5 rendered with 1 grouped DISABLED and 4 enabled), bulk-toolbar + bulk-subzone-select + bulk-assign-confirm + bulk-clear-subzone appear after selecting assets, asset-subzone-badge-* visible on rows already tagged (2 badges for WC-1 and TEST-GROUP-FAN), asset-individual-subzone-select renders in Edit Asset dialog and is pre-populated with the asset's current sub-zone (verified 'Sub-Zone A (SZ-A)' on WC-1). InspectionPage with DHANBAD selected: subzone-filter-row FOUND with chips (subzone-filter-all + subzone-filter-{id} + subzone-filter-unassigned — NOT the originally-spec'd subzone-filter-chip-* naming, but functionally equivalent), 3-tier nesting Location→Sub-Zone→Assets rendered as expected (PLATFORM 1 → Sub-Zone A bucket containing WC-1 + TEST-GROUP-FAN, Unassigned bucket containing ESCALATOR-1 + Platform surface + SP01), subzone-bucket-* x2 and subzone-bucket-select-* x2 found (per-bucket Select-all).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_subzone_individual_iter32.py",
+    "/app/test_reports/pytest/subzone_individual_iter32.xml"
+  ],
+  "action_items": [
+    "Minor naming inconsistency (non-blocking): the sub-zone filter chips on InspectionPage use testids subzone-filter-all / subzone-filter-{id} / subzone-filter-unassigned, while the review request spec listed subzone-filter-chip-*. Functionality is correct; if external automation depends on the spec naming, consider aliasing the testid or updating the spec."
+  ],
+  "critical_code_review_comments": [
+    "routers/assets.py bulk endpoint correctly enforces same-location guard, sub-zone-location belonging, and skips grouped assets — clean implementation.",
+    "PUT /api/assets/{id} for individual asset clears sub_zone_id when null is sent — verified working.",
+    "POST /api/assets correctly persists sub_zone_id for individual tracking_mode (the regression that motivated this iteration is fixed).",
+    "GET /api/assets enriches docs with sub_zone_name when sub_zone_id is set — good.",
+    "Minor: bulk endpoint has no auth/role gate (no actor check). If endpoint is intended for admins only, add requesting_user_id validation similar to mark-defective.",
+    "Minor: bulk endpoint returns 404 if all asset_ids invalid, but if only some are invalid it silently drops them. Consider returning the missing-ids list."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_subzone_individual_iter32.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (9/9 new + 11/11 iter31 regression)", "frontend": "100% — all critical testids and flows verified on preview deployment"},
+  "test_credentials": {"SA001": "admin123"},
+  "seed_data_creation": "Tests create TEST_ -prefixed sub-zones and TEST_AS_ -prefixed individual assets; cleaned up in fixtures. Existing seed (Sub-Zone A under DHN/PLATFORM 1 with WC-1 + TEST-GROUP-FAN) preserved and used to verify grouped-skip + badge rendering.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sub-Zone individual-asset + bulk-assign feature is fully verified end-to-end. New regression file: /app/backend/tests/test_subzone_individual_iter32.py. Re-run with REACT_APP_BACKEND_URL env exported. Frontend chips use subzone-filter-all / subzone-filter-{id} / subzone-filter-unassigned (NOT subzone-filter-chip-*) — adjust selectors accordingly. AssetsPage cascade filters appear progressively: location filter only renders after a station is selected; sub-zone filter only after a location is selected."
+}

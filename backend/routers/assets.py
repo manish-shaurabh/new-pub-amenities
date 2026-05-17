@@ -248,6 +248,14 @@ async def create_asset(asset: AssetCreate):
     else:
         if not asset_number:
             raise HTTPException(status_code=400, detail="asset_number is required for individual assets")
+        # Individual assets MAY optionally belong to a sub-zone for inspection
+        # navigation. Validate it lives in the chosen location if provided.
+        if asset.sub_zone_id:
+            sub_zone_doc = await sub_zones_collection.find_one({"_id": ObjectId(asset.sub_zone_id)})
+            if not sub_zone_doc:
+                raise HTTPException(status_code=404, detail="Sub-zone not found")
+            if str(sub_zone_doc.get("location_id") or "") != asset.location_id:
+                raise HTTPException(status_code=400, detail="Sub-zone does not belong to the chosen location")
 
     doc = {
         "asset_type_id": asset.asset_type_id,
@@ -264,7 +272,7 @@ async def create_asset(asset: AssetCreate):
         "geo_lat": asset.geo_lat,
         "geo_lng": asset.geo_lng,
         "tracking_mode": tracking_mode,
-        "sub_zone_id": asset.sub_zone_id if tracking_mode == "grouped" else None,
+        "sub_zone_id": asset.sub_zone_id or None,
         "total_count": int(asset.total_count) if tracking_mode == "grouped" else None,
         "needs_repair_count": 0 if tracking_mode == "grouped" else None,
         "not_working_count": 0 if tracking_mode == "grouped" else None,
@@ -279,6 +287,7 @@ async def create_asset(asset: AssetCreate):
 async def list_assets(
     station_id: Optional[str] = None,
     location_id: Optional[str] = None,
+    sub_zone_id: Optional[str] = None,
     asset_type_id: Optional[str] = None,
     status: Optional[str] = None,
     department_id: Optional[str] = None,
@@ -294,7 +303,7 @@ async def list_assets(
     `{items, total, page, page_size, total_pages}`.
 
     Filters (all optional):
-      - station_id, location_id, asset_type_id, status, department_id
+      - station_id, location_id, sub_zone_id, asset_type_id, status, department_id
       - search: case-insensitive substring of asset_number
     """
     query = {}
@@ -302,6 +311,8 @@ async def list_assets(
         query["station_id"] = station_id
     if location_id:
         query["location_id"] = location_id
+    if sub_zone_id:
+        query["sub_zone_id"] = sub_zone_id
     if asset_type_id:
         query["asset_type_id"] = asset_type_id
     if status:
@@ -429,9 +440,21 @@ async def update_asset(asset_id: str, asset: AssetCreate):
                 raise HTTPException(status_code=400, detail="total_count must be > 0")
             update_data["total_count"] = int(asset.total_count)
     else:
-        # Individual asset — allow renaming
+        # Individual asset — allow renaming + optional sub_zone assignment
         if asset.asset_number:
             update_data["asset_number"] = asset.asset_number
+        # Validate sub_zone matches target location when provided
+        target_loc = asset.location_id or existing.get("location_id")
+        if asset.sub_zone_id:
+            sz = await sub_zones_collection.find_one({"_id": ObjectId(asset.sub_zone_id)})
+            if not sz:
+                raise HTTPException(status_code=404, detail="Sub-zone not found")
+            if str(sz.get("location_id") or "") != target_loc:
+                raise HTTPException(status_code=400, detail="Sub-zone does not belong to the chosen location")
+            update_data["sub_zone_id"] = asset.sub_zone_id
+        else:
+            # Allow explicit clear by sending null
+            update_data["sub_zone_id"] = None
     # Only update photo if provided (None means keep existing)
     if asset.identification_photo is not None:
         update_data["identification_photo"] = asset.identification_photo
@@ -444,6 +467,58 @@ async def update_asset(asset_id: str, asset: AssetCreate):
     doc = await assets_collection.find_one({"_id": ObjectId(asset_id)})
     doc["schedule_frequency"] = _normalize_freq_days(doc.get("schedule_frequency"))
     return serialize_doc(doc)
+
+
+@router.patch("/api/assets/bulk/sub-zone")
+async def bulk_assign_sub_zone(payload: dict):
+    """Bulk-assign (or clear) a sub-zone for a list of INDIVIDUAL assets.
+
+    Body: { asset_ids: [str], sub_zone_id: str | null }
+
+    Constraints:
+      • All assets must share the same `location_id`.
+      • If `sub_zone_id` is given, the sub-zone must belong to that location.
+      • Grouped assets are excluded (their sub_zone_id is structural).
+
+    Returns: { matched, modified, skipped_grouped }
+    """
+    asset_ids = payload.get("asset_ids") or []
+    sub_zone_id = payload.get("sub_zone_id")
+    if not asset_ids or not isinstance(asset_ids, list):
+        raise HTTPException(status_code=400, detail="asset_ids (non-empty list) is required")
+    try:
+        oids = [ObjectId(a) for a in asset_ids]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid asset_id format")
+    docs = await assets_collection.find({"_id": {"$in": oids}}).to_list(len(oids))
+    if not docs:
+        raise HTTPException(status_code=404, detail="No assets found")
+    # All targeted assets must share location
+    locs = {d.get("location_id") for d in docs}
+    if len(locs) != 1:
+        raise HTTPException(status_code=400, detail="All selected assets must belong to the same location")
+    target_location = next(iter(locs))
+    # Validate sub_zone if provided
+    if sub_zone_id:
+        sz = await sub_zones_collection.find_one({"_id": ObjectId(sub_zone_id)})
+        if not sz:
+            raise HTTPException(status_code=404, detail="Sub-zone not found")
+        if str(sz.get("location_id") or "") != target_location:
+            raise HTTPException(status_code=400, detail="Sub-zone does not belong to the assets' location")
+    # Exclude grouped — their sub_zone is structural and shouldn't be reassigned in bulk.
+    eligible_ids = [d["_id"] for d in docs if (d.get("tracking_mode") or "individual") != "grouped"]
+    skipped_grouped = len(docs) - len(eligible_ids)
+    if not eligible_ids:
+        return {"matched": 0, "modified": 0, "skipped_grouped": skipped_grouped}
+    result = await assets_collection.update_many(
+        {"_id": {"$in": eligible_ids}},
+        {"$set": {"sub_zone_id": sub_zone_id or None}}
+    )
+    return {
+        "matched": result.matched_count,
+        "modified": result.modified_count,
+        "skipped_grouped": skipped_grouped,
+    }
 
 
 @router.delete("/api/assets/{asset_id}")

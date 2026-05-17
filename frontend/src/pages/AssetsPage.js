@@ -11,8 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from '../components/ui/dropdown-menu';
 import { Label } from '../components/ui/label';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
+import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Search, Box, Trash2, Pencil, ChevronDown, MoreVertical, AlertTriangle, History, Camera, MapPin, X } from 'lucide-react';
+import { Plus, Search, Box, Trash2, Pencil, ChevronDown, MoreVertical, AlertTriangle, History, Camera, MapPin, X, CheckSquare } from 'lucide-react';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 import MarkDefectiveDialog from '../components/dialogs/MarkDefectiveDialog';
 import Pagination from '../components/Pagination';
@@ -30,6 +31,17 @@ export default function AssetsPage() {
   const [search, setSearch] = useState('');
   const [filterStation, setFilterStation] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterSubZone, setFilterSubZone] = useState('');
+  // Sub-zone filter requires a parent location (so the chip is meaningful)
+  const [filterLocation, setFilterLocation] = useState('');
+  const [filterLocationOptions, setFilterLocationOptions] = useState([]);
+  const [filterSubZoneOptions, setFilterSubZoneOptions] = useState([]);
+  // Bulk-assign state
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState(new Set());
+  const [bulkTargetSubZone, setBulkTargetSubZone] = useState('');
+  const [bulkSubZoneOptions, setBulkSubZoneOptions] = useState([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
@@ -61,10 +73,26 @@ export default function AssetsPage() {
     }, search ? 300 : 0);
     return () => searchDebounce.current && clearTimeout(searchDebounce.current);
     // eslint-disable-next-line
-  }, [search, filterStation, filterStatus, page]);
+  }, [search, filterStation, filterStatus, filterLocation, filterSubZone, page]);
 
   // Reset to page 1 when filters/search change
-  useEffect(() => { setPage(1); /* eslint-disable-next-line */ }, [search, filterStation, filterStatus]);
+  useEffect(() => { setPage(1); /* eslint-disable-next-line */ }, [search, filterStation, filterStatus, filterLocation, filterSubZone]);
+
+  // Cascade: station → locations for the filter
+  useEffect(() => {
+    if (!filterStation || filterStation === 'all') {
+      setFilterLocationOptions([]); setFilterLocation(''); setFilterSubZone(''); return;
+    }
+    locationsAPI.list(filterStation).then(r => setFilterLocationOptions(r.data || [])).catch(() => setFilterLocationOptions([]));
+  }, [filterStation]);
+
+  // Cascade: location → sub-zones for the filter
+  useEffect(() => {
+    if (!filterLocation || filterLocation === 'all') {
+      setFilterSubZoneOptions([]); setFilterSubZone(''); return;
+    }
+    subZonesAPI.list({ location_id: filterLocation }).then(r => setFilterSubZoneOptions(r.data || [])).catch(() => setFilterSubZoneOptions([]));
+  }, [filterLocation]);
 
   const loadStaticData = async () => {
     try {
@@ -86,6 +114,8 @@ export default function AssetsPage() {
       const opts = { page, pageSize: PAGE_SIZE };
       if (search) opts.search = search;
       if (filterStation && filterStation !== 'all') opts.station_id = filterStation;
+      if (filterLocation && filterLocation !== 'all') opts.location_id = filterLocation;
+      if (filterSubZone && filterSubZone !== 'all') opts.sub_zone_id = filterSubZone;
       if (filterStatus && filterStatus !== 'all') opts.status = filterStatus;
       const res = await assetsAPI.listPaginated(opts);
       setAssets(res.data.items || []);
@@ -137,7 +167,7 @@ export default function AssetsPage() {
         ...formData,
         // Auto-clear asset_number for grouped (backend generates); server validates total_count.
         asset_number: isGroupedType ? null : formData.asset_number,
-        sub_zone_id: isGroupedType ? formData.sub_zone_id : null,
+        sub_zone_id: formData.sub_zone_id || null,
         total_count: isGroupedType ? Number(formData.total_count) : null,
         schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
         geo_lat: formData.geo_lat ? parseFloat(formData.geo_lat) : null,
@@ -184,7 +214,7 @@ export default function AssetsPage() {
       await assetsAPI.update(editingAsset._id, {
         ...formData,
         asset_number: isGroupedType ? null : formData.asset_number,
-        sub_zone_id: isGroupedType ? formData.sub_zone_id : null,
+        sub_zone_id: formData.sub_zone_id || null,
         total_count: isGroupedType && formData.total_count ? Number(formData.total_count) : null,
         schedule_frequency: formData.schedule_frequency ? parseInt(formData.schedule_frequency, 10) : null,
         geo_lat: formData.geo_lat ? parseFloat(formData.geo_lat) : null,
@@ -199,6 +229,65 @@ export default function AssetsPage() {
       toast.error(errString(e, 'Failed to update asset'));
     }
   };
+
+  // ── Bulk Sub-Zone Assignment ─────────────────────────────────────────────
+  // The toolbar appears when bulk mode is on and ≥1 asset is selected. It
+  // enforces "single location" for the selection by reading the location_id
+  // of the first picked asset; selecting one from a different location is
+  // blocked client-side so the user never hits a 400.
+  const bulkSelectionLocationId = (() => {
+    if (bulkSelected.size === 0) return null;
+    const first = assets.find(a => bulkSelected.has(a._id));
+    return first?.location_id || null;
+  })();
+
+  const toggleBulkSelect = (asset) => {
+    setBulkSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(asset._id)) { next.delete(asset._id); return next; }
+      // Enforce same-location constraint at selection time
+      if (next.size > 0) {
+        const firstLoc = assets.find(a => next.has(a._id))?.location_id;
+        if (firstLoc && asset.location_id !== firstLoc) {
+          toast.error('All bulk-selected assets must be in the same location'); return next;
+        }
+      }
+      // Skip grouped assets — their sub_zone is structural
+      if ((asset.tracking_mode || 'individual') === 'grouped') {
+        toast.error('Grouped assets cannot be bulk-reassigned'); return next;
+      }
+      next.add(asset._id); return next;
+    });
+  };
+
+  // Reload sub-zones for the toolbar whenever the selection's location changes
+  useEffect(() => {
+    if (!bulkSelectionLocationId) { setBulkSubZoneOptions([]); setBulkTargetSubZone(''); return; }
+    subZonesAPI.list({ location_id: bulkSelectionLocationId })
+      .then(r => setBulkSubZoneOptions(r.data || []))
+      .catch(() => setBulkSubZoneOptions([]));
+    setBulkTargetSubZone('');
+  }, [bulkSelectionLocationId]);
+
+  const handleBulkAssign = async (clearOnly = false) => {
+    if (bulkSelected.size === 0) { toast.error('Select at least one asset'); return; }
+    if (!clearOnly && !bulkTargetSubZone) { toast.error('Choose a sub-zone first'); return; }
+    setBulkBusy(true);
+    try {
+      const r = await assetsAPI.bulkAssignSubZone(
+        Array.from(bulkSelected),
+        clearOnly ? null : bulkTargetSubZone,
+      );
+      toast.success(`${r.data.modified} asset(s) ${clearOnly ? 'cleared' : 'assigned'}`);
+      setBulkSelected(new Set());
+      setBulkMode(false);
+      loadAll();
+    } catch (e) {
+      toast.error(errString(e, 'Bulk assignment failed'));
+    } finally { setBulkBusy(false); }
+  };
+
+  const cancelBulkMode = () => { setBulkMode(false); setBulkSelected(new Set()); };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this asset?')) return;
@@ -317,7 +406,7 @@ export default function AssetsPage() {
         <Label>Location *</Label>
         <Select value={formData.location_id} onValueChange={(v) => {
           setFormData({...formData, location_id: v, sub_zone_id: ''});
-          if (isGroupedType) loadSubZonesFor(v);
+          loadSubZonesFor(v);
         }}>
           <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
           <SelectContent>
@@ -357,10 +446,28 @@ export default function AssetsPage() {
           </div>
         </>
       ) : (
-        <div>
-          <Label>Asset Number *</Label>
-          <Input value={formData.asset_number} onChange={(e) => setFormData({...formData, asset_number: e.target.value})} placeholder="e.g., FAN-P1-001" />
-        </div>
+        <>
+          <div>
+            <Label>Asset Number *</Label>
+            <Input value={formData.asset_number} onChange={(e) => setFormData({...formData, asset_number: e.target.value})} placeholder="e.g., FAN-P1-001" />
+          </div>
+          {/* Optional sub-zone for individual assets — helps inspectors filter
+              by sub-zone during rounds without converting to grouped mode. */}
+          {subZones.length > 0 && (
+            <div>
+              <Label>Sub-Zone <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Select value={formData.sub_zone_id || 'none'} onValueChange={(v) => setFormData({...formData, sub_zone_id: v === 'none' ? '' : v})}>
+                <SelectTrigger data-testid="asset-individual-subzone-select">
+                  <SelectValue placeholder="No sub-zone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No sub-zone</SelectItem>
+                  {subZones.map(z => <SelectItem key={z._id} value={z._id}>{z.name}{z.code ? ` (${z.code})` : ''}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </>
       )}
       <div>
         <Label>Description</Label>
@@ -464,9 +571,22 @@ export default function AssetsPage() {
     </div>
   );
 
-  const AssetCard = ({ asset }) => (
-    <div className="flex items-center justify-between p-3 border-l-2 border-primary/20 hover:border-primary/50 hover:bg-accent/30 transition-all">
+  const AssetCard = ({ asset }) => {
+    const isGrouped = (asset.tracking_mode || 'individual') === 'grouped';
+    const isBulkable = bulkMode && !isGrouped;
+    const isBulkSelected = bulkSelected.has(asset._id);
+    return (
+    <div className={`flex items-center justify-between p-3 border-l-2 transition-all ${isBulkSelected ? 'border-teal-500 bg-teal-50/60' : 'border-primary/20 hover:border-primary/50 hover:bg-accent/30'}`} data-testid={`asset-row-${asset._id}`}>
       <div className="flex items-center gap-3 flex-1">
+        {bulkMode && (
+          <Checkbox
+            checked={isBulkSelected}
+            disabled={isGrouped}
+            onCheckedChange={() => toggleBulkSelect(asset)}
+            data-testid={`asset-bulk-check-${asset._id}`}
+            title={isGrouped ? 'Grouped assets cannot be reassigned' : ''}
+          />
+        )}
         <div className="relative h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
           {asset.identification_photo
             ? <img src={asset.identification_photo} alt="" className="h-full w-full object-cover" />
@@ -481,6 +601,11 @@ export default function AssetsPage() {
             >
               {asset.asset_number}
             </button>
+            {asset.sub_zone_name && (
+              <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-teal-50 text-teal-800 border-teal-300" data-testid={`asset-subzone-badge-${asset._id}`}>
+                {asset.sub_zone_name}
+              </Badge>
+            )}
             {asset.geo_lat && asset.geo_lng && (
               <a
                 href={`https://maps.google.com/?q=${asset.geo_lat},${asset.geo_lng}`}
@@ -495,6 +620,7 @@ export default function AssetsPage() {
           </div>
           <p className="text-xs text-muted-foreground truncate">
             {asset.station_name} &middot; {asset.location_name}
+            {!asset.sub_zone_name && isBulkable && <span className="text-[10px] text-amber-600 ml-2">· no sub-zone</span>}
           </p>
         </div>
       </div>
@@ -550,7 +676,8 @@ export default function AssetsPage() {
         </DropdownMenu>
       </div>
     </div>
-  );
+    );
+  };
 
   // Initial-load skeleton only (full-page).
   // Subsequent reloads (search/filter/page) show a list-only skeleton so the
@@ -587,20 +714,38 @@ export default function AssetsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search assets..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
-        <Select value={filterStation} onValueChange={setFilterStation}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Stations" /></SelectTrigger>
+        <Select value={filterStation} onValueChange={(v) => { setFilterStation(v); setFilterLocation(''); setFilterSubZone(''); }}>
+          <SelectTrigger className="w-[160px]" data-testid="asset-filter-station"><SelectValue placeholder="All Stations" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Stations</SelectItem>
             {stations.map(s => <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        {filterStation && filterStation !== 'all' && filterLocationOptions.length > 0 && (
+          <Select value={filterLocation} onValueChange={(v) => { setFilterLocation(v); setFilterSubZone(''); }}>
+            <SelectTrigger className="w-[170px]" data-testid="asset-filter-location"><SelectValue placeholder="All Locations" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {filterLocationOptions.map(l => <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+        {filterLocation && filterLocation !== 'all' && filterSubZoneOptions.length > 0 && (
+          <Select value={filterSubZone} onValueChange={setFilterSubZone}>
+            <SelectTrigger className="w-[160px]" data-testid="asset-filter-subzone"><SelectValue placeholder="All Sub-Zones" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sub-Zones</SelectItem>
+              {filterSubZoneOptions.map(z => <SelectItem key={z._id} value={z._id}>{z.name}{z.code ? ` (${z.code})` : ''}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="All Status" /></SelectTrigger>
+          <SelectTrigger className="w-[130px]"><SelectValue placeholder="All Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="working">Working</SelectItem>
@@ -608,7 +753,55 @@ export default function AssetsPage() {
             <SelectItem value="pending_approval">Pending</SelectItem>
           </SelectContent>
         </Select>
+        {isAdmin() && (
+          <Button
+            size="sm"
+            variant={bulkMode ? 'secondary' : 'outline'}
+            onClick={() => bulkMode ? cancelBulkMode() : setBulkMode(true)}
+            data-testid="bulk-mode-toggle"
+            className="ml-auto gap-1.5"
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
+            {bulkMode ? 'Cancel selection' : 'Bulk assign sub-zone'}
+          </Button>
+        )}
       </div>
+
+      {/* Bulk toolbar — sticky just below filters when ≥1 selected */}
+      {bulkMode && bulkSelected.size > 0 && (
+        <div
+          className="sticky top-2 z-20 flex items-center gap-2 px-3 py-2 rounded-lg border border-teal-300 bg-teal-50/95 backdrop-blur shadow-sm flex-wrap"
+          data-testid="bulk-toolbar"
+        >
+          <Badge className="bg-teal-600 text-white border-teal-600 text-[11px]">
+            {bulkSelected.size} selected
+          </Badge>
+          {bulkSubZoneOptions.length === 0 ? (
+            <span className="text-xs text-amber-700">
+              No sub-zones exist for this location · <button onClick={() => window.location.href = '/admin'} className="underline">create one in Admin</button>
+            </span>
+          ) : (
+            <>
+              <span className="text-[11px] text-teal-800">Assign to</span>
+              <Select value={bulkTargetSubZone} onValueChange={setBulkTargetSubZone}>
+                <SelectTrigger className="w-[180px] h-8 text-xs bg-white" data-testid="bulk-subzone-select">
+                  <SelectValue placeholder="Choose sub-zone…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {bulkSubZoneOptions.map(z => <SelectItem key={z._id} value={z._id}>{z.name}{z.code ? ` (${z.code})` : ''}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="h-8" disabled={bulkBusy || !bulkTargetSubZone} onClick={() => handleBulkAssign(false)} data-testid="bulk-assign-confirm">
+                Assign
+              </Button>
+              <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={bulkBusy} onClick={() => handleBulkAssign(true)} data-testid="bulk-clear-subzone">
+                Clear
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant="ghost" className="h-8 ml-auto text-xs" onClick={cancelBulkMode}>Cancel</Button>
+        </div>
+      )}
 
       {/* Asset List Grouped by Type */}
       <div className="space-y-3">
