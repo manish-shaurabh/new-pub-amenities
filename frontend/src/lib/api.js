@@ -63,7 +63,12 @@ export const stationsAPI = {
 
 // Locations
 export const locationsAPI = {
-  list: (stationId) => api.get('/locations', { params: { station_id: stationId } }),
+  list: (stationIdOrParams) => {
+    const params = typeof stationIdOrParams === 'string'
+      ? { station_id: stationIdOrParams }
+      : stationIdOrParams;
+    return api.get('/locations', { params });
+  },
   create: (data) => api.post('/locations', data),
   update: (id, data) => api.put(`/locations/${id}`, data),
   delete: (id) => api.delete(`/locations/${id}`),

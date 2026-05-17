@@ -36,6 +36,7 @@ async def create_asset_type(asset_type: AssetTypeCreate):
         "checklist": [item.model_dump() for item in asset_type.checklist],
         "description": asset_type.description,
         "tracking_mode": asset_type.tracking_mode if asset_type.tracking_mode in ("individual", "grouped") else "individual",
+        "icon_key": asset_type.icon_key or None,
         "created_at": now_ist()
     }
     result = await asset_types_collection.insert_one(doc)
@@ -72,6 +73,7 @@ async def update_asset_type(asset_type_id: str, asset_type: AssetTypeCreate):
             "checklist": [item.model_dump() for item in asset_type.checklist],
             "description": asset_type.description,
             "tracking_mode": asset_type.tracking_mode if asset_type.tracking_mode in ("individual", "grouped") else "individual",
+            "icon_key": asset_type.icon_key or None,
         }}
     )
     if result.matched_count == 0:

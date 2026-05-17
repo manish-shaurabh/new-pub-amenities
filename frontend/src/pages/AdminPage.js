@@ -18,6 +18,7 @@ import RemarkTagsManager from '../components/RemarkTagsManager';
 import DataHealthPanel from '../components/DataHealthPanel';
 import ZoneDivisionFilter from '../components/ZoneDivisionFilter';
 import CanvasEditor from '../components/CanvasEditor';
+import { ICON_MAP, ICON_PRESETS, getIconHint } from '../lib/assetIcons';
 
 // Import the user management components from the old UsersPage
 const roleLabels = {
@@ -68,7 +69,7 @@ export default function AdminPage() {
   const [locationForm, setLocationForm] = useState({ name: '', station_id: '', description: '' });
   // Sub-Zone form (children of a Location)
   const [subZoneForm, setSubZoneForm] = useState({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0, has_divider: false, divider_orientation: 'vertical' });
-  const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual' });
+  const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual', icon_key: '' });
   const [departmentForm, setDepartmentForm] = useState({ name: '', code: '', description: '' });
   const [deptFieldErrors, setDeptFieldErrors] = useState({});
   const [userForm, setUserForm] = useState({
@@ -600,7 +601,7 @@ export default function AdminPage() {
     else if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', division_id: '', approving_supervisor_id: '' });
     else if (type === 'location') setLocationForm({ name: '', station_id: '', description: '' });
     else if (type === 'sub-zone') setSubZoneForm({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0, has_divider: false, divider_orientation: 'vertical' });
-    else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual' });
+    else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual', icon_key: '' });
     else if (type === 'user') setUserForm({ employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], password: '', email: '', phone: '', reports_to_id: '', assigned_division_id: '' });
     setDialogOpen(true);
   };
@@ -624,7 +625,7 @@ export default function AdminPage() {
         divider_orientation: item.divider_orientation || 'vertical',
       });
     } else if (type === 'asset-type') {
-      setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [], tracking_mode: item.tracking_mode || 'individual' });
+      setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [], tracking_mode: item.tracking_mode || 'individual', icon_key: item.icon_key || '' });
     } else if (type === 'user') {
       setUserForm({ employee_id: item.employee_id, name: item.name, role: item.role, department_id: item.department_id || '', assigned_stations: item.assigned_stations || [], password: '', email: item.email || '', phone: item.phone || '', reports_to_id: item.reports_to_id || '', assigned_division_id: item.assigned_division_id || '' });
     }

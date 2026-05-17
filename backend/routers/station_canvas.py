@@ -83,13 +83,18 @@ async def get_station_canvas(
 
     # --- asset type info ---
     type_ids = list({a.get("asset_type_id") for a in all_assets if a.get("asset_type_id")})
-    types_map, types_dept_map = {}, {}
+    types_map, types_dept_map, types_icon_map = {}, {}, {}
     if type_ids:
         type_docs = await asset_types_collection.find(
             {"_id": {"$in": [ObjectId(tid) for tid in type_ids]}}
         ).to_list(1000)
         types_map = {str(t["_id"]): t.get("name", "Unknown") for t in type_docs}
         types_dept_map = {str(t["_id"]): t.get("department_id") for t in type_docs}
+        # icon_key: use explicit admin assignment if set, else auto-detect from name
+        types_icon_map = {
+            str(t["_id"]): t.get("icon_key") or _icon_hint(t.get("name", ""))
+            for t in type_docs
+        }
 
     # --- dept filter ---
     if dept_id:
@@ -132,7 +137,7 @@ async def get_station_canvas(
             "asset_number": a.get("asset_number", ""),
             "asset_type_id": a.get("asset_type_id", ""),
             "asset_type_name": type_name,
-            "asset_type_icon_hint": _icon_hint(type_name),
+            "asset_type_icon_hint": types_icon_map.get(a.get("asset_type_id", ""), "default"),
             "department_id": types_dept_map.get(a.get("asset_type_id", "")),
             "location_id": a.get("location_id"),
             "sub_zone_id": a.get("sub_zone_id"),

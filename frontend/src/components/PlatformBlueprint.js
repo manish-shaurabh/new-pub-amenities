@@ -1,50 +1,24 @@
 /**
- * PlatformBlueprint — visual asset health / inspection map for a location.
- *
- * Renders sub-zones as bordered canvases with assets positioned at their
- * approximate physical locations (canvas_x / canvas_y, 0-100%).
+ * PlatformBlueprint — visual asset health / inspection / edit map.
  *
  * Modes:
- *   'health'      — color icons by health status (working/orange/red/yellow)
- *   'inspection'  — color icons by current inspection session state
- *
- * Used by:
- *   StationCanvasPage  — standalone health overview
- *   InspectionPage     — blueprint mode toggle during inspection
+ *   'health'      — color icons by health status (read-only)
+ *   'inspection'  — session state overlay, tap-to-inspect
+ *   'edit'        — click assets for action menu, drop zones active
  */
-import { useState, useCallback } from 'react';
+import { useState, useRef } from 'react';
 import {
-  Wind, Lightbulb, Droplets, Zap, Wifi, Users, Circle,
-  Flame, Camera, Clock, AirVent, Pencil, CheckCircle2,
-  XCircle, Wrench, Info,
+  CheckCircle2, XCircle, Wrench, Info, Pencil,
+  ArrowUp, ArrowDown, Plus, Trash2, Move, X,
 } from 'lucide-react';
-
-// ── Icon mapping (keyword-based) ─────────────────────────────────────────────
-export const ICON_MAP = {
-  fan: Wind,
-  light: Lightbulb,
-  tap: Droplets,
-  cib: Zap,
-  wifi: Wifi,
-  seat: Users,
-  fire: Flame,
-  camera: Camera,
-  clock: Clock,
-  ac: AirVent,
-  default: Circle,
-};
+import { ICON_MAP, getIconHint } from '../lib/assetIcons';
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
-function healthStyle(asset) {
-  if (asset.status === 'working') return {
-    border: '#22c55e', bg: 'rgba(34,197,94,0.10)', text: '#15803d',
-  };
-  if (asset.status === 'pending_approval') return {
-    border: '#eab308', bg: 'rgba(234,179,8,0.10)', text: '#a16207',
-  };
-  if (asset.list_type === 'red') return {
-    border: '#ef4444', bg: 'rgba(239,68,68,0.10)', text: '#dc2626',
-  };
+export function healthStyle(asset) {
+  if (asset.status === 'missing') return { border: '#94a3b8', bg: '#fff', text: '#94a3b8', isMissing: true };
+  if (asset.status === 'working') return { border: '#22c55e', bg: 'rgba(34,197,94,0.10)', text: '#15803d' };
+  if (asset.status === 'pending_approval') return { border: '#eab308', bg: 'rgba(234,179,8,0.10)', text: '#a16207' };
+  if (asset.list_type === 'red') return { border: '#ef4444', bg: 'rgba(239,68,68,0.10)', text: '#dc2626' };
   return { border: '#f97316', bg: 'rgba(249,115,22,0.10)', text: '#c2410c' };
 }
 
@@ -56,18 +30,71 @@ function inspectionStyle(assetId, inspectionItems) {
   return { border: '#f97316', bg: 'rgba(249,115,22,0.12)', text: '#c2410c' };
 }
 
-function inspectionOverlayIcon(assetId, inspectionItems) {
-  const item = (inspectionItems || []).find(i => (i.asset_id || i.assetId) === assetId);
+function inspectionOverlayIcon(assetId, items) {
+  const item = (items || []).find(i => (i.asset_id || i.assetId) === assetId);
   if (!item) return null;
   if (item.status === 'ok') return CheckCircle2;
   if (item.status === 'not_ok') return XCircle;
   return Wrench;
 }
 
-// ── Single asset icon on canvas ───────────────────────────────────────────────
-function AssetNode({ asset, mode, inspectionItems, onAssetClick, dimmed, size = 44 }) {
+// ── Inline action menu (edit mode) ───────────────────────────────────────────
+function AssetActionMenu({ asset, anchorX, anchorY, onEdit, onDelete, onToggleMissing, onMove, onClose }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `calc(${anchorX}% + 26px)`,
+        top: `calc(${anchorY}% - 12px)`,
+        zIndex: 120,
+        background: '#fff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 10,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+        padding: '6px 4px',
+        minWidth: 170,
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      <div style={{ padding: '4px 10px 6px', borderBottom: '1px solid #f1f5f9', marginBottom: 4 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{asset.asset_number}</div>
+        <div style={{ fontSize: 10, color: '#94a3b8' }}>{asset.asset_type_name}</div>
+      </div>
+      {[
+        { icon: Pencil, label: 'Edit Details', action: onEdit, color: '#334155' },
+        { icon: Move, label: 'Reposition', action: onMove, color: '#334155' },
+        { icon: X, label: asset.status === 'missing' ? 'Mark Working' : 'Mark as Missing', action: onToggleMissing, color: '#f59e0b' },
+        { icon: Trash2, label: 'Delete Asset', action: onDelete, color: '#ef4444' },
+      ].map(({ icon: Icon, label, action, color }) => (
+        <button
+          key={label}
+          onClick={() => { action?.(); onClose(); }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            width: '100%', textAlign: 'left',
+            padding: '5px 10px', borderRadius: 6,
+            border: 'none', background: 'transparent',
+            fontSize: 11, color, cursor: 'pointer',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+          <Icon size={12} color={color} />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Single asset node on canvas ───────────────────────────────────────────────
+function AssetNode({
+  asset, mode, inspectionItems, onAssetClick,
+  dimmed, size = 44, editMode, onActionMenu,
+}) {
   const [tipVisible, setTipVisible] = useState(false);
-  const Icon = ICON_MAP[asset.asset_type_icon_hint] || Circle;
+  const iconKey = asset.asset_type_icon_hint || getIconHint(asset.asset_type_name);
+  const Icon = ICON_MAP[iconKey] || ICON_MAP.default;
   const OverlayIcon = mode === 'inspection' ? inspectionOverlayIcon(asset.id, inspectionItems) : null;
   const style = mode === 'inspection'
     ? inspectionStyle(asset.id, inspectionItems)
@@ -84,53 +111,59 @@ function AssetNode({ asset, mode, inspectionItems, onAssetClick, dimmed, size = 
         left: `${asset.canvas_x}%`,
         top: `${asset.canvas_y}%`,
         transform: 'translate(-50%, -50%)',
-        width: nodeSize,
-        height: nodeSize,
+        width: nodeSize, height: nodeSize,
         zIndex: tipVisible ? 30 : 10,
         opacity: dimmed ? 0.2 : 1,
         transition: 'opacity 0.2s',
       }}
     >
       <button
-        onClick={() => onAssetClick && onAssetClick(asset)}
-        onMouseEnter={() => setTipVisible(true)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (editMode) {
+            onActionMenu?.(asset);
+          } else {
+            onAssetClick?.(asset);
+          }
+        }}
+        onMouseEnter={() => !editMode && setTipVisible(true)}
         onMouseLeave={() => setTipVisible(false)}
-        onTouchStart={() => setTipVisible(true)}
-        onTouchEnd={() => setTimeout(() => setTipVisible(false), 1200)}
         data-testid={`blueprint-asset-${asset.id}`}
         style={{
-          width: '100%',
-          height: '100%',
+          width: '100%', height: '100%',
           borderRadius: '50%',
           border: `2.5px solid ${style.border}`,
-          background: style.bg,
+          background: style.isMissing ? '#fff' : style.bg,
           color: style.text,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
-          transition: 'transform 0.15s, box-shadow 0.15s',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          cursor: editMode ? 'pointer' : 'pointer',
+          boxShadow: editMode ? '0 2px 6px rgba(0,0,0,0.15)' : '0 1px 4px rgba(0,0,0,0.12)',
+          transition: 'transform 0.1s, box-shadow 0.1s',
+          position: 'relative',
         }}
-        onMouseDown={e => e.currentTarget.style.transform = 'scale(0.93)'}
-        onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+        title={editMode ? 'Click to manage asset' : undefined}
       >
-        <Icon size={Math.round(nodeSize * 0.34)} />
-        {isGrouped && (
-          <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, marginTop: 1 }}>
-            {defectCount}/{asset.total_count}
-          </span>
+        {style.isMissing ? (
+          <X size={Math.round(nodeSize * 0.4)} color="#94a3b8" />
+        ) : (
+          <>
+            <Icon size={Math.round(nodeSize * 0.34)} />
+            {isGrouped && (
+              <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, marginTop: 1 }}>
+                {defectCount}/{asset.total_count}
+              </span>
+            )}
+          </>
         )}
       </button>
 
-      {/* Inspection overlay icon */}
-      {OverlayIcon && (
+      {/* Inspection overlay */}
+      {OverlayIcon && !editMode && (
         <div style={{
           position: 'absolute', top: -4, right: -4,
           width: 16, height: 16,
-          background: style.border,
-          borderRadius: '50%',
+          background: style.border, borderRadius: '50%',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
         }}>
@@ -138,25 +171,18 @@ function AssetNode({ asset, mode, inspectionItems, onAssetClick, dimmed, size = 
         </div>
       )}
 
-      {/* Tooltip */}
+      {/* Tooltip (health/inspection mode) */}
       {tipVisible && (
         <div style={{
-          position: 'absolute',
-          bottom: '110%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: '#0f172a',
-          color: '#f8fafc',
-          fontSize: 11,
-          padding: '4px 8px',
-          borderRadius: 6,
-          whiteSpace: 'nowrap',
-          pointerEvents: 'none',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-          zIndex: 50,
+          position: 'absolute', bottom: '115%', left: '50%', transform: 'translateX(-50%)',
+          background: '#0f172a', color: '#f8fafc',
+          fontSize: 11, padding: '4px 8px', borderRadius: 6,
+          whiteSpace: 'nowrap', pointerEvents: 'none',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 50,
         }}>
           <div style={{ fontWeight: 600 }}>{asset.asset_number}</div>
           <div style={{ color: '#94a3b8', fontSize: 10 }}>{asset.asset_type_name}</div>
+          {asset.status === 'missing' && <div style={{ color: '#fbbf24', fontSize: 10 }}>MISSING</div>}
           {asset.hours_defective > 0 && (
             <div style={{ color: '#fca5a5', fontSize: 10 }}>{asset.hours_defective}h defective</div>
           )}
@@ -166,30 +192,21 @@ function AssetNode({ asset, mode, inspectionItems, onAssetClick, dimmed, size = 
   );
 }
 
-// ── Landmark pin (P.No markers) ───────────────────────────────────────────────
+// ── Landmark pin ──────────────────────────────────────────────────────────────
 function LandmarkPin({ lm }) {
   return (
     <div style={{
       position: 'absolute',
-      left: `${lm.x}%`,
-      top: `${lm.y}%`,
+      left: `${lm.x}%`, top: `${lm.y}%`,
       transform: 'translate(-50%, -100%)',
-      pointerEvents: 'none',
-      zIndex: 5,
+      pointerEvents: 'none', zIndex: 5,
     }}>
       <div style={{
-        background: '#fef3c7',
-        border: '1px solid #f59e0b',
-        color: '#92400e',
-        fontSize: 9,
-        fontWeight: 700,
-        padding: '2px 6px',
-        borderRadius: 10,
-        whiteSpace: 'nowrap',
+        background: '#fef3c7', border: '1px solid #f59e0b',
+        color: '#92400e', fontSize: 9, fontWeight: 700,
+        padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap',
         boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
-      }}>
-        {lm.label}
-      </div>
+      }}>{lm.label}</div>
       <div style={{ width: 1, height: 10, background: '#f59e0b', margin: '0 auto' }} />
     </div>
   );
@@ -197,19 +214,22 @@ function LandmarkPin({ lm }) {
 
 // ── Sub-zone canvas ───────────────────────────────────────────────────────────
 export function SubZoneCanvas({
-  subZone,
-  mode = 'health',
-  inspectionItems,
-  onAssetClick,
-  filters,
-  onEditCanvas,
+  subZone, mode = 'health', inspectionItems,
+  onAssetClick, filters, onEditCanvas,
+  editMode = false,
+  onAssetAction,      // (asset, subZoneId) called in edit mode on asset click
+  onCanvasAreaClick,  // (subZoneId, x, y) called when clicking empty canvas in edit/place mode
+  onDragOver,         // drag-over handler for palette drops
+  onDrop,             // drop handler for palette drops
+  isFirst, isLast,    // for reorder controls
+  onMoveUp, onMoveDown, onDeleteSubZone,
+  onAddSubZone,       // shows "Add Sub-Zone" button below this card (when isLast)
 }) {
-  const positionedAssets = (subZone.assets || []).filter(
-    a => a.canvas_x != null && a.canvas_y != null,
-  );
-  const unpositionedAssets = (subZone.assets || []).filter(
-    a => a.canvas_x == null || a.canvas_y == null,
-  );
+  const canvasRef = useRef(null);
+  const [actionMenuAsset, setActionMenuAsset] = useState(null);
+
+  const positioned = (subZone.assets || []).filter(a => a.canvas_x != null && a.canvas_y != null);
+  const unpositioned = (subZone.assets || []).filter(a => a.canvas_x == null || a.canvas_y == null);
 
   const isDimmed = (asset) => {
     if (!filters) return false;
@@ -218,37 +238,80 @@ export function SubZoneCanvas({
     return false;
   };
 
-  // Health summary chips
   const working = (subZone.assets || []).filter(a => a.status === 'working').length;
   const pending = (subZone.assets || []).filter(a => a.status === 'pending_approval').length;
+  const missing = (subZone.assets || []).filter(a => a.status === 'missing').length;
   const defective = (subZone.assets || []).filter(
-    a => a.status !== 'working' && a.status !== 'pending_approval',
+    a => a.status !== 'working' && a.status !== 'pending_approval' && a.status !== 'missing',
   ).length;
   const total = subZone.assets?.length || 0;
 
-  // In inspection mode: count inspected
   const inspected = mode === 'inspection'
-    ? (subZone.assets || []).filter(a =>
-        (inspectionItems || []).find(i => (i.asset_id || i.assetId) === a.id),
-      ).length
+    ? (subZone.assets || []).filter(a => (inspectionItems || []).find(i => (i.asset_id || i.assetId) === a.id)).length
     : null;
+
+  const handleCanvasClick = (e) => {
+    if (actionMenuAsset) { setActionMenuAsset(null); return; }
+    if (!editMode || !onCanvasAreaClick) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(3, Math.min(97, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(3, Math.min(97, ((e.clientY - rect.top) / rect.height) * 100));
+    onCanvasAreaClick(subZone.id, Math.round(x * 10) / 10, Math.round(y * 10) / 10);
+  };
+
+  const handleDragOver = (e) => {
+    if (!editMode) return;
+    e.preventDefault();
+    onDragOver?.(e, subZone.id);
+  };
+
+  const handleDrop = (e) => {
+    if (!editMode) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(3, Math.min(97, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(3, Math.min(97, ((e.clientY - rect.top) / rect.height) * 100));
+    onDrop?.(e, subZone.id, Math.round(x * 10) / 10, Math.round(y * 10) / 10);
+  };
 
   return (
     <div style={{
-      borderRadius: 12,
-      border: '1px solid #e2e8f0',
-      background: '#fff',
-      overflow: 'hidden',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
+      borderRadius: 12, border: `1.5px solid ${editMode ? '#bae6fd' : '#e2e8f0'}`,
+      background: '#fff', overflow: 'hidden',
+      boxShadow: editMode ? '0 2px 8px rgba(8,145,178,0.1)' : '0 1px 3px rgba(0,0,0,0.07)',
+      transition: 'border-color 0.2s, box-shadow 0.2s',
     }}>
-      {/* Sub-zone header */}
+      {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 12px',
-        background: '#f8fafc',
+        padding: '7px 12px', background: editMode ? '#f0f9ff' : '#f8fafc',
         borderBottom: '1px solid #e2e8f0',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          {editMode && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1, marginRight: 2 }}>
+              <button
+                onClick={onMoveUp} disabled={isFirst}
+                style={{
+                  background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer',
+                  padding: 1, color: isFirst ? '#e2e8f0' : '#94a3b8', lineHeight: 1,
+                }}
+                title="Move sub-zone up"
+              ><ArrowUp size={12} /></button>
+              <button
+                onClick={onMoveDown} disabled={isLast}
+                style={{
+                  background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer',
+                  padding: 1, color: isLast ? '#e2e8f0' : '#94a3b8', lineHeight: 1,
+                }}
+                title="Move sub-zone down"
+              ><ArrowDown size={12} /></button>
+            </div>
+          )}
           <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{subZone.name}</span>
           {subZone.code && (
             <span style={{
@@ -259,72 +322,70 @@ export function SubZoneCanvas({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {mode === 'inspection' && inspected !== null && (
-            <span style={{ fontSize: 11, color: '#0891b2', fontWeight: 600 }}>
-              {inspected}/{total} done
-            </span>
+            <span style={{ fontSize: 11, color: '#0891b2', fontWeight: 600 }}>{inspected}/{total}</span>
           )}
           {mode === 'health' && (
             <>
               {working > 0 && <span style={{ fontSize: 10, background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: 10 }}>{working} ok</span>}
+              {defective > 0 && <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', padding: '1px 6px', borderRadius: 10 }}>{defective} defect</span>}
+              {missing > 0 && <span style={{ fontSize: 10, background: '#f1f5f9', color: '#94a3b8', padding: '1px 6px', borderRadius: 10 }}>{missing} missing</span>}
               {pending > 0 && <span style={{ fontSize: 10, background: '#fef9c3', color: '#a16207', padding: '1px 6px', borderRadius: 10 }}>{pending} pending</span>}
-              {defective > 0 && <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', padding: '1px 6px', borderRadius: 10 }}>{defective} defective</span>}
             </>
           )}
-          {onEditCanvas && (
-            <button
-              onClick={onEditCanvas}
-              data-testid={`edit-canvas-${subZone.id}`}
-              style={{
-                background: 'transparent', border: 'none', cursor: 'pointer',
-                color: '#94a3b8', padding: 2, borderRadius: 4,
-                display: 'flex', alignItems: 'center',
-              }}
-              title="Edit canvas layout"
-            >
-              <Pencil size={13} />
+          {editMode && onEditCanvas && (
+            <button onClick={onEditCanvas} title="Reposition assets (editor)"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2 }}>
+              <Pencil size={12} />
+            </button>
+          )}
+          {editMode && onDeleteSubZone && (
+            <button onClick={() => onDeleteSubZone(subZone.id)} title="Delete sub-zone"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', padding: 2 }}>
+              <Trash2 size={13} />
             </button>
           )}
         </div>
       </div>
 
-      {/* Canvas area (16:9 aspect ratio) */}
-      <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%' }}>
+      {/* Canvas (16:9) */}
+      <div
+        ref={canvasRef}
+        onClick={handleCanvasClick}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        style={{
+          position: 'relative', width: '100%', paddingTop: '56.25%',
+          cursor: editMode ? 'crosshair' : 'default',
+        }}
+      >
         <div style={{
           position: 'absolute', inset: 0,
-          backgroundImage: 'linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px)',
+          backgroundImage: 'linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px),linear-gradient(90deg,rgba(148,163,184,0.08) 1px,transparent 1px)',
           backgroundSize: '10% 10%',
         }}>
           {/* Center divider */}
           {subZone.has_divider && (
             subZone.divider_orientation === 'horizontal' ? (
-              <div style={{
-                position: 'absolute', left: 16, right: 16, top: '50%',
-                borderTop: '2px dashed rgba(100,116,139,0.4)',
-              }} />
+              <div style={{ position: 'absolute', left: 16, right: 16, top: '50%', borderTop: '2px dashed rgba(100,116,139,0.4)' }} />
             ) : (
-              <div style={{
-                position: 'absolute', top: 16, bottom: 16, left: '50%',
-                borderLeft: '2px dashed rgba(100,116,139,0.4)',
-              }} />
+              <div style={{ position: 'absolute', top: 16, bottom: 16, left: '50%', borderLeft: '2px dashed rgba(100,116,139,0.4)' }} />
             )
           )}
+          {/* Corner labels */}
+          <div style={{ position: 'absolute', top: 5, left: 7, fontSize: 9, color: '#94a3b8', fontFamily: 'monospace', letterSpacing: '0.06em', pointerEvents: 'none' }}>High End ←</div>
+          <div style={{ position: 'absolute', top: 5, right: 7, fontSize: 9, color: '#94a3b8', fontFamily: 'monospace', letterSpacing: '0.06em', pointerEvents: 'none' }}>→ Low End</div>
 
-          {/* HIGH / LOW end labels */}
-          <div style={{
-            position: 'absolute', top: 6, left: 8,
-            fontSize: 9, color: '#94a3b8', fontFamily: 'monospace',
-            letterSpacing: '0.08em', textTransform: 'uppercase',
-            pointerEvents: 'none',
-          }}>High End ←</div>
-          <div style={{
-            position: 'absolute', top: 6, right: 8,
-            fontSize: 9, color: '#94a3b8', fontFamily: 'monospace',
-            letterSpacing: '0.08em', textTransform: 'uppercase',
-            pointerEvents: 'none',
-          }}>→ Low End</div>
+          {/* Edit mode hint */}
+          {editMode && positioned.length === 0 && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+              <span style={{ fontSize: 11, color: '#bae6fd', background: 'rgba(8,145,178,0.06)', padding: '4px 12px', borderRadius: 20, border: '1px dashed #bae6fd' }}>
+                Select a type from palette, then click here to place
+              </span>
+            </div>
+          )}
 
-          {/* Positioned assets */}
-          {positionedAssets.map(asset => (
+          {/* Assets */}
+          {positioned.map(asset => (
             <AssetNode
               key={asset.id}
               asset={asset}
@@ -332,69 +393,51 @@ export function SubZoneCanvas({
               inspectionItems={inspectionItems}
               onAssetClick={onAssetClick}
               dimmed={isDimmed(asset)}
+              editMode={editMode}
+              onActionMenu={(a) => setActionMenuAsset(actionMenuAsset?.id === a.id ? null : a)}
             />
           ))}
 
-          {/* Landmark pins */}
-          {(subZone.landmarks || []).map(lm => (
-            <LandmarkPin key={lm.id} lm={lm} />
-          ))}
-
-          {/* Empty state */}
-          {positionedAssets.length === 0 && (
-            <div style={{
-              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              color: '#cbd5e1', gap: 6,
-            }}>
-              <Info size={22} />
-              <span style={{ fontSize: 11 }}>No assets positioned yet</span>
-              {onEditCanvas && (
-                <button
-                  onClick={onEditCanvas}
-                  style={{
-                    fontSize: 11, color: '#0891b2', background: 'none', border: 'none',
-                    cursor: 'pointer', textDecoration: 'underline',
-                  }}
-                >
-                  Open canvas editor to place assets
-                </button>
-              )}
-            </div>
+          {/* Action menu */}
+          {actionMenuAsset && editMode && (
+            <AssetActionMenu
+              asset={actionMenuAsset}
+              anchorX={actionMenuAsset.canvas_x || 50}
+              anchorY={actionMenuAsset.canvas_y || 50}
+              onEdit={() => onAssetAction?.(actionMenuAsset, subZone.id, 'edit')}
+              onDelete={() => onAssetAction?.(actionMenuAsset, subZone.id, 'delete')}
+              onToggleMissing={() => onAssetAction?.(actionMenuAsset, subZone.id, 'toggle_missing')}
+              onMove={() => onAssetAction?.(actionMenuAsset, subZone.id, 'move')}
+              onClose={() => setActionMenuAsset(null)}
+            />
           )}
+
+          {/* Landmarks */}
+          {(subZone.landmarks || []).map(lm => <LandmarkPin key={lm.id} lm={lm} />)}
         </div>
       </div>
 
-      {/* Unpositioned assets strip */}
-      {unpositionedAssets.length > 0 && (
-        <div style={{
-          padding: '6px 10px',
-          borderTop: '1px solid #f1f5f9',
-          background: '#fafafa',
-        }}>
-          <div style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-            Not positioned ({unpositionedAssets.length})
+      {/* Unpositioned strip */}
+      {unpositioned.length > 0 && (
+        <div style={{ padding: '5px 10px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
+          <div style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+            Not positioned ({unpositioned.length})
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {unpositionedAssets.map(asset => {
-              const Icon = ICON_MAP[asset.asset_type_icon_hint] || Circle;
-              const style = mode === 'inspection'
-                ? inspectionStyle(asset.id, inspectionItems)
-                : healthStyle(asset);
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {unpositioned.map(asset => {
+              const iconKey = asset.asset_type_icon_hint || getIconHint(asset.asset_type_name);
+              const Icon = ICON_MAP[iconKey] || ICON_MAP.default;
+              const style = mode === 'inspection' ? inspectionStyle(asset.id, inspectionItems) : healthStyle(asset);
               return (
                 <button
                   key={asset.id}
-                  onClick={() => onAssetClick && onAssetClick(asset)}
+                  onClick={(e) => { e.stopPropagation(); editMode ? onAssetAction?.(asset, subZone.id, 'edit') : onAssetClick?.(asset); }}
                   data-testid={`blueprint-unpositioned-${asset.id}`}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    padding: '3px 8px',
-                    borderRadius: 20,
-                    border: `1.5px solid ${style.border}`,
-                    background: style.bg,
-                    color: style.text,
-                    fontSize: 10, fontWeight: 500,
-                    cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 4, padding: '2px 7px',
+                    borderRadius: 20, border: `1.5px solid ${style.border}`,
+                    background: style.isMissing ? '#fff' : style.bg, color: style.text,
+                    fontSize: 10, fontWeight: 500, cursor: 'pointer',
                   }}
                 >
                   <Icon size={10} />
@@ -411,21 +454,19 @@ export function SubZoneCanvas({
 
 // ── Full location blueprint ───────────────────────────────────────────────────
 export default function PlatformBlueprint({
-  locationData,
-  mode = 'health',
-  inspectionItems,
-  onAssetClick,
-  filters,
-  onEditCanvas,
+  locationData, mode = 'health',
+  inspectionItems, onAssetClick, filters,
+  editMode = false, onEditCanvas,
+  onAssetAction, onCanvasAreaClick,
+  onDragOver, onDrop,
+  onMoveSubZone, onDeleteSubZone, onAddSubZone,
 }) {
   if (!locationData) return null;
-
   const { sub_zones = [], unzoned_assets = [] } = locationData;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Named sub-zones */}
-      {sub_zones.map(sz => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }} id="platform-blueprint-root">
+      {sub_zones.map((sz, idx) => (
         <SubZoneCanvas
           key={sz.id}
           subZone={sz}
@@ -433,36 +474,64 @@ export default function PlatformBlueprint({
           inspectionItems={inspectionItems}
           onAssetClick={onAssetClick}
           filters={filters}
+          editMode={editMode}
           onEditCanvas={onEditCanvas ? () => onEditCanvas(sz) : undefined}
+          onAssetAction={onAssetAction}
+          onCanvasAreaClick={onCanvasAreaClick}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          isFirst={idx === 0}
+          isLast={idx === sub_zones.length - 1}
+          onMoveUp={() => onMoveSubZone?.(sz, 'up', idx)}
+          onMoveDown={() => onMoveSubZone?.(sz, 'down', idx)}
+          onDeleteSubZone={onDeleteSubZone}
+          onAddSubZone={onAddSubZone}
         />
       ))}
 
-      {/* Unzoned assets (no sub-zone assigned) */}
       {unzoned_assets.length > 0 && (
         <SubZoneCanvas
-          subZone={{
-            id: '__unzoned__',
-            name: 'Unassigned to Sub-Zone',
-            code: '',
-            has_divider: false,
-            assets: unzoned_assets,
-            landmarks: [],
-          }}
+          subZone={{ id: '__unzoned__', name: 'Unassigned to Sub-Zone', code: '', has_divider: false, assets: unzoned_assets, landmarks: [] }}
           mode={mode}
           inspectionItems={inspectionItems}
           onAssetClick={onAssetClick}
           filters={filters}
+          editMode={false}
         />
       )}
 
       {sub_zones.length === 0 && unzoned_assets.length === 0 && (
-        <div style={{
-          textAlign: 'center', padding: '48px 16px', color: '#94a3b8',
-        }}>
+        <div style={{ textAlign: 'center', padding: '48px 16px', color: '#94a3b8' }}>
           <Info size={32} style={{ margin: '0 auto 8px' }} />
-          <div style={{ fontWeight: 500 }}>No assets in this location</div>
-          <div style={{ fontSize: 12, marginTop: 4 }}>Add sub-zones and assets in the Admin Panel</div>
+          <div style={{ fontWeight: 500 }}>No sub-zones yet for this location</div>
+          {editMode && onAddSubZone && (
+            <button
+              onClick={() => onAddSubZone(locationData?.id)}
+              style={{ marginTop: 10, fontSize: 12, color: '#0891b2', background: 'none', border: '1px dashed #0891b2', borderRadius: 8, padding: '6px 16px', cursor: 'pointer' }}
+            >
+              + Add First Sub-Zone
+            </button>
+          )}
         </div>
+      )}
+
+      {/* Add Sub-Zone button (edit mode) */}
+      {editMode && sub_zones.length > 0 && onAddSubZone && (
+        <button
+          onClick={() => onAddSubZone(locationData?.id)}
+          data-testid="add-subzone-btn"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            padding: '8px 20px', borderRadius: 10,
+            border: '1.5px dashed #0891b2', background: 'rgba(8,145,178,0.04)',
+            color: '#0891b2', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+            transition: 'background 0.2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(8,145,178,0.09)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(8,145,178,0.04)'}
+        >
+          <Plus size={14} /> Add Sub-Zone
+        </button>
       )}
     </div>
   );

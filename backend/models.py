@@ -177,6 +177,7 @@ class AssetTypeCreate(BaseModel):
     checklist: List[ChecklistItem] = []
     description: Optional[str] = None
     tracking_mode: str = "individual"  # "individual" | "grouped"
+    icon_key: Optional[str] = None    # e.g. "fan", "light", "cib" — overrides auto-detect
 
 
 class AssetTypeResponse(BaseModel):
