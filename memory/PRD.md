@@ -18,6 +18,17 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 
 ## What's Been Implemented (with dates)
 
+### Phase 5.3: Canvas-First Asset Creation (Feb 2026)
+- **AssetTypePalette revamp** — sidebar now has a search box, multi-select department category chips (with counts), and a draggable icon grid. Chips and search are AND-combined. `data-testid`: `palette-search`, `palette-dept-chip-{id}`, `palette-type-{id}`, `palette-clear-filters`.
+- **AssetDropPopover** (new component) — replaces the old AssetQuickForm. Pre-fills a server-generated asset code via `POST /api/assets/preview-code`, with editable input, optional description, and a `total_count` field for grouped types. Enter to confirm, Escape to cancel.
+- **Server-generated asset codes** — atomic, deterministic pattern `{ZONE}-{DIV}-{STN}-{LOC}-[{SZ}-]{TYPE}-{seq:04d}`. New `asset_code_counters` collection holds per-bucket sequences via `findOneAndUpdate $inc`.
+- **`POST /api/assets/auto-create`** — canvas-first creation endpoint. Auto-resolves hierarchy (sub_zone → location → station → division → zone, dept from asset_type) and generates the code. Accepts `asset_number_override` for custom conventions; supports grouped (requires `total_count`); supports station-level "unassigned to sub-zone" creation.
+- **`POST /api/assets/preview-code`** — non-destructive preview of the next code.
+- **Department now strictly required on `asset_types`** — `POST/PUT /api/asset-types` reject empty/missing `department_id` with 400. Admin form disables Submit until a department is chosen and shows an inline warning (`data-testid="at-dept-required-warn"`).
+- **Startup migration** (`_migrate_asset_types_require_dept`) — hard-deletes any legacy asset_types missing `department_id` AND cascade-deletes their assets (option A per user decision).
+- **Asset delete confirmation** — `window.confirm` replaced with shadcn `AlertDialog` (`data-testid`: `delete-asset-alert`, `delete-asset-confirm`, `delete-asset-cancel`) showing the asset code and explicit warning about cascade deletion.
+- **Tested**: `/app/test_reports/iteration_35.json` — 13/13 backend pytest pass, frontend smoke verified (palette filters, popover open with pre-filled code, Escape dismissal).
+
 ### Phase 5.2: Platform Vision 2.0 — Interactive Canvas CRUD (Feb 2026)
 - **Asset Type icon picker** — admin selects icon_key from 18 presets (fan, light, tap, cib, wifi, seat, fire, camera, clock, ac, toilet, door, tv, phone, sign, bin, lock, safety, default). Auto-detected from name if blank. `icon_key` stored on asset_types.
 - **AssetTypePalette** — right sidebar in edit mode showing all asset types grouped by department, drag-to-canvas or click-to-select.
