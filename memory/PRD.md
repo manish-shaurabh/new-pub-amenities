@@ -674,3 +674,40 @@ A 68-check cross-system audit was run covering 17 test phases with variable-date
 - Sub-zone drill level in Health Explorer
 
 
+
+## Sprint G — Sub-Zone Tagging on Individual Assets + Bulk Assign (Feb 17, 2026)
+
+**Goal**: Let admins/inspectors organize existing INDIVIDUAL assets into sub-zones (optional) so inspection rounds can be navigated/filtered by sub-zone within a location.
+
+### Backend
+- `POST /api/assets` now persists `sub_zone_id` for individual assets too (was previously dropped). Validates sub_zone.location_id matches the asset's location_id.
+- `PUT /api/assets/{id}` allows setting/clearing `sub_zone_id` on individual assets (null clears).
+- **NEW** `PATCH /api/assets/bulk/sub-zone` — body `{ asset_ids: [str], sub_zone_id: str | null }`. Validates all assets share the same `location_id`, sub_zone belongs to that location, skips grouped assets (returns `skipped_grouped` count). Response: `{ matched, modified, skipped_grouped }`.
+- `GET /api/assets` accepts new `sub_zone_id` filter query param.
+
+### Frontend — AssetsPage
+- Cascade filters: `Station → Location → Sub-Zone` chips with auto-filtering
+- **Bulk assign toolbar** — sticky pill UI directly below filters with: badge showing count, sub-zone dropdown (auto-filtered to the selected assets' shared location), Assign / Clear / Cancel buttons. When location has no sub-zones, friendly empty state: "No sub-zones exist for this location · create one in Admin".
+- Per-row checkboxes in bulk mode (`asset-bulk-check-{id}`). Grouped assets are disabled with tooltip.
+- Selecting an asset from a different location shows a toast error (client-side guard before any API call).
+- Sub-zone badge (`asset-subzone-badge-{id}`) on every tagged row.
+- Edit Asset dialog gets an optional "Sub-Zone" select for individual assets, prefilled with the asset's current sub-zone.
+
+### Frontend — InspectionPage
+- **Sub-Zone filter chips** row in the top toolbar (`subzone-filter-row`): `All · {sub-zones present in station} · Unassigned`. Active chip = teal pill.
+- **3-tier hierarchy** in the right asset panel: Location → Sub-Zone bucket → Asset Type sub-group → Asset row. Each bucket has its own header (teal-tinted for assigned, slate-tinted for Unassigned) with per-bucket "Select all".
+- Smart fallback: when a location has assets only in ONE bucket (all same sub-zone or all unassigned), the bucket header is hidden — clean flat layout.
+
+### Test Coverage (iteration_32)
+- Backend pytest: 9/9 new pass + 11/11 iter31 regression pass = 20/20 total
+- Frontend Playwright: all 20+ testids verified, including cascade filters, sticky toolbar visibility, grouped-asset checkbox disable state, edit-form prefill, and 3-tier nested bucket rendering.
+
+### Cleanup
+- Deleted 6 stale TEST_SZ_* sub-zones (and their orphan test grouped assets) created during iter31 probes.
+
+### Pending / Future
+- Phase 4 migration helper "Group N selected individuals into 1 grouped asset" (from Sprint F backlog)
+- Health Explorer drill: add Sub-Zone as a 4th level under Station (Division → Station → Sub-Zone → Asset)
+- QR Code generation + Scan landing flow
+
+
