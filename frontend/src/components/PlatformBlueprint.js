@@ -42,6 +42,7 @@ function inspectionOverlayIcon(assetId, items) {
 function AssetActionMenu({ asset, anchorX, anchorY, onEdit, onDelete, onToggleMissing, onMove, onClose }) {
   return (
     <div
+      data-testid="asset-action-menu"
       style={{
         position: 'absolute',
         left: `calc(${anchorX}% + 26px)`,
@@ -61,13 +62,14 @@ function AssetActionMenu({ asset, anchorX, anchorY, onEdit, onDelete, onToggleMi
         <div style={{ fontSize: 10, color: '#94a3b8' }}>{asset.asset_type_name}</div>
       </div>
       {[
-        { icon: Pencil, label: 'Edit Details', action: onEdit, color: '#334155' },
-        { icon: Move, label: 'Reposition', action: onMove, color: '#334155' },
-        { icon: X, label: asset.status === 'missing' ? 'Mark Working' : 'Mark as Missing', action: onToggleMissing, color: '#f59e0b' },
-        { icon: Trash2, label: 'Delete Asset', action: onDelete, color: '#ef4444' },
-      ].map(({ icon: Icon, label, action, color }) => (
+        { icon: Pencil, label: 'Edit Details', action: onEdit, color: '#334155', testKey: 'edit' },
+        { icon: Move, label: 'Reposition', action: onMove, color: '#334155', testKey: 'reposition' },
+        { icon: X, label: asset.status === 'missing' ? 'Mark Working' : 'Mark as Missing', action: onToggleMissing, color: '#f59e0b', testKey: 'mark-missing' },
+        { icon: Trash2, label: 'Delete Asset', action: onDelete, color: '#ef4444', testKey: 'delete' },
+      ].map(({ icon: Icon, label, action, color, testKey }) => (
         <button
           key={label}
+          data-testid={`asset-action-${testKey}`}
           onClick={() => { action?.(); onClose(); }}
           style={{
             display: 'flex', alignItems: 'center', gap: 8,

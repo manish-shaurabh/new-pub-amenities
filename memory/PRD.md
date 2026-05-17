@@ -18,6 +18,17 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 
 ## What's Been Implemented (with dates)
 
+### Phase 5.2: Platform Vision 2.0 — Interactive Canvas CRUD (Feb 2026)
+- **Asset Type icon picker** — admin selects icon_key from 18 presets (fan, light, tap, cib, wifi, seat, fire, camera, clock, ac, toilet, door, tv, phone, sign, bin, lock, safety, default). Auto-detected from name if blank. `icon_key` stored on asset_types.
+- **AssetTypePalette** — right sidebar in edit mode showing all asset types grouped by department, drag-to-canvas or click-to-select.
+- **Inline asset creation from canvas** — select/drop asset type → click canvas → mini form (asset_number, description) → asset created at exact (canvas_x, canvas_y) with `POST /api/assets`.
+- **Per-asset action menu** (edit mode) — Edit Details / Reposition / Mark Missing / Delete with `data-testid="asset-action-{edit|reposition|mark-missing|delete}"`.
+- **PATCH /api/assets/{id}/status** — toggles status between `working` and `missing` (new endpoint). Missing assets render as gray-bordered X on canvas.
+- **Sub-zone management from canvas** — add / reorder (↑↓) / delete (with force-delete-on-conflict confirmation showing asset count) / configure center divider (vertical/horizontal).
+- **Location quick-create** — "+ Location" button in edit-mode header.
+- **PDF Export** — `Download` button generates A4 landscape PDF via html2canvas + jsPDF capturing the full PlatformBlueprint root, with station+location header and IST timestamp.
+- **Tested**: `/app/test_reports/iteration_34.json` — backend 9/9 pytest, frontend smoke 100% (palette, edit mode, action menu, PDF download, admin icon picker).
+
 ### Phase 1–3: Core System (pre-Jun 2025)
 - Full FARM stack auth with JWT, role-based access
 - Asset Registry CRUD + bulk operations
@@ -94,7 +105,6 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 - Real SMS/Telegram notification provider
 - File Storage migration to S3/Azure Blob for asset photos
 - Canvas position import from photo upload (AI-assisted placement)
-- Export Platform Blueprint as PDF
 - Multi-platform stitching view
 
 ## Test Credentials
@@ -109,4 +119,5 @@ See `/app/memory/test_credentials.md`
 - `GET /api/users/station-staff` — personnel map
 
 ## Test Reports
-- `/app/test_reports/iteration_33.json` — latest (30/30 backend, 100% frontend)
+- `/app/test_reports/iteration_34.json` — Phase 5.2 (Platform Vision 2.0) — 9/9 backend, 100% frontend smoke
+- `/app/test_reports/iteration_33.json` — Phase 5.1 (30/30 backend, 100% frontend)
