@@ -14,6 +14,7 @@ from database import (now_ist,
     asset_types_collection, assets_collection, users_collection,
     inspections_collection, orange_list_collection, notifications_collection,
     schedules_collection, audit_log_collection, divisions_collection,
+    zones_collection,
 )
 from models import (
     DepartmentCreate, StationCreate, LocationCreate,
@@ -148,35 +149,62 @@ async def list_supervisors_for_assignment(
 
 @router.get("/api/users/station-staff")
 async def get_station_wise_staff():
-    """Get station-wise view of all staff (Supervisors, Reporting Officers, Approving Supervisors)"""
+    """Station-wise view of staff (Supervisors, Reporting Officers, Approving
+    Supervisors) for the Admin → Personnel Map.
+
+    Enriches each row with `zone_id/zone_name` and `division_id/division_name`
+    so the Personnel Map can show the parent hierarchy at-a-glance. Strips
+    `password` hashes from every nested user dict to avoid credential leakage.
+    """
     stations = await stations_collection.find({}).to_list(1000)
     users = await users_collection.find({"role": {"$in": ["supervisor", "reporting_officer", "approving_supervisor"]}}).to_list(1000)
-    
-    # Build station-wise staff map
+
+    # Pre-load division + zone maps (small collections, cheap full scans)
+    divisions = await divisions_collection.find({}).to_list(1000)
+    zones = await zones_collection.find({}).to_list(1000)
+    div_by_id = {str(d["_id"]): d for d in divisions}
+    zone_by_id = {str(z["_id"]): z for z in zones}
+
+    def _strip(u):
+        if not u:
+            return None
+        clean = serialize_doc({k: v for k, v in u.items() if k != "password"})
+        return clean
+
     station_staff = []
     for station in stations:
         station_id = str(station["_id"])
-        
+
+        # Parent chain — station → division → zone
+        div_id = station.get("division_id") or None
+        division = div_by_id.get(str(div_id)) if div_id else None
+        zone_id = (division.get("zone_id") if division else None) or station.get("zone_id")
+        zone = zone_by_id.get(str(zone_id)) if zone_id else None
+
         # Find approving supervisor for this station
         approving_supervisor = None
         if station.get("approving_supervisor_id"):
             approving_supervisor = next((u for u in users if str(u["_id"]) == station["approving_supervisor_id"]), None)
-        
+
         # Find supervisors assigned to this station
         supervisors = [u for u in users if u["role"] == "supervisor" and station_id in u.get("assigned_stations", [])]
-        
+
         # Find reporting officers for this station's department (through supervisors)
         ro_ids = set(s.get("reports_to_id") for s in supervisors if s.get("reports_to_id"))
         reporting_officers = [u for u in users if str(u["_id"]) in ro_ids]
-        
+
         station_staff.append({
             "station_id": station_id,
             "station_name": station["name"],
-            "approving_supervisor": serialize_doc(approving_supervisor) if approving_supervisor else None,
-            "supervisors": [serialize_doc(s) for s in supervisors],
-            "reporting_officers": [serialize_doc(ro) for ro in reporting_officers]
+            "division_id": str(div_id) if div_id else None,
+            "division_name": division.get("name") if division else None,
+            "zone_id": str(zone_id) if zone_id else None,
+            "zone_name": zone.get("name") if zone else None,
+            "approving_supervisor": _strip(approving_supervisor),
+            "supervisors": [_strip(s) for s in supervisors],
+            "reporting_officers": [_strip(ro) for ro in reporting_officers],
         })
-    
+
     return station_staff
 
 
