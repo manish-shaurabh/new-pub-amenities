@@ -16,7 +16,7 @@ from datetime import datetime
 import pytest
 import requests
 
-BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://asset-canvas.preview.emergentagent.com").rstrip("/")
+BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://railway-asset-ops.preview.emergentagent.com").rstrip("/")
 
 SA_CREDS = {"employee_id": "SA001", "password": "admin123"}
 SUP_CREDS = {"employee_id": "SSE001", "password": "admin123"}
