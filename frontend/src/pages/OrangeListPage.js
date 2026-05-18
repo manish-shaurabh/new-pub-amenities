@@ -78,7 +78,10 @@ export default function OrangeListPage() {
           if (!r.ok) return;
           const d = await r.json();
           updates[it.asset_id] = { eta_hrs: d.eta_hrs, source: d.eta_source };
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          // ETA is a best-effort enrichment — log but do not block list rendering.
+          console.warn('[OrangeList] eta fetch failed for', it.asset_id, e);
+        }
       }));
       if (!cancelled && Object.keys(updates).length) {
         setEtaCache(prev => ({ ...prev, ...updates }));

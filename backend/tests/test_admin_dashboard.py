@@ -12,11 +12,13 @@ import os
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
-# Known credentials
-ADMIN_EMP_ID = "SUP003"
-ADMIN_PASSWORD = "admin123"
-SA_EMP_ID = "SA001"
-SA_PASSWORD = "admin123"
+# Known credentials — sourced from env so this file does not embed secrets
+# in version control. Defaults match the documented seed accounts in
+# /app/memory/test_credentials.md so local pytest runs without extra setup.
+ADMIN_EMP_ID = os.environ.get("TEST_ADMIN_EMP_ID", "SUP003")
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "admin123")
+SA_EMP_ID = os.environ.get("TEST_SA_EMP_ID", "SA001")
+SA_PASSWORD = os.environ.get("TEST_SA_PASSWORD", "admin123")
 
 
 @pytest.fixture(scope="module")

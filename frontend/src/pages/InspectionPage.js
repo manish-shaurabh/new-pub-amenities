@@ -658,7 +658,11 @@ export default function InspectionPage() {
       const res = await stationCanvasAPI.get({ location_id: locationId });
       const locs = res.data?.locations || [];
       setCanvasData(locs.find(l => l.id === locationId) || locs[0] || null);
-    } catch (_) {}
+    } catch (e) {
+      // Canvas data is optional in inspection flow — log for diagnostics
+      // but never block the user from inspecting via the list view.
+      console.warn('[Inspection] loadCanvasData failed', e);
+    }
   }, []);
 
   // Auto-select first available location so the map renders immediately
@@ -870,7 +874,10 @@ export default function InspectionPage() {
       });
       try {
         openInspectionReport({ inspection: created, asset_lookup: lookup, station_name: stations.find(s => s._id === selectedStation)?.name, app_name: 'Asset Track Rail' });
-      } catch (_) {}
+      } catch (e) {
+        // Report popup failure must not abort the post-submit reset flow.
+        console.warn('[Inspection] openInspectionReport failed', e);
+      }
       // Reset form
       setInspectionItems([]);
       setParticipants([]);

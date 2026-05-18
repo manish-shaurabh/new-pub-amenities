@@ -184,13 +184,20 @@ ${itemsHtml}
 
 export function openInspectionReport(payload) {
   const html = buildReportHtml(payload);
-  const w = window.open('', '_blank');
+  // Use a Blob URL instead of document.write — avoids the
+  // document.write() XSS surface flagged by static analysis and is
+  // the modern, lint-clean way to open generated HTML in a new tab.
+  // (escapeHtml is already applied to every user-supplied field in
+  //  buildReportHtml — but document.write triggers the linter warning
+  //  unconditionally, so we switch to Blob+URL.)
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
   if (!w) {
+    URL.revokeObjectURL(url);
     alert('Please allow pop-ups to view the report.');
     return;
   }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  // Slight delay to ensure rendering before print prompt (manual via toolbar)
+  // Free the blob a minute after open — enough for the new tab to load.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
