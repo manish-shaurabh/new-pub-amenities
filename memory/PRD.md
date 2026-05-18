@@ -11,12 +11,23 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 
 ## DB Collections
 - `users`, `stations`, `locations`, `departments`, `asset_types`, `assets`
-- `sub_zones`: `{ _id, location_id, station_id, name, code, order, has_divider, divider_orientation }`
+- `sub_zones`: `{ _id, location_id, station_id, name, code, order, has_divider, divider_orientation, start_pillar, end_pillar }`  *(start_pillar/end_pillar added Feb 2026)*
 - `canvas_landmarks`: `{ _id, sub_zone_id, location_id, station_id, label, x, y, landmark_type }`
 - `assets`: Added `sub_zone_id`, `tracking_mode` ('individual' | 'grouped'), `total_count`, `needs_repair_count`, `not_working_count`, `canvas_x`, `canvas_y`
-- `inspections`, `orange_list`, `notifications`, `schedules`, `remarks`
+- `inspections`: Added `sub_zone_health: [{sub_zone_id, responses, photos, remarks}]` (Feb 2026)
+- `orange_list`, `notifications`, `schedules`, `remarks`
 
 ## What's Been Implemented (with dates)
+
+### Phase 5.5: Mobile Inspection Redesign — Canvas-First Bundle (Feb 2026)
+- **Compact `MobileCanvasHeader`** (`/app/frontend/src/components/MobileCanvasHeader.js`) — single sticky-row header replacing the bulky chip grid on Platform Vision. Includes: station select, location popover with inline search, filter popover (Department + Asset Type), and More menu (Refresh / PDF / Edit Canvas). Applied to both `StationCanvasPage` and used on mobile + desktop. `data-testid`: `mobile-canvas-header`, `mch-location-trigger`, `mch-location-popover`, `mch-filter-trigger`, `mch-more-trigger`, `mch-pdf-btn`, `mch-edit-toggle`.
+- **Sub-zone pillar markers** — added `start_pillar` and `end_pillar` (string) fields to `sub_zones`. Rendered at canvas edges in `PlatformBlueprint` (left = start, right = end). Falls back to generic "High End ← / → Low End" when not set. New form inputs `subzone-start-pillar` and `subzone-end-pillar` in the SubZoneForm dialog.
+- **Map-default Inspection** — `InspectionPage` now defaults `viewMode = 'map'` and auto-selects the first location with assets, so inspectors land directly on the visual blueprint.
+- **In-canvas filter dropdowns** — Inspection map view exposes Department + Asset Type selects above the blueprint (`map-dept-filter`, `map-type-filter`). Non-matching assets are dimmed to 20% opacity (existing `filters` plumbing in PlatformBlueprint).
+- **Responsive icon sizing** — `PlatformBlueprint.SubZoneCanvas` uses a `ResizeObserver` to scale asset node size between 24–46px based on rendered canvas width AND asset density (≥20 assets → smaller). Prevents icon overlap on narrow mobile canvases.
+- **Per-sub-zone Shed Health card** (`/app/frontend/src/components/SubZoneHealthCard.js`) — new collapsible card rendered below each sub-zone canvas in inspection map view. Four fixed questions: shed_roof_condition, cleanliness, lighting, water_seepage. Each answer = OK / Not OK. **Photo is MANDATORY when answer is "not_ok"** (validated client-side before submit). Optional remarks. `data-testid`: `subzone-health-card-{id}`, `subzone-health-toggle-{id}`, `shed-{key}-ok-{szId}`, `shed-{key}-notok-{szId}`, `shed-{key}-photo-btn-{szId}`, `shed-remarks-{szId}`.
+- **Backend**: `POST /api/inspections` now accepts an optional `sub_zone_health` array which is persisted as-is (backward compatible — defaults to `[]`). `station-canvas` endpoint surfaces pillar fields.
+- **Tested**: `/app/test_reports/iteration_36.json` — backend pytest 7/7 PASS (pillar create/get/update/clear, station-canvas surfacing, inspection w/ & w/o sub_zone_health). Frontend smoke verified. Regression suite at `/app/backend/tests/test_mobile_inspection_iter36.py`.
 
 ### Phase 5.4: Full Lucide Icon Library Picker (Feb 2026)
 - **3,590 icons** now selectable on every Asset Type — the old 18-preset library is kept as a "Recommended" row pinned at the top of the picker.
