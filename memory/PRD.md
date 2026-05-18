@@ -18,6 +18,13 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 
 ## What's Been Implemented (with dates)
 
+### Phase 5.4: Full Lucide Icon Library Picker (Feb 2026)
+- **3,590 icons** now selectable on every Asset Type — the old 18-preset library is kept as a "Recommended" row pinned at the top of the picker.
+- **New `IconPicker` component** (`/app/frontend/src/components/IconPicker.js`) — searchable grid with: live search across the full Lucide library, paginated "Show more" loader (120 per page), inline "Selected" badge, and a "Reset (auto-detect from name)" link.
+- **`resolveIcon(key)` helper** in `/app/frontend/src/lib/assetIcons.js` — single resolver used by every renderer (PlatformBlueprint, CanvasEditor, AssetTypePalette, AssetDropPopover) that accepts BOTH the legacy short keys (`"fan"`, `"light"`, …) and PascalCase Lucide names (`"Train"`, `"Hammer"`, …) and falls back to `Circle`.
+- **Backward-compatible** — all existing `icon_key` values continue rendering unchanged; new picks just store the PascalCase name string.
+- **Sub-zone reorder fix** also shipped this session: new `PATCH /api/sub-zones/reorder` endpoint, contiguous order on create, startup migration to heal legacy ties.
+
 ### Phase 5.3: Canvas-First Asset Creation (Feb 2026)
 - **AssetTypePalette revamp** — sidebar now has a search box, multi-select department category chips (with counts), and a draggable icon grid. Chips and search are AND-combined. `data-testid`: `palette-search`, `palette-dept-chip-{id}`, `palette-type-{id}`, `palette-clear-filters`.
 - **AssetDropPopover** (new component) — replaces the old AssetQuickForm. Pre-fills a server-generated asset code via `POST /api/assets/preview-code`, with editable input, optional description, and a `total_count` field for grouped types. Enter to confirm, Escape to cancel.

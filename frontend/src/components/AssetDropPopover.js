@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { X, Hash, AlertCircle, MapPin } from 'lucide-react';
-import { ICON_MAP, getIconHint } from '../lib/assetIcons';
+import { resolveIcon, getIconHint } from '../lib/assetIcons';
 import { Circle } from 'lucide-react';
 import { assetsAPI } from '../lib/api';
 import { toast } from 'sonner';
@@ -34,7 +34,7 @@ export default function AssetDropPopover({
 
   const isGrouped = (assetType?.tracking_mode || 'individual') === 'grouped';
   const iconKey = assetType?.icon_key || getIconHint(assetType?.name || '');
-  const Icon = ICON_MAP[iconKey] || Circle;
+  const Icon = resolveIcon(iconKey);
 
   // Fetch the preview code on mount
   useEffect(() => {

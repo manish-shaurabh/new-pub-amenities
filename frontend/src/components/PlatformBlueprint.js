@@ -11,7 +11,7 @@ import {
   CheckCircle2, XCircle, Wrench, Info, Pencil,
   ArrowUp, ArrowDown, Plus, Trash2, Move, X,
 } from 'lucide-react';
-import { ICON_MAP, getIconHint } from '../lib/assetIcons';
+import { resolveIcon, getIconHint } from '../lib/assetIcons';
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
 export function healthStyle(asset) {
@@ -96,7 +96,7 @@ function AssetNode({
 }) {
   const [tipVisible, setTipVisible] = useState(false);
   const iconKey = asset.asset_type_icon_hint || getIconHint(asset.asset_type_name);
-  const Icon = ICON_MAP[iconKey] || ICON_MAP.default;
+  const Icon = resolveIcon(iconKey);
   const OverlayIcon = mode === 'inspection' ? inspectionOverlayIcon(asset.id, inspectionItems) : null;
   const style = mode === 'inspection'
     ? inspectionStyle(asset.id, inspectionItems)
@@ -428,7 +428,7 @@ export function SubZoneCanvas({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {unpositioned.map(asset => {
               const iconKey = asset.asset_type_icon_hint || getIconHint(asset.asset_type_name);
-              const Icon = ICON_MAP[iconKey] || ICON_MAP.default;
+              const Icon = resolveIcon(iconKey);
               const style = mode === 'inspection' ? inspectionStyle(asset.id, inspectionItems) : healthStyle(asset);
               return (
                 <button

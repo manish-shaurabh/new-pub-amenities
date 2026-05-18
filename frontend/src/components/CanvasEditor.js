@@ -10,21 +10,18 @@
  *   - Hover a placed asset → X button appears to remove its position
  */
 import { useState, useRef, useCallback } from 'react';
-import {
-  Wind, Lightbulb, Droplets, Zap, Wifi, Users, Circle,
-  Flame, Camera, Clock, AirVent, Plus, X, Save, RotateCcw,
-} from 'lucide-react';
+import { Plus, X, Save, RotateCcw } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { toast } from 'sonner';
 import { assetsAPI, canvasLandmarksAPI } from '../lib/api';
-import { ICON_MAP } from '../lib/assetIcons';
+import { resolveIcon } from '../lib/assetIcons';
 
 // ── Small draggable asset icon on the canvas ──────────────────────────────────
 function PlacedAsset({ asset, x, y, selected, onPointerDown, onRemove }) {
   const [hovered, setHovered] = useState(false);
-  const Icon = ICON_MAP[asset.asset_type_icon_hint] || Circle;
+  const Icon = resolveIcon(asset.asset_type_icon_hint);
 
   const statusBorder = {
     working: '#22c55e', defective: '#f97316',
@@ -383,7 +380,7 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
             {unpositionedAssets.length === 0 ? (
               <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', padding: '8px 0' }}>All placed</div>
             ) : unpositionedAssets.map(asset => {
-              const Icon = ICON_MAP[asset.asset_type_icon_hint] || Circle;
+              const Icon = resolveIcon(asset.asset_type_icon_hint);
               const isSelected = selectedForPlace === asset.id;
               return (
                 <div

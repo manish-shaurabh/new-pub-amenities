@@ -9,7 +9,7 @@
  */
 import { useMemo, useState } from 'react';
 import { Search, Filter, X } from 'lucide-react';
-import { ICON_MAP, getIconHint } from '../lib/assetIcons';
+import { resolveIcon, getIconHint } from '../lib/assetIcons';
 import { Circle } from 'lucide-react';
 
 export default function AssetTypePalette({
@@ -192,7 +192,7 @@ export default function AssetTypePalette({
             {filteredTypes.map(type => {
               const id = type.id || type._id;
               const iconKey = type.icon_key || getIconHint(type.name);
-              const Icon = ICON_MAP[iconKey] || Circle;
+              const Icon = resolveIcon(iconKey);
               const isSelected = selectedType && (selectedType.id || selectedType._id) === id;
               const deptName = deptIndex[type.department_id]?.name || '';
 
