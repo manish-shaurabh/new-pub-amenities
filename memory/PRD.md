@@ -19,6 +19,20 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 
 ## What's Been Implemented (with dates)
 
+### Phase 5.6: Production Data Reconciliation (May 2026)
+- **New `data_heal` router** (`/app/backend/routers/data_heal.py`) — admin-triggered idempotent heal for two known production drifts:
+  1. **Orange List ⇄ Asset Status (two-way reconcile)**:
+     - Forward: assets with `status ∈ {defective, pending_approval}` and no active OL row → back-fill an OL row using `asset.defective_since` (or `now_ist()`).
+     - Backward: open OL rows whose asset shows `status=working` → flip asset back to defective/pending_approval and mirror OL's `defective_since`.
+  2. **Division relink**: divisions whose `zone_id` does not match any existing zone are relinked to the canonical zone (preferring `code='ECR'`).
+- **Endpoints** (all superadmin-only):
+  - `POST /api/data-heal/preview/{user_id}` — dry-run report (counts + sample IDs, no writes)
+  - `POST /api/data-heal/execute/{user_id}` — applies changes + writes audit doc
+  - `GET  /api/data-heal/audit/{user_id}?limit=20` — history of past heals (filtered to `category='data_heal_reconcile'`)
+- **Frontend** — `DataReconcilePanel.js` embedded inside Admin → Health tab (`/app/frontend/src/components/DataReconcilePanel.js`). Preview-first UI with breakdown cards (OL forward / OL backward / Divisions), expandable sample list, confirmation modal with checkbox guard, and inline 10-row audit history. `data-testid`: `data-reconcile-panel`, `reconcile-preview-btn`, `reconcile-execute-btn`, `reconcile-confirm-checkbox`, `reconcile-confirm-execute`.
+- **Audit** — written to existing `data_health_audit` collection with `category='data_heal_reconcile'` so it interleaves with other Data Health actions.
+- **Tested**: `/app/backend/tests/test_data_heal.py` — 4/4 pytest pass. Seeds synthetic forward + backward + orphan-division drift, asserts heal applies, verifies via direct DB reads, then asserts second run is a no-op (idempotent). Also confirms `403` for non-superadmin and `200` for audit endpoint.
+
 ### Phase 5.5: Mobile Inspection Redesign — Canvas-First Bundle (Feb 2026)
 - **Compact `MobileCanvasHeader`** (`/app/frontend/src/components/MobileCanvasHeader.js`) — single sticky-row header replacing the bulky chip grid on Platform Vision. Includes: station select, location popover with inline search, filter popover (Department + Asset Type), and More menu (Refresh / PDF / Edit Canvas). Applied to both `StationCanvasPage` and used on mobile + desktop. `data-testid`: `mobile-canvas-header`, `mch-location-trigger`, `mch-location-popover`, `mch-filter-trigger`, `mch-more-trigger`, `mch-pdf-btn`, `mch-edit-toggle`.
 - **Sub-zone pillar markers** — added `start_pillar` and `end_pillar` (string) fields to `sub_zones`. Rendered at canvas edges in `PlatformBlueprint` (left = start, right = end). Falls back to generic "High End ← / → Low End" when not set. New form inputs `subzone-start-pillar` and `subzone-end-pillar` in the SubZoneForm dialog.

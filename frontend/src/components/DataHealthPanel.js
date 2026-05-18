@@ -18,6 +18,7 @@ import {
 } from '../components/ui/dialog';
 import { Checkbox } from '../components/ui/checkbox';
 import { Badge } from '../components/ui/badge';
+import DataReconcilePanel from './DataReconcilePanel';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -206,6 +207,9 @@ export default function DataHealthPanel({ currentUser }) {
             })}
           </div>
         )}
+
+      {/* Data Reconciliation card (Orange List + Divisions) */}
+      <DataReconcilePanel currentUser={currentUser} />
 
       {/* Activity Wipe card */}
       {isSuperadmin && <ActivityWipeCard currentUser={currentUser} onAfter={() => { refreshScan(); refreshAudit(); }} />}

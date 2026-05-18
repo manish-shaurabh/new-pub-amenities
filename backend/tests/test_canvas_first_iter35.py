@@ -19,7 +19,7 @@ import pytest
 import requests
 import uuid
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://railway-asset-ops.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://defect-tracker-ux.preview.emergentagent.com").rstrip("/")
 
 
 # ---------- fixtures ----------
