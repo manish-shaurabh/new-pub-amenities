@@ -8,7 +8,7 @@
  * Route: /station-canvas
  * Access: All roles (view). SA / Admin / Divisional Admin (edit).
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   MapPin, Filter, RefreshCw, Pencil, X, Plus, Download,
   LayoutGrid, Eye, Info, Trash2, ChevronDown, CheckCircle2,
@@ -41,6 +41,13 @@ import {
 } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
 import { getIconHint } from '../lib/assetIcons';
+
+// Build { dept_id: dept_name } map from department list
+function buildDeptMap(departments) {
+  const m = {};
+  (departments || []).forEach(d => { m[d.id || d._id] = d.name; });
+  return m;
+}
 
 // ── Sub-Zone mini form ────────────────────────────────────────────────────────
 function SubZoneForm({ locationId, stationId, existingSubZone, onSave, onClose }) {
@@ -231,6 +238,7 @@ export default function StationCanvasPage() {
   const [editorLandmarks, setEditorLandmarks] = useState([]);
 
   const isAdmin = canEdit;
+  const deptMap = useMemo(() => buildDeptMap(departments), [departments]);
 
   // Load statics
   useEffect(() => {
@@ -553,6 +561,7 @@ export default function StationCanvasPage() {
                   onDeleteSubZone={editMode ? handleDeleteSubZone : undefined}
                   onAddSubZone={editMode ? (locationId) => setSubZoneFormFor({ locationId, stationId: selectedStation }) : undefined}
                   onEditCanvas={editMode ? openCanvasEditor : undefined}
+                  deptMap={deptMap}
                 />
 
                 {/* Pending placement drop popover */}

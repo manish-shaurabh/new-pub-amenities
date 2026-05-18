@@ -63,6 +63,7 @@ async def create_asset_type(asset_type: AssetTypeCreate):
         "description": asset_type.description,
         "tracking_mode": asset_type.tracking_mode if asset_type.tracking_mode in ("individual", "grouped") else "individual",
         "icon_key": asset_type.icon_key or None,
+        "custom_icon_url": asset_type.custom_icon_url or None,
         "created_at": now_ist()
     }
     result = await asset_types_collection.insert_one(doc)
@@ -102,6 +103,7 @@ async def update_asset_type(asset_type_id: str, asset_type: AssetTypeCreate):
             "description": asset_type.description,
             "tracking_mode": asset_type.tracking_mode if asset_type.tracking_mode in ("individual", "grouped") else "individual",
             "icon_key": asset_type.icon_key or None,
+            "custom_icon_url": asset_type.custom_icon_url or None,
         }}
     )
     if result.matched_count == 0:
@@ -116,3 +118,61 @@ async def delete_asset_type(asset_type_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Asset type not found")
     return {"message": "Asset type deleted"}
+
+
+ICON_UPLOAD_DIR = "/app/backend/uploads/icons"
+os.makedirs(ICON_UPLOAD_DIR, exist_ok=True)
+ALLOWED_ICON_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
+MAX_ICON_SIZE = 512 * 1024  # 512 KB
+
+
+@router.post("/api/asset-types/{asset_type_id}/upload-icon")
+async def upload_asset_type_icon(asset_type_id: str, file: UploadFile = File(...)):
+    doc = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Asset type not found")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED_ICON_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported format. Allowed: {', '.join(ALLOWED_ICON_EXTENSIONS)}")
+
+    content = await file.read()
+    if len(content) > MAX_ICON_SIZE:
+        raise HTTPException(status_code=400, detail="Icon file must be under 512 KB")
+
+    unique_name = f"{uuid.uuid4()}{ext}"
+    file_path = os.path.join(ICON_UPLOAD_DIR, unique_name)
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    icon_url = f"/api/uploads/icons/{unique_name}"
+
+    # Remove old custom icon file if exists
+    old_url = doc.get("custom_icon_url")
+    if old_url and old_url.startswith("/api/uploads/icons/"):
+        old_path = os.path.join(ICON_UPLOAD_DIR, old_url.split("/")[-1])
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    await asset_types_collection.update_one(
+        {"_id": ObjectId(asset_type_id)},
+        {"$set": {"custom_icon_url": icon_url}}
+    )
+    return {"custom_icon_url": icon_url}
+
+
+@router.delete("/api/asset-types/{asset_type_id}/icon")
+async def delete_asset_type_icon(asset_type_id: str):
+    doc = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Asset type not found")
+    old_url = doc.get("custom_icon_url")
+    if old_url and old_url.startswith("/api/uploads/icons/"):
+        old_path = os.path.join(ICON_UPLOAD_DIR, old_url.split("/")[-1])
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    await asset_types_collection.update_one(
+        {"_id": ObjectId(asset_type_id)},
+        {"$set": {"custom_icon_url": None}}
+    )
+    return {"message": "Custom icon removed"}

@@ -10,6 +10,7 @@
 import { useMemo, useState } from 'react';
 import { Search, Filter, X } from 'lucide-react';
 import { resolveIcon, getIconHint } from '../lib/assetIcons';
+import { getDeptTheme, shapeRadius, shapeTransform, shapeInnerTransform } from '../lib/departmentTheme';
 import { Circle } from 'lucide-react';
 
 export default function AssetTypePalette({
@@ -195,6 +196,8 @@ export default function AssetTypePalette({
               const Icon = resolveIcon(iconKey);
               const isSelected = selectedType && (selectedType.id || selectedType._id) === id;
               const deptName = deptIndex[type.department_id]?.name || '';
+              const theme = getDeptTheme(deptName);
+              const customIcon = type.custom_icon_url;
 
               return (
                 <button
@@ -213,7 +216,7 @@ export default function AssetTypePalette({
                     alignItems: 'center', gap: 4,
                     padding: '8px 4px',
                     borderRadius: 8,
-                    border: `1.5px solid ${isSelected ? '#0891b2' : '#e2e8f0'}`,
+                    border: `1.5px solid ${isSelected ? '#0891b2' : theme.border + '40'}`,
                     background: isSelected ? 'rgba(8,145,178,0.08)' : '#fff',
                     cursor: 'grab',
                     transition: 'all 0.15s',
@@ -224,18 +227,26 @@ export default function AssetTypePalette({
                     if (!isSelected) e.currentTarget.style.borderColor = '#0891b2';
                   }}
                   onMouseLeave={e => {
-                    if (!isSelected) e.currentTarget.style.borderColor = '#e2e8f0';
+                    if (!isSelected) e.currentTarget.style.borderColor = isSelected ? '#0891b2' : theme.border + '40';
                   }}
                 >
                   <div style={{
-                    width: 34, height: 34, borderRadius: '50%',
-                    border: `2px solid ${isSelected ? '#0891b2' : '#e2e8f0'}`,
-                    background: isSelected ? 'rgba(8,145,178,0.12)' : '#f8fafc',
+                    width: 34, height: 34,
+                    borderRadius: shapeRadius(theme.shape),
+                    transform: shapeTransform(theme.shape),
+                    border: `2px solid ${isSelected ? '#0891b2' : theme.border}`,
+                    background: isSelected ? 'rgba(8,145,178,0.12)' : theme.bg,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: isSelected ? '#0891b2' : '#64748b',
+                    color: isSelected ? '#0891b2' : theme.iconTint,
                     transition: 'all 0.15s',
                   }}>
-                    <Icon size={16} />
+                    <div style={{ transform: shapeInnerTransform(theme.shape) }}>
+                      {customIcon ? (
+                        <img src={customIcon} alt="" style={{ width: 18, height: 18, objectFit: 'contain' }} />
+                      ) : (
+                        <Icon size={16} />
+                      )}
+                    </div>
                   </div>
                   <span style={{
                     fontSize: 9, fontWeight: isSelected ? 600 : 400,

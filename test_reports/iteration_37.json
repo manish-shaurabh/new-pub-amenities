@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 37 — Custom Icon Upload (B) + Department-Based Color Theming (E) for Platform Vision canvas. Backend: 8/8 pytest PASS — POST /api/asset-types/{id}/upload-icon accepts SVG and returns /api/uploads/icons/{uuid}.svg URL that is served back via the static mount; oversized files (>512KB) and bad extensions are rejected with 400; non-existent asset type returns 404; DELETE /api/asset-types/{id}/icon nulls the field; list endpoint exposes custom_icon_url; station-canvas surfaces custom_icon_url AND department_id on each asset record. Frontend: confirmed IconPicker tabs (icon-tab-library, icon-tab-upload) render in the Edit Asset Type dialog, Custom Upload tab shows the dropzone (custom-icon-dropzone) plus Format Guide with SVG/PNG/transparency tips and 512KB cap; Platform Vision page renders the dept-legend testid below the blueprint listing all 5 departments (Electrical / CIVIL / MECHANICAL / COMMERCIAL / S&T) with their themed swatches; canvas nodes use blueprint-asset-{id} and blueprint-unpositioned-{id} testids and render with department-themed shapes (rounded-rect for CIVIL/MECHANICAL, circle for Electrical/Commercial, diamond for S&T) plus health-status accent colors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Platform Vision dept-legend", "issues": ["Legend shows a stale 'TEST_DEPT_1778063675_UPDATED' entry from earlier test runs — not a feature bug, but consider hiding empty/unused departments or running a one-time cleanup of TEST_-prefixed depts."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_custom_icon_iter37.py",
+    "/app/test_reports/pytest/iter37_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Clean up legacy TEST_DEPT_* department rows from MongoDB so the dept-legend on Platform Vision is cleaner.",
+    "OPTIONAL: Consider adding data-testid='asset-tooltip' on the AssetNode tooltip element to make hover-state testing deterministic (current Radix portal makes it hard to assert tooltip content via Playwright)."
+  ],
+  "critical_code_review_comments": [
+    "asset_types.py upload-icon — Validates extension and 512KB cap, generates UUID filename, cleans up old custom-icon file on re-upload (no orphans). Solid.",
+    "asset_types.py delete-icon — Removes file from disk only when URL starts with /api/uploads/icons/ (safe), then nulls the field. Idempotent.",
+    "station_canvas.py — types_custom_icon_map (lines 99-102) is populated only when custom_icon_url truthy; asset_data['custom_icon_url'] resolves to None for assets without a custom icon, which is correct.",
+    "Models.AssetTypeCreate has custom_icon_url field but AssetTypeResponse does NOT (line 200-208). Not strictly a bug since serialize_doc passes the field through, but adding it to the Response model would improve API self-documentation.",
+    "IconPicker.js — File upload preflight (extension + size) happens client-side AND server-side. Good defense-in-depth. Uses alert() for errors — consider toast for consistency with the rest of the app.",
+    "departmentTheme.js — Clean keyword-based matcher with sensible fallback. Edge: 'SIGNAL And TELECOMMUNICATION' matches 'signal' keyword → S&T diamond theme as intended.",
+    "Auth: upload-icon and delete-icon routes do NOT enforce admin role (no auth dependency in router). The current FE only exposes these via Admin Panel, but server-side enforcement is missing — any authenticated user (or even unauthenticated, depending on viewer_guard rules) could potentially overwrite icons. RECOMMEND adding an admin/superadmin guard on these two endpoints."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_custom_icon_iter37.py (new, 8 tests, all passing)"
+  ],
+  "success_rate": { "backend": "100% (8/8)", "frontend": "Verified: IconPicker tabs render + switch correctly, dropzone + format guide visible on Custom Upload, dept-legend visible with all 5 dept themes, dept-themed asset nodes render on canvas. Tooltip text assertion skipped (Radix portal)." },
+  "test_credentials": "SA001 / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Pytest creates one TEST_ICON_UPLOAD_iter37 asset type and deletes it during teardown — no residual data. Upload test produces one /app/backend/uploads/icons/{uuid}.svg file that the delete test cleans up.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Regression suite at /app/backend/tests/test_custom_icon_iter37.py — run with REACT_APP_BACKEND_URL exported. Tests cover upload (SVG happy path), list-includes-custom_icon_url, extension validation, size validation, delete, 404 on unknown id, and station-canvas surfacing of custom_icon_url + department_id. Frontend testids to know about: icon-tab-library, icon-tab-upload, custom-icon-dropzone, custom-icon-preview, custom-icon-delete, dept-legend, blueprint-asset-{id}, blueprint-unpositioned-{id}. The Edit Asset Type dialog has 29 entries on its list — the pencil button on each row opens it. CRITICAL OPEN ITEM for main agent: upload-icon / delete-icon endpoints currently have no admin auth dependency — should be gated to admin/superadmin."
+}

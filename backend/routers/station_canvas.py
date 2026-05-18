@@ -84,6 +84,7 @@ async def get_station_canvas(
     # --- asset type info ---
     type_ids = list({a.get("asset_type_id") for a in all_assets if a.get("asset_type_id")})
     types_map, types_dept_map, types_icon_map = {}, {}, {}
+    types_custom_icon_map = {}
     if type_ids:
         type_docs = await asset_types_collection.find(
             {"_id": {"$in": [ObjectId(tid) for tid in type_ids]}}
@@ -94,6 +95,10 @@ async def get_station_canvas(
         types_icon_map = {
             str(t["_id"]): t.get("icon_key") or _icon_hint(t.get("name", ""))
             for t in type_docs
+        }
+        types_custom_icon_map = {
+            str(t["_id"]): t.get("custom_icon_url")
+            for t in type_docs if t.get("custom_icon_url")
         }
 
     # --- dept filter ---
@@ -138,6 +143,7 @@ async def get_station_canvas(
             "asset_type_id": a.get("asset_type_id", ""),
             "asset_type_name": type_name,
             "asset_type_icon_hint": types_icon_map.get(a.get("asset_type_id", ""), "default"),
+            "custom_icon_url": types_custom_icon_map.get(a.get("asset_type_id", "")),
             "department_id": types_dept_map.get(a.get("asset_type_id", "")),
             "location_id": a.get("location_id"),
             "sub_zone_id": a.get("sub_zone_id"),

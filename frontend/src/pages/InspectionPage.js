@@ -976,6 +976,13 @@ export default function InspectionPage() {
     return Array.from(m.entries()).map(([id, name]) => ({ id, name }));
   }, [assets]);
 
+  // Dept map for department theming on blueprint
+  const deptMap = useMemo(() => {
+    const m = {};
+    mapDeptOptions.forEach(d => { m[d.id] = d.name; });
+    return m;
+  }, [mapDeptOptions]);
+
   const mapTypeOptions = useMemo(() => {
     const m = new Map();
     assets.forEach(a => {
@@ -1326,6 +1333,7 @@ export default function InspectionPage() {
                         onChange={(entry) => setSubZoneHealth(prev => ({ ...prev, [sz.id]: entry }))}
                       />
                     )}
+                    deptMap={deptMap}
                   />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground text-sm">

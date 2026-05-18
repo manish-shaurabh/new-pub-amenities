@@ -12,6 +12,7 @@ import {
   ArrowUp, ArrowDown, Plus, Trash2, Move, X,
 } from 'lucide-react';
 import { resolveIcon, getIconHint } from '../lib/assetIcons';
+import { getDeptTheme, shapeRadius, shapeTransform, shapeInnerTransform } from '../lib/departmentTheme';
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
 export function healthStyle(asset) {
@@ -92,7 +93,7 @@ function AssetActionMenu({ asset, anchorX, anchorY, onEdit, onDelete, onToggleMi
 // ── Single asset node on canvas ───────────────────────────────────────────────
 function AssetNode({
   asset, mode, inspectionItems, onAssetClick,
-  dimmed, size = 44, editMode, onActionMenu,
+  dimmed, size = 44, editMode, onActionMenu, deptMap,
 }) {
   const [tipVisible, setTipVisible] = useState(false);
   const iconKey = asset.asset_type_icon_hint || getIconHint(asset.asset_type_name);
@@ -102,9 +103,26 @@ function AssetNode({
     ? inspectionStyle(asset.id, inspectionItems)
     : healthStyle(asset);
 
+  // Department theming
+  const deptName = deptMap?.[asset.department_id] || '';
+  const theme = getDeptTheme(deptName);
+  const customIcon = asset.custom_icon_url;
+
   const isGrouped = asset.tracking_mode === 'grouped';
   const defectCount = (asset.needs_repair_count || 0) + (asset.not_working_count || 0);
   const nodeSize = isGrouped ? size + 10 : size;
+
+  // Use department shape unless health status demands attention
+  const isHealthy = asset.status === 'working';
+  const borderRadius = shapeRadius(theme.shape);
+  const outerTransform = shapeTransform(theme.shape);
+  const innerTransform = shapeInnerTransform(theme.shape);
+
+  // Blend department theme with health status
+  const nodeBorder = style.border;
+  const nodeBg = isHealthy ? theme.bg : style.bg;
+  const nodeGlow = isHealthy ? theme.glow : `${style.border}33`;
+  const iconColor = isHealthy ? theme.iconTint : style.text;
 
   return (
     <div
@@ -116,7 +134,7 @@ function AssetNode({
         width: nodeSize, height: nodeSize,
         zIndex: tipVisible ? 30 : 10,
         opacity: dimmed ? 0.2 : 1,
-        transition: 'opacity 0.2s',
+        transition: 'opacity 0.2s, transform 0.15s',
       }}
     >
       <button
@@ -133,31 +151,56 @@ function AssetNode({
         data-testid={`blueprint-asset-${asset.id}`}
         style={{
           width: '100%', height: '100%',
-          borderRadius: '50%',
-          border: `2.5px solid ${style.border}`,
-          background: style.isMissing ? '#fff' : style.bg,
-          color: style.text,
+          borderRadius,
+          transform: outerTransform,
+          border: `2.5px solid ${nodeBorder}`,
+          background: style.isMissing ? '#fff' : nodeBg,
+          color: iconColor,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          cursor: editMode ? 'pointer' : 'pointer',
-          boxShadow: editMode ? '0 2px 6px rgba(0,0,0,0.15)' : '0 1px 4px rgba(0,0,0,0.12)',
-          transition: 'transform 0.1s, box-shadow 0.1s',
+          cursor: 'pointer',
+          boxShadow: editMode
+            ? `0 2px 6px rgba(0,0,0,0.15)`
+            : `0 2px 8px ${nodeGlow}, 0 1px 3px rgba(0,0,0,0.08)`,
+          transition: 'transform 0.15s, box-shadow 0.15s, border-color 0.2s',
           position: 'relative',
+          overflow: 'hidden',
         }}
         title={editMode ? 'Click to manage asset' : undefined}
       >
-        {style.isMissing ? (
-          <X size={Math.round(nodeSize * 0.4)} color="#94a3b8" />
-        ) : (
-          <>
-            <Icon size={Math.round(nodeSize * 0.34)} />
-            {isGrouped && (
-              <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, marginTop: 1 }}>
-                {defectCount}/{asset.total_count}
-              </span>
-            )}
-          </>
-        )}
+        <div style={{ transform: innerTransform, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          {style.isMissing ? (
+            <X size={Math.round(nodeSize * 0.4)} color="#94a3b8" />
+          ) : customIcon ? (
+            <>
+              <img
+                src={customIcon}
+                alt=""
+                style={{
+                  width: Math.round(nodeSize * 0.52),
+                  height: Math.round(nodeSize * 0.52),
+                  objectFit: 'contain',
+                  filter: isHealthy ? 'none' : 'grayscale(0.3)',
+                }}
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+              {isGrouped && (
+                <span style={{ fontSize: 7, fontWeight: 700, lineHeight: 1, marginTop: 1 }}>
+                  {defectCount}/{asset.total_count}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <Icon size={Math.round(nodeSize * 0.36)} />
+              {isGrouped && (
+                <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, marginTop: 1 }}>
+                  {defectCount}/{asset.total_count}
+                </span>
+              )}
+            </>
+          )}
+        </div>
       </button>
 
       {/* Inspection overlay */}
@@ -173,17 +216,30 @@ function AssetNode({
         </div>
       )}
 
+      {/* Department accent dot */}
+      {isHealthy && !editMode && !style.isMissing && (
+        <div style={{
+          position: 'absolute', bottom: -2, left: '50%', transform: 'translateX(-50%)',
+          width: 6, height: 6, borderRadius: '50%',
+          background: theme.accent,
+          border: '1px solid #fff',
+          boxShadow: `0 0 4px ${theme.glow}`,
+        }} />
+      )}
+
       {/* Tooltip (health/inspection mode) */}
       {tipVisible && (
         <div style={{
           position: 'absolute', bottom: '115%', left: '50%', transform: 'translateX(-50%)',
           background: '#0f172a', color: '#f8fafc',
-          fontSize: 11, padding: '4px 8px', borderRadius: 6,
+          fontSize: 11, padding: '5px 10px', borderRadius: 8,
           whiteSpace: 'nowrap', pointerEvents: 'none',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 50,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.35)', zIndex: 50,
+          borderLeft: `3px solid ${theme.accent}`,
         }}>
           <div style={{ fontWeight: 600 }}>{asset.asset_number}</div>
           <div style={{ color: '#94a3b8', fontSize: 10 }}>{asset.asset_type_name}</div>
+          {deptName && <div style={{ color: theme.accent, fontSize: 9, marginTop: 1 }}>{deptName}</div>}
           {asset.status === 'missing' && <div style={{ color: '#fbbf24', fontSize: 10 }}>MISSING</div>}
           {asset.hours_defective > 0 && (
             <div style={{ color: '#fca5a5', fontSize: 10 }}>{asset.hours_defective}h defective</div>
@@ -227,6 +283,7 @@ export function SubZoneCanvas({
   onMoveUp, onMoveDown, onDeleteSubZone,
   onAddSubZone,       // shows "Add Sub-Zone" button below this card (when isLast)
   healthSlot,         // optional ReactNode rendered below the canvas (e.g. Shed Health card)
+  deptMap,            // { dept_id: dept_name } for department theming
 }) {
   const canvasRef = useRef(null);
   const [actionMenuAsset, setActionMenuAsset] = useState(null);
@@ -490,6 +547,7 @@ export function SubZoneCanvas({
               dimmed={isDimmed(asset)}
               editMode={editMode}
               onActionMenu={(a) => setActionMenuAsset(actionMenuAsset?.id === a.id ? null : a)}
+              deptMap={deptMap}
             />
           ))}
 
@@ -523,6 +581,9 @@ export function SubZoneCanvas({
               const iconKey = asset.asset_type_icon_hint || getIconHint(asset.asset_type_name);
               const Icon = resolveIcon(iconKey);
               const style = mode === 'inspection' ? inspectionStyle(asset.id, inspectionItems) : healthStyle(asset);
+              const deptName = deptMap?.[asset.department_id] || '';
+              const theme = getDeptTheme(deptName);
+              const customIcon = asset.custom_icon_url;
               return (
                 <button
                   key={asset.id}
@@ -531,11 +592,16 @@ export function SubZoneCanvas({
                   style={{
                     display: 'flex', alignItems: 'center', gap: 4, padding: '2px 7px',
                     borderRadius: 20, border: `1.5px solid ${style.border}`,
-                    background: style.isMissing ? '#fff' : style.bg, color: style.text,
+                    background: style.isMissing ? '#fff' : (asset.status === 'working' ? theme.bg : style.bg),
+                    color: asset.status === 'working' ? theme.iconTint : style.text,
                     fontSize: 10, fontWeight: 500, cursor: 'pointer',
                   }}
                 >
-                  <Icon size={10} />
+                  {customIcon ? (
+                    <img src={customIcon} alt="" style={{ width: 12, height: 12, objectFit: 'contain' }} />
+                  ) : (
+                    <Icon size={10} />
+                  )}
                   {asset.asset_number?.split('-').slice(-1)[0] || asset.asset_number}
                 </button>
               );
@@ -563,6 +629,7 @@ export default function PlatformBlueprint({
   onDragOver, onDrop,
   onMoveSubZone, onDeleteSubZone, onAddSubZone,
   renderHealthSlot,  // (subZone) => ReactNode rendered below each sub-zone canvas
+  deptMap,           // { dept_id: dept_name } for department theming
 }) {
   if (!locationData) return null;
   const { sub_zones = [], unzoned_assets = [] } = locationData;
@@ -590,6 +657,7 @@ export default function PlatformBlueprint({
           onDeleteSubZone={onDeleteSubZone}
           onAddSubZone={onAddSubZone}
           healthSlot={renderHealthSlot ? renderHealthSlot(sz) : null}
+          deptMap={deptMap}
         />
       ))}
 
@@ -601,6 +669,7 @@ export default function PlatformBlueprint({
           onAssetClick={onAssetClick}
           filters={filters}
           editMode={false}
+          deptMap={deptMap}
         />
       )}
 
@@ -637,6 +706,58 @@ export default function PlatformBlueprint({
           <Plus size={14} /> Add Sub-Zone
         </button>
       )}
+
+      {/* Department color legend */}
+      {deptMap && Object.keys(deptMap).length > 0 && !editMode && (
+        <DeptLegend deptMap={deptMap} />
+      )}
+    </div>
+  );
+}
+
+// ── Department color legend ───────────────────────────────────────────────────
+function DeptLegend({ deptMap }) {
+  const seen = new Set();
+  const entries = Object.entries(deptMap)
+    .map(([id, name]) => {
+      const theme = getDeptTheme(name);
+      if (seen.has(theme.key)) return null;
+      seen.add(theme.key);
+      return { name, theme };
+    })
+    .filter(Boolean);
+
+  if (entries.length <= 1) return null;
+
+  return (
+    <div
+      data-testid="dept-legend"
+      style={{
+        display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center',
+        padding: '6px 12px', background: '#fafafa', borderRadius: 8,
+        border: '1px solid #f1f5f9',
+      }}
+    >
+      <span style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+        Department Colors
+      </span>
+      {entries.map(({ name, theme }) => (
+        <span
+          key={theme.key}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 10, color: theme.text,
+          }}
+        >
+          <span style={{
+            width: 10, height: 10, borderRadius: shapeRadius(theme.shape),
+            transform: shapeTransform(theme.shape),
+            background: theme.bgSolid, border: `1.5px solid ${theme.border}`,
+            display: 'inline-block', flexShrink: 0,
+          }} />
+          {name}
+        </span>
+      ))}
     </div>
   );
 }

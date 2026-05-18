@@ -194,6 +194,7 @@ class AssetTypeCreate(BaseModel):
     description: Optional[str] = None
     tracking_mode: str = "individual"  # "individual" | "grouped"
     icon_key: Optional[str] = None    # e.g. "fan", "light", "cib" — overrides auto-detect
+    custom_icon_url: Optional[str] = None  # uploaded SVG/PNG icon URL (overrides icon_key)
 
 
 class AssetTypeResponse(BaseModel):

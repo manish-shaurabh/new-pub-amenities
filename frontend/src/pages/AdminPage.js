@@ -70,7 +70,7 @@ export default function AdminPage() {
   const [locationForm, setLocationForm] = useState({ name: '', station_id: '', description: '' });
   // Sub-Zone form (children of a Location)
   const [subZoneForm, setSubZoneForm] = useState({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0, has_divider: false, divider_orientation: 'vertical' });
-  const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual', icon_key: '' });
+  const [assetTypeForm, setAssetTypeForm] = useState({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual', icon_key: '', custom_icon_url: '' });
   const [departmentForm, setDepartmentForm] = useState({ name: '', code: '', description: '' });
   const [deptFieldErrors, setDeptFieldErrors] = useState({});
   const [userForm, setUserForm] = useState({
@@ -602,7 +602,7 @@ export default function AdminPage() {
     else if (type === 'station') setStationForm({ name: '', code: '', zone: '', division: '', division_id: '', approving_supervisor_id: '' });
     else if (type === 'location') setLocationForm({ name: '', station_id: '', description: '' });
     else if (type === 'sub-zone') setSubZoneForm({ name: '', code: '', station_id: '', location_id: '', description: '', order: 0, has_divider: false, divider_orientation: 'vertical' });
-    else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual', icon_key: '' });
+    else if (type === 'asset-type') setAssetTypeForm({ name: '', department_id: '', description: '', checklist: [], tracking_mode: 'individual', icon_key: '', custom_icon_url: '' });
     else if (type === 'user') setUserForm({ employee_id: '', name: '', role: 'supervisor', department_id: '', assigned_stations: [], password: '', email: '', phone: '', reports_to_id: '', assigned_division_id: '' });
     setDialogOpen(true);
   };
@@ -626,7 +626,7 @@ export default function AdminPage() {
         divider_orientation: item.divider_orientation || 'vertical',
       });
     } else if (type === 'asset-type') {
-      setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [], tracking_mode: item.tracking_mode || 'individual', icon_key: item.icon_key || '' });
+      setAssetTypeForm({ name: item.name, department_id: item.department_id, description: item.description || '', checklist: item.checklist || [], tracking_mode: item.tracking_mode || 'individual', icon_key: item.icon_key || '', custom_icon_url: item.custom_icon_url || '' });
     } else if (type === 'user') {
       setUserForm({ employee_id: item.employee_id, name: item.name, role: item.role, department_id: item.department_id || '', assigned_stations: item.assigned_stations || [], password: '', email: item.email || '', phone: item.phone || '', reports_to_id: item.reports_to_id || '', assigned_division_id: item.assigned_division_id || '' });
     }
@@ -1790,12 +1790,49 @@ export default function AdminPage() {
               <div>
                 <Label>Icon (for Platform Vision)</Label>
                 <div className="text-[11px] text-slate-500 mb-2">
-                  Pick from 18 recommended presets or browse 3,590+ Lucide icons by search. Auto-detected by name if left blank.
+                  Pick from the library or upload a custom SVG/PNG icon. Auto-detected by name if left blank.
                 </div>
                 <IconPicker
                   value={assetTypeForm.icon_key || ''}
                   onChange={(key) => setAssetTypeForm({ ...assetTypeForm, icon_key: key })}
                   autoHint={getIconHint(assetTypeForm.name)}
+                  customIconUrl={assetTypeForm.custom_icon_url || ''}
+                  assetTypeId={editingItem?.id}
+                  onUploadIcon={async (file) => {
+                    // For new asset types, we need to create first then upload
+                    const atId = editingItem?.id;
+                    if (!atId) {
+                      toast.error('Save the asset type first, then upload a custom icon in edit mode.');
+                      return;
+                    }
+                    const form = new FormData();
+                    form.append('file', file);
+                    try {
+                      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/asset-types/${atId}/upload-icon`, {
+                        method: 'POST', body: form,
+                      });
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.detail || 'Upload failed');
+                      }
+                      const data = await res.json();
+                      setAssetTypeForm(prev => ({ ...prev, custom_icon_url: data.custom_icon_url }));
+                      toast.success('Custom icon uploaded');
+                    } catch (e) {
+                      toast.error(e.message || 'Icon upload failed');
+                    }
+                  }}
+                  onDeleteIcon={async () => {
+                    const atId = editingItem?.id;
+                    if (!atId) return;
+                    try {
+                      await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/asset-types/${atId}/icon`, { method: 'DELETE' });
+                      setAssetTypeForm(prev => ({ ...prev, custom_icon_url: '' }));
+                      toast.success('Custom icon removed');
+                    } catch (e) {
+                      toast.error('Failed to remove icon');
+                    }
+                  }}
                 />
               </div>
               <div>
