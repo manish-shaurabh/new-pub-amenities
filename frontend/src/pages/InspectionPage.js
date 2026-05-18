@@ -590,6 +590,8 @@ export default function InspectionPage() {
   // Map-view-only quick filters (dept + asset type)
   const [mapDeptFilter, setMapDeptFilter] = useState('');
   const [mapTypeFilter, setMapTypeFilter] = useState('');
+  // SIG participants panel — collapses after user taps "Done"
+  const [sigPanelOpen, setSigPanelOpen] = useState(true);
   const { open: openLightbox, lightbox } = useLightbox();
 
   // Refs for location scroll-spy
@@ -1046,19 +1048,64 @@ export default function InspectionPage() {
             </div>
           </div>
 
-          {/* SIG participants (expandable) */}
+          {/* SIG participants (collapsible — Done button hides the picker) */}
           {inspectionType === 'sig' && (
             <div className="mt-3 pt-3 border-t" data-testid="sig-inspection-form">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">SIG Participants *</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {users.filter(u => u._id !== user._id).map(u => (
-                  <label key={u._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted cursor-pointer text-xs">
-                    <Checkbox checked={participants.includes(u.employee_id)} onCheckedChange={() => toggleParticipant(u.employee_id)} />
-                    <span className="flex-1 min-w-0 truncate">{u.name}</span>
-                    <Badge variant="outline" className="text-[9px]">{u.role?.replace('_', ' ')}</Badge>
-                  </label>
-                ))}
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block">
+                  SIG Participants * {participants.length > 0 && <span className="text-foreground normal-case">· {participants.length} selected</span>}
+                </Label>
+                {participants.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant={sigPanelOpen ? 'default' : 'outline'}
+                    className="h-7 text-[11px] px-2.5"
+                    onClick={() => setSigPanelOpen(o => !o)}
+                    data-testid="sig-panel-toggle"
+                  >
+                    {sigPanelOpen ? (
+                      <><CheckCircle2 className="h-3 w-3 mr-1" /> Done</>
+                    ) : (
+                      <><ChevronDown className="h-3 w-3 mr-1" /> Edit Participants</>
+                    )}
+                  </Button>
+                )}
               </div>
+              {sigPanelOpen ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {users.filter(u => u._id !== user._id).map(u => (
+                    <label key={u._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted cursor-pointer text-xs">
+                      <Checkbox checked={participants.includes(u.employee_id)} onCheckedChange={() => toggleParticipant(u.employee_id)} />
+                      <span className="flex-1 min-w-0 truncate">{u.name}</span>
+                      <Badge variant="outline" className="text-[9px]">{u.role?.replace('_', ' ')}</Badge>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                // Collapsed summary: name chips with a × to remove
+                <div className="flex flex-wrap gap-1.5" data-testid="sig-participants-summary">
+                  {participants.map(empId => {
+                    const u = users.find(x => x.employee_id === empId);
+                    if (!u) return null;
+                    return (
+                      <span
+                        key={empId}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary/10 text-primary text-[11px]"
+                      >
+                        {u.name}
+                        <button
+                          type="button"
+                          onClick={() => toggleParticipant(empId)}
+                          className="hover:bg-primary/20 rounded-full h-3.5 w-3.5 inline-flex items-center justify-center"
+                          data-testid={`sig-chip-remove-${empId}`}
+                        >
+                          <XCircle className="h-3 w-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </CardContent>

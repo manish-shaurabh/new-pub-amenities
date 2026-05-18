@@ -236,10 +236,15 @@ export default function StationCanvasPage() {
   useEffect(() => {
     Promise.all([stationsAPI.list(), departmentsAPI.list()])
       .then(([s, d]) => {
-        setStations(s.data || []);
+        const stationList = s.data || [];
+        setStations(stationList);
         setDepartments(d.data || []);
+        // Auto-select first station so single-station users land directly on a canvas
+        if (stationList.length > 0 && !selectedStation) {
+          setSelectedStation(stationList[0].id || stationList[0]._id);
+        }
       });
-  }, []);
+  }, []);  // eslint-disable-line
 
   useEffect(() => {
     if (!selectedStation) { setLocations([]); setSelectedLocation(''); return; }

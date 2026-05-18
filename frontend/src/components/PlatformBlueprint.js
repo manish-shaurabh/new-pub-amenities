@@ -248,6 +248,21 @@ export function SubZoneCanvas({
   const positioned = (subZone.assets || []).filter(a => a.canvas_x != null && a.canvas_y != null);
   const unpositioned = (subZone.assets || []).filter(a => a.canvas_x == null || a.canvas_y == null);
 
+  // Per-sub-zone asset-type chip filter (only dims, never hides).
+  const [localTypeFilter, setLocalTypeFilter] = useState(null);
+  const localTypeCounts = (() => {
+    const m = new Map();
+    (subZone.assets || []).forEach(a => {
+      const id = a.asset_type_id;
+      const name = a.asset_type_name || 'Other';
+      if (!id) return;
+      const cur = m.get(id) || { id, name, total: 0 };
+      cur.total += 1;
+      m.set(id, cur);
+    });
+    return Array.from(m.values()).sort((a, b) => b.total - a.total);
+  })();
+
   // Responsive icon size: 28–46px based on container width AND density.
   // Higher asset counts also shrink the nodes so they don't overlap.
   const density = positioned.length;
@@ -256,6 +271,7 @@ export function SubZoneCanvas({
   const nodeSize = Math.max(24, baseSize - densityPenalty);
 
   const isDimmed = (asset) => {
+    if (localTypeFilter && asset.asset_type_id !== localTypeFilter) return true;
     if (!filters) return false;
     if (filters.dept_id && asset.department_id !== filters.dept_id) return true;
     if (filters.asset_type_id && asset.asset_type_id !== filters.asset_type_id) return true;
@@ -370,6 +386,56 @@ export function SubZoneCanvas({
           )}
         </div>
       </div>
+
+      {/* Per-sub-zone asset-type chip strip — quick focus filter */}
+      {!editMode && localTypeCounts.length > 1 && (
+        <div
+          data-testid={`subzone-type-chips-${subZone.id}`}
+          style={{
+            display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'nowrap',
+            padding: '5px 10px', background: '#fafafa',
+            borderBottom: '1px solid #f1f5f9',
+            overflowX: 'auto',
+          }}
+        >
+          <span style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0, marginRight: 2 }}>
+            Type
+          </span>
+          <button
+            onClick={() => setLocalTypeFilter(null)}
+            data-testid={`subzone-type-chip-all-${subZone.id}`}
+            style={{
+              padding: '2px 8px', borderRadius: 12, fontSize: 10, fontWeight: localTypeFilter == null ? 600 : 400,
+              border: `1.5px solid ${localTypeFilter == null ? '#0891b2' : '#e2e8f0'}`,
+              background: localTypeFilter == null ? '#e0f2fe' : '#fff',
+              color: localTypeFilter == null ? '#0891b2' : '#64748b',
+              cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+            }}
+          >
+            All · {subZone.assets?.length || 0}
+          </button>
+          {localTypeCounts.map(t => {
+            const active = localTypeFilter === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setLocalTypeFilter(active ? null : t.id)}
+                data-testid={`subzone-type-chip-${t.id}-${subZone.id}`}
+                style={{
+                  padding: '2px 8px', borderRadius: 12, fontSize: 10, fontWeight: active ? 600 : 400,
+                  border: `1.5px solid ${active ? '#0891b2' : '#e2e8f0'}`,
+                  background: active ? '#e0f2fe' : '#fff',
+                  color: active ? '#0891b2' : '#64748b',
+                  cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+                }}
+                title={t.name}
+              >
+                {t.name} · {t.total}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Canvas (16:9) */}
       <div

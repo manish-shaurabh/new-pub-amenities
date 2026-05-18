@@ -78,8 +78,8 @@ export default function MobileCanvasHeader({
         {editMode && <Badge style={{ fontSize: 9, background: '#fef3c7', color: '#a16207', border: '1px solid #fde68a' }}>EDIT</Badge>}
       </div>
 
-      {/* Station select (compact) */}
-      {stations.length > 1 && (
+      {/* Station select — always visible so single-station users never deadlock */}
+      {stations.length > 0 && (
         <Select value={selectedStation || ''} onValueChange={onStationChange}>
           <SelectTrigger className="h-8 text-xs w-[110px] sm:w-[150px]" data-testid="mch-station-select">
             <SelectValue placeholder="Station" />
