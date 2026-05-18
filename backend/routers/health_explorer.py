@@ -326,6 +326,15 @@ async def health_explorer_filters(user_id: str):
         for a in scoped
         if U["type_by_id"].get(a.get("asset_type_id"), {}).get("department_id")
     })
+
+    # Precompute station-ids per division so the frontend can resolve a
+    # division selection → list of stations for filtering.
+    stations_per_div: dict = {}
+    for s in U.get("stations", []):
+        d_id = str(s.get("division_id") or "")
+        if d_id:
+            stations_per_div.setdefault(d_id, []).append(str(s["_id"]))
+
     return {
         "stations": [{"id": sid, "name": U["station_by_id"].get(sid, {}).get("name") or "—",
                       "code": U["station_by_id"].get(sid, {}).get("code") or ""}
@@ -335,7 +344,13 @@ async def health_explorer_filters(user_id: str):
         "asset_types": [{"id": tid, "name": U["type_by_id"].get(tid, {}).get("name") or "—",
                          "department_id": U["type_by_id"].get(tid, {}).get("department_id")}
                         for tid in asset_type_ids],
-        "divisions": [{"id": str(d["_id"]), "name": d.get("name") or "—",
-                       "code": d.get("code") or ""}
+        # Divisions now include `zone_id` (so the frontend can filter the
+        # dropdown by selected zone) and `assigned_stations` (so the frontend
+        # can resolve a division pick → list of stations for scoping).
+        "divisions": [{"id": str(d["_id"]),
+                       "name": d.get("name") or "—",
+                       "code": d.get("code") or "",
+                       "zone_id": str(d.get("zone_id") or "") or None,
+                       "assigned_stations": stations_per_div.get(str(d["_id"]), [])}
                       for d in U.get("divisions", [])],
     }

@@ -19,6 +19,12 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 
 ## What's Been Implemented (with dates)
 
+### Phase 5.8: Health Explorer Zone→Division Dropdown Fix (May 2026)
+- **Symptom**: Selecting "East Central Railway" as Zone left the Division dropdown empty even though Dhanbad Division existed. Originally suspected as production data drift; turned out to be a code bug that reproduced in preview too.
+- **Root cause**: `/api/dashboard/health-explorer/{user_id}/filters` returned each division as `{id, name, code}` — it never included `zone_id` or `assigned_stations`. The frontend filter at `HealthExplorer.js:139` did `d.zone_id === scopeZoneId` which always evaluated false → empty dropdown for every zone. (Empty was invisible for zones without divisions, hence "no issues at other locations".)
+- **Fix**: Backend `routers/health_explorer.py` filters endpoint now includes `zone_id` (string ObjectId of the linked zone, or null) and `assigned_stations` (list of station ids in that division) on every division dict. Frontend was already correct — no UI changes.
+- **Tested**: `/app/backend/tests/test_health_explorer_filters.py` — 2/2 pytest pass (contract test pins both fields; DHN→ECR linkage test catches future data drift). Smoke-tested via screenshot — ECR scope now shows Dhanbad Division in the dropdown.
+
 ### Phase 5.7: "Missing" as First-Class Deficiency (May 2026)
 - **Problem**: Dashboard / Health Indicator counted assets with `status='missing'` but Orange/Red List didn't show them (no OL row was ever created when marking missing). Users saw mismatched counts.
 - **Backend** (5 files):
