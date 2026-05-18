@@ -15,6 +15,7 @@
  */
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Search, X, RotateCcw, Upload, ImageIcon, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   ICON_MAP, ICON_PRESETS, LUCIDE_ICON_NAMES, resolveIcon,
 } from '../lib/assetIcons';
@@ -64,11 +65,11 @@ export default function IconPicker({
     const ext = file.name.split('.').pop()?.toLowerCase();
     const allowed = ['svg', 'png', 'jpg', 'jpeg', 'webp'];
     if (!allowed.includes(ext)) {
-      alert(`Unsupported format. Allowed: ${allowed.join(', ')}`);
+      toast.error(`Unsupported format. Allowed: ${allowed.join(', ')}`);
       return;
     }
     if (file.size > 512 * 1024) {
-      alert('Icon must be under 512 KB');
+      toast.error('Icon must be under 512 KB');
       return;
     }
     if (onUploadIcon) {

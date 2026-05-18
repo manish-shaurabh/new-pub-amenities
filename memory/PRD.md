@@ -11,176 +11,97 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 
 ## DB Collections
 - `users`, `stations`, `locations`, `departments`, `asset_types`, `assets`
-- `sub_zones`: `{ _id, location_id, station_id, name, code, order, has_divider, divider_orientation, start_pillar, end_pillar }`  *(start_pillar/end_pillar added Feb 2026)*
+- `sub_zones`: `{ _id, location_id, station_id, name, code, order, has_divider, divider_orientation, start_pillar, end_pillar }`
 - `canvas_landmarks`: `{ _id, sub_zone_id, location_id, station_id, label, x, y, landmark_type }`
 - `assets`: Added `sub_zone_id`, `tracking_mode` ('individual' | 'grouped'), `total_count`, `needs_repair_count`, `not_working_count`, `canvas_x`, `canvas_y`
-- `inspections`: Added `sub_zone_health: [{sub_zone_id, responses, photos, remarks}]` (Feb 2026)
+- `asset_types`: Added `icon_key` (string), `custom_icon_url` (string, nullable — uploaded icon path)
+- `inspections`: Added `sub_zone_health: [{sub_zone_id, responses, photos, remarks}]`
 - `orange_list`, `notifications`, `schedules`, `remarks`
 
 ## What's Been Implemented (with dates)
 
+### Phase 5.9: Custom Icon Upload + Department Color Theming (May 2026)
+- **Custom Icon Upload (Option B)**:
+  - New `custom_icon_url` field on `asset_types` collection and `AssetTypeCreate` model.
+  - `POST /api/asset-types/{id}/upload-icon` — accepts SVG/PNG/JPG/WebP (max 512KB), stores in `/app/backend/uploads/icons/`, returns URL. Admin-only.
+  - `DELETE /api/asset-types/{id}/icon` — removes custom icon file and nulls the field. Admin-only.
+  - `GET /api/station-canvas` now passes `custom_icon_url` on each asset record.
+  - Frontend `IconPicker.js` rewritten with two tabs: "Icon Library" (Lucide picker) and "Custom Upload" (drag-drop zone + format guide).
+  - Canvas `AssetNode` renders custom uploaded icons when available.
+- **Department-Based Color Theming (Option E)**:
+  - `departmentTheme.js` library: 6 themes (Electrical=amber/circle, Civil=slate/rounded-rect, S&T=blue/diamond, Commercial=purple/circle, Mechanical=pink/rounded-rect, Default=teal/circle).
+  - PlatformBlueprint AssetNode uses dept colors for working assets, blends with health status for defective/pending.
+  - Different shapes, glow shadows, accent dots, enhanced tooltips with dept name.
+  - DeptLegend component below blueprint. AssetTypePalette also dept-themed.
+- **Tested**: 8/8 pytest pass + full frontend verification.
+
 ### Phase 5.8: Health Explorer Zone→Division Dropdown Fix (May 2026)
-- **Symptom**: Selecting "East Central Railway" as Zone left the Division dropdown empty even though Dhanbad Division existed. Originally suspected as production data drift; turned out to be a code bug that reproduced in preview too.
-- **Root cause**: `/api/dashboard/health-explorer/{user_id}/filters` returned each division as `{id, name, code}` — it never included `zone_id` or `assigned_stations`. The frontend filter at `HealthExplorer.js:139` did `d.zone_id === scopeZoneId` which always evaluated false → empty dropdown for every zone. (Empty was invisible for zones without divisions, hence "no issues at other locations".)
-- **Fix**: Backend `routers/health_explorer.py` filters endpoint now includes `zone_id` (string ObjectId of the linked zone, or null) and `assigned_stations` (list of station ids in that division) on every division dict. Frontend was already correct — no UI changes.
-- **Tested**: `/app/backend/tests/test_health_explorer_filters.py` — 2/2 pytest pass (contract test pins both fields; DHN→ECR linkage test catches future data drift). Smoke-tested via screenshot — ECR scope now shows Dhanbad Division in the dropdown.
+- Fixed `/api/dashboard/health-explorer/{user_id}/filters` missing `zone_id` and `assigned_stations`.
 
 ### Phase 5.7: "Missing" as First-Class Deficiency (May 2026)
-- **Problem**: Dashboard / Health Indicator counted assets with `status='missing'` but Orange/Red List didn't show them (no OL row was ever created when marking missing). Users saw mismatched counts.
-- **Backend** (5 files):
-  - `models.py` — added `InspectionItemStatus.MISSING`, `AssetStatus.MISSING`, and new `OrangeListKind` enum (`defective` / `needs_repair` / `missing`).
-  - `routers/assets.py` `PATCH /assets/{id}/status` — when marking `'missing'`, creates an OL row with `kind='missing'`, `status='defective'`, auto-remarks "Asset marked missing"; when marking back to `'working'`, moves the OL row to `pending_approval` (yellow) and asset to `pending_approval` — mirrors the standard Mark-Working → Approve flow. New optional body fields: `actor_id`, `remarks`.
-  - `routers/inspections.py` `_apply_inspection_item_effects` — added `MISSING` branch creating OL with `kind='missing'` and asset.status='missing'. OK branch now also detects asset.status='missing' (not just 'defective') to flow rectification.
-  - `routers/orange_list.py` — list response now includes `kind` field (defaults to `'defective'` for legacy rows). Existing 24h orange→red aging threshold unchanged (matches user's spec).
-  - `routers/data_heal.py` — forward heal now also back-fills OL rows for `status='missing'` assets (with `kind='missing'`); backward heal flips assets back to `'missing'` when an open OL has `kind='missing'`.
-- **Frontend** (3 files):
-  - `pages/InspectionPage.js` — fourth purple **MISSING** button alongside OK/Not OK/Needs Repair (auto-renders via `STATUS_CONFIG` map). `defective_since` prompt is hidden for missing (server defaults to now). Submit handler maps `it.status='missing'` → asset.status='missing' in the PDF lookup. Footer banner now reads `X OK · Y Not OK · Z Needs Repair · W Missing`. `data-testid`: `status-missing-{asset_id}`.
-  - `components/OrangeListPanel.js` — renders purple `MISSING` chip badge when `item.kind === 'missing'`; gray `REPAIR` chip when `kind === 'needs_repair'`. Icon container turns purple. `data-testid`: `ol-kind-missing-{item._id}`.
-  - `pages/OrangeListPage.js` — same chip badges on the standalone OL page.
-- **Tested**: `/app/backend/tests/test_missing_flow.py` — 5/5 pytest pass (patch creates OL, patch-to-working moves OL to yellow, inspection with status=missing creates OL with kind='missing' and asset.status='missing', OL listing includes kind field, data-heal back-fills missing assets). Pre-existing regression suites (`test_mobile_inspection_iter36`, `test_data_heal`) still 11/11 pass. Frontend smoke screenshot verified the new MISSING button renders on inspection page.
+- Added "Missing" button to inspection UI, OL rows with `kind='missing'`, purple badges, data-heal back-fills.
 
 ### Phase 5.6: Production Data Reconciliation (May 2026)
-- **New `data_heal` router** (`/app/backend/routers/data_heal.py`) — admin-triggered idempotent heal for two known production drifts:
-  1. **Orange List ⇄ Asset Status (two-way reconcile)**:
-     - Forward: assets with `status ∈ {defective, pending_approval}` and no active OL row → back-fill an OL row using `asset.defective_since` (or `now_ist()`).
-     - Backward: open OL rows whose asset shows `status=working` → flip asset back to defective/pending_approval and mirror OL's `defective_since`.
-  2. **Division relink**: divisions whose `zone_id` does not match any existing zone are relinked to the canonical zone (preferring `code='ECR'`).
-- **Endpoints** (all superadmin-only):
-  - `POST /api/data-heal/preview/{user_id}` — dry-run report (counts + sample IDs, no writes)
-  - `POST /api/data-heal/execute/{user_id}` — applies changes + writes audit doc
-  - `GET  /api/data-heal/audit/{user_id}?limit=20` — history of past heals (filtered to `category='data_heal_reconcile'`)
-- **Frontend** — `DataReconcilePanel.js` embedded inside Admin → Health tab (`/app/frontend/src/components/DataReconcilePanel.js`). Preview-first UI with breakdown cards (OL forward / OL backward / Divisions), expandable sample list, confirmation modal with checkbox guard, and inline 10-row audit history. `data-testid`: `data-reconcile-panel`, `reconcile-preview-btn`, `reconcile-execute-btn`, `reconcile-confirm-checkbox`, `reconcile-confirm-execute`.
-- **Audit** — written to existing `data_health_audit` collection with `category='data_heal_reconcile'` so it interleaves with other Data Health actions.
-- **Tested**: `/app/backend/tests/test_data_heal.py` — 4/4 pytest pass. Seeds synthetic forward + backward + orphan-division drift, asserts heal applies, verifies via direct DB reads, then asserts second run is a no-op (idempotent). Also confirms `403` for non-superadmin and `200` for audit endpoint.
+- `data_heal` router for admin-triggered idempotent heal of OL/asset status drift and division relinking.
 
 ### Phase 5.5: Mobile Inspection Redesign — Canvas-First Bundle (Feb 2026)
-- **Compact `MobileCanvasHeader`** (`/app/frontend/src/components/MobileCanvasHeader.js`) — single sticky-row header replacing the bulky chip grid on Platform Vision. Includes: station select, location popover with inline search, filter popover (Department + Asset Type), and More menu (Refresh / PDF / Edit Canvas). Applied to both `StationCanvasPage` and used on mobile + desktop. `data-testid`: `mobile-canvas-header`, `mch-location-trigger`, `mch-location-popover`, `mch-filter-trigger`, `mch-more-trigger`, `mch-pdf-btn`, `mch-edit-toggle`.
-- **Sub-zone pillar markers** — added `start_pillar` and `end_pillar` (string) fields to `sub_zones`. Rendered at canvas edges in `PlatformBlueprint` (left = start, right = end). Falls back to generic "High End ← / → Low End" when not set. New form inputs `subzone-start-pillar` and `subzone-end-pillar` in the SubZoneForm dialog.
-- **Map-default Inspection** — `InspectionPage` now defaults `viewMode = 'map'` and auto-selects the first location with assets, so inspectors land directly on the visual blueprint.
-- **In-canvas filter dropdowns** — Inspection map view exposes Department + Asset Type selects above the blueprint (`map-dept-filter`, `map-type-filter`). Non-matching assets are dimmed to 20% opacity (existing `filters` plumbing in PlatformBlueprint).
-- **Responsive icon sizing** — `PlatformBlueprint.SubZoneCanvas` uses a `ResizeObserver` to scale asset node size between 24–46px based on rendered canvas width AND asset density (≥20 assets → smaller). Prevents icon overlap on narrow mobile canvases.
-- **Per-sub-zone Shed Health card** (`/app/frontend/src/components/SubZoneHealthCard.js`) — new collapsible card rendered below each sub-zone canvas in inspection map view. Four fixed questions: shed_roof_condition, cleanliness, lighting, water_seepage. Each answer = OK / Not OK. **Photo is MANDATORY when answer is "not_ok"** (validated client-side before submit). Optional remarks. `data-testid`: `subzone-health-card-{id}`, `subzone-health-toggle-{id}`, `shed-{key}-ok-{szId}`, `shed-{key}-notok-{szId}`, `shed-{key}-photo-btn-{szId}`, `shed-remarks-{szId}`.
-- **Backend**: `POST /api/inspections` now accepts an optional `sub_zone_health` array which is persisted as-is (backward compatible — defaults to `[]`). `station-canvas` endpoint surfaces pillar fields.
-- **Tested**: `/app/test_reports/iteration_36.json` — backend pytest 7/7 PASS (pillar create/get/update/clear, station-canvas surfacing, inspection w/ & w/o sub_zone_health). Frontend smoke verified. Regression suite at `/app/backend/tests/test_mobile_inspection_iter36.py`.
+- MobileCanvasHeader, sub-zone pillar markers, map-default inspection, in-canvas filters, responsive icon sizing, SubZoneHealthCard.
 
 ### Phase 5.4: Full Lucide Icon Library Picker (Feb 2026)
-- **3,590 icons** now selectable on every Asset Type — the old 18-preset library is kept as a "Recommended" row pinned at the top of the picker.
-- **New `IconPicker` component** (`/app/frontend/src/components/IconPicker.js`) — searchable grid with: live search across the full Lucide library, paginated "Show more" loader (120 per page), inline "Selected" badge, and a "Reset (auto-detect from name)" link.
-- **`resolveIcon(key)` helper** in `/app/frontend/src/lib/assetIcons.js` — single resolver used by every renderer (PlatformBlueprint, CanvasEditor, AssetTypePalette, AssetDropPopover) that accepts BOTH the legacy short keys (`"fan"`, `"light"`, …) and PascalCase Lucide names (`"Train"`, `"Hammer"`, …) and falls back to `Circle`.
-- **Backward-compatible** — all existing `icon_key` values continue rendering unchanged; new picks just store the PascalCase name string.
-- **Sub-zone reorder fix** also shipped this session: new `PATCH /api/sub-zones/reorder` endpoint, contiguous order on create, startup migration to heal legacy ties.
+- 3,590 icons selectable, searchable grid, `resolveIcon()` helper.
 
 ### Phase 5.3: Canvas-First Asset Creation (Feb 2026)
-- **AssetTypePalette revamp** — sidebar now has a search box, multi-select department category chips (with counts), and a draggable icon grid. Chips and search are AND-combined. `data-testid`: `palette-search`, `palette-dept-chip-{id}`, `palette-type-{id}`, `palette-clear-filters`.
-- **AssetDropPopover** (new component) — replaces the old AssetQuickForm. Pre-fills a server-generated asset code via `POST /api/assets/preview-code`, with editable input, optional description, and a `total_count` field for grouped types. Enter to confirm, Escape to cancel.
-- **Server-generated asset codes** — atomic, deterministic pattern `{ZONE}-{DIV}-{STN}-{LOC}-[{SZ}-]{TYPE}-{seq:04d}`. New `asset_code_counters` collection holds per-bucket sequences via `findOneAndUpdate $inc`.
-- **`POST /api/assets/auto-create`** — canvas-first creation endpoint. Auto-resolves hierarchy (sub_zone → location → station → division → zone, dept from asset_type) and generates the code. Accepts `asset_number_override` for custom conventions; supports grouped (requires `total_count`); supports station-level "unassigned to sub-zone" creation.
-- **`POST /api/assets/preview-code`** — non-destructive preview of the next code.
-- **Department now strictly required on `asset_types`** — `POST/PUT /api/asset-types` reject empty/missing `department_id` with 400. Admin form disables Submit until a department is chosen and shows an inline warning (`data-testid="at-dept-required-warn"`).
-- **Startup migration** (`_migrate_asset_types_require_dept`) — hard-deletes any legacy asset_types missing `department_id` AND cascade-deletes their assets (option A per user decision).
-- **Asset delete confirmation** — `window.confirm` replaced with shadcn `AlertDialog` (`data-testid`: `delete-asset-alert`, `delete-asset-confirm`, `delete-asset-cancel`) showing the asset code and explicit warning about cascade deletion.
-- **Tested**: `/app/test_reports/iteration_35.json` — 13/13 backend pytest pass, frontend smoke verified (palette filters, popover open with pre-filled code, Escape dismissal).
+- AssetTypePalette, AssetDropPopover, server-generated asset codes, auto-create endpoint.
 
 ### Phase 5.2: Platform Vision 2.0 — Interactive Canvas CRUD (Feb 2026)
-- **Asset Type icon picker** — admin selects icon_key from 18 presets (fan, light, tap, cib, wifi, seat, fire, camera, clock, ac, toilet, door, tv, phone, sign, bin, lock, safety, default). Auto-detected from name if blank. `icon_key` stored on asset_types.
-- **AssetTypePalette** — right sidebar in edit mode showing all asset types grouped by department, drag-to-canvas or click-to-select.
-- **Inline asset creation from canvas** — select/drop asset type → click canvas → mini form (asset_number, description) → asset created at exact (canvas_x, canvas_y) with `POST /api/assets`.
-- **Per-asset action menu** (edit mode) — Edit Details / Reposition / Mark Missing / Delete with `data-testid="asset-action-{edit|reposition|mark-missing|delete}"`.
-- **PATCH /api/assets/{id}/status** — toggles status between `working` and `missing` (new endpoint). Missing assets render as gray-bordered X on canvas.
-- **Sub-zone management from canvas** — add / reorder (↑↓) / delete (with force-delete-on-conflict confirmation showing asset count) / configure center divider (vertical/horizontal).
-- **Location quick-create** — "+ Location" button in edit-mode header.
-- **PDF Export** — `Download` button generates A4 landscape PDF via html2canvas + jsPDF capturing the full PlatformBlueprint root, with station+location header and IST timestamp.
-- **Tested**: `/app/test_reports/iteration_34.json` — backend 9/9 pytest, frontend smoke 100% (palette, edit mode, action menu, PDF download, admin icon picker).
+- Asset Type icon picker, palette, inline creation, per-asset action menu, sub-zone management, PDF export.
 
-### Phase 1–3: Core System (pre-Jun 2025)
-- Full FARM stack auth with JWT, role-based access
-- Asset Registry CRUD + bulk operations
-- Inspection workflow (dual-pane UI, photo upload, GPS)
-- Orange List / Red List with 24h threshold
-- Schedules, Notifications
-- Reports + custom report builder
-- Health Explorer with drill-down
-- Zone/Division hierarchy + global filters
-
-### Phase 4: Sub-Zones & Grouped Assets (Jan 2026)
-- Sub-Zone CRUD (Admin Panel) — Station → Location → Sub-Zone → Asset
-- "Grouped" asset tracking mode (total_count, needs_repair_count, not_working_count)
-- Bulk sub-zone assignment in Asset Registry
-- Inspection Page: 3-tier sub-zone grouping with grouped asset numeric inputs
-- Personnel Map Zone/Division fix + password hash scrub
-
-### Phase 5: Platform Vision / Blueprint (May 2026)
-- **StationCanvasPage** (`/station-canvas`) — "Platform Vision" page
-  - Station selector + Location tabs
-  - Dept / Asset Type filters with highlight+dim behavior
-  - Live health color legend (Working/Pending/Orange/Red)
-  - Edit canvas button per sub-zone (admin only)
-- **PlatformBlueprint.js** — shared canvas renderer (health + inspection modes)
-  - Sub-zone canvases with 16:9 aspect ratio
-  - Asset icons (fan/light/tap/cib/wifi/seat/etc.) at their (canvas_x, canvas_y) positions
-  - Center dividing line (configurable per sub-zone: vertical/horizontal)
-  - Landmark markers (P.No pins)
-  - Health status color rings
-  - Hover tooltips, tap-to-inspect support
-  - Unpositioned assets strip
-- **CanvasEditor.js** — admin drag-and-drop positioning tool
-  - Click unpositioned asset → click canvas to place
-  - Drag placed asset to reposition
-  - Add/remove landmark markers (P.No 27, P.No 28, etc.)
-  - Saves via PATCH /api/assets/bulk/canvas + canvas-landmarks CRUD
-- **InspectionPage map view** — List/Map view toggle
-  - Blueprint view shows inspection session state overlay
-  - Tap-to-inspect: click asset → bottom sheet with inspection form
-- **Sub-zone improvements**:
-  - Force-delete with asset unassign (DELETE /api/sub-zones/{id}?force=true)
-  - has_divider + divider_orientation fields on sub-zones
-  - Canvas editor button per sub-zone in Admin Panel
-- **Backend endpoints added**:
-  - `GET /api/station-canvas?location_id=&station_id=` — aggregated blueprint data
-  - `PATCH /api/assets/bulk/canvas` — bulk canvas position update
-  - `PATCH /api/assets/{id}/canvas` — single asset position update
-  - `GET/POST/PUT/DELETE /api/canvas-landmarks` — P.No landmark management
+### Phase 1–5.1: Core System + Sub-Zones + Grouped Assets
+- Full FARM stack auth, Asset Registry CRUD, Inspection workflow, Orange/Red List, Schedules, Notifications, Reports, Health Explorer, Zone/Division hierarchy.
 
 ## Pending / P0 Issues
 
-### Issue 1: Server-side auth/RBAC gaps (P1)
-- Older endpoints trust `current_user_id` query param from client instead of extracting from JWT
-- Fix: use `get_current_user` FastAPI dependency
-- Status: NOT STARTED
+### Issue 1: Landmark silent failure (P1)
+- Canvas P.No marker placement errors swallowed. Need to surface actual error messages.
 
-### Issue 2: Scoping gaps on global list endpoints (P1)
-- GET /api/assets, /api/users, /api/departments, /api/stations don't enforce role scoping
-- Status: NOT STARTED (blocked on Issue 1)
+### Issue 2: Server-side auth/RBAC gaps (P1)
+- Older endpoints trust `current_user_id` query param from client instead of extracting from JWT.
 
-### Issue 3: Inspection creation non-transactional (P2)
-- POST /api/inspections does sequential writes with no rollback
-- Status: NOT STARTED
+### Issue 3: Scoping gaps on global list endpoints (P1)
+- GET /api/assets, /api/users, etc. don't enforce role scoping server-side. Blocked on Issue 2.
 
 ### Issue 4: Hardcoded fallback JWT_SECRET (P1)
-- Status: NOT STARTED
+
+### Issue 5: Frontend Code Quality Refactors (P2)
+- 137 missing hook deps, array index keys, insecure localStorage tokens.
 
 ## Upcoming Tasks (P1)
-- QR Code Generation + Scan Landing Flow (Phase 4 from earlier plan)
+- QR Code Generation + Scan Landing Flow
+- User Manual PDF Generation
 - JWT Secret hardening
 
 ## Future / Backlog
-- Schedule Execution (cron/background tasks for inspection schedules)
+- Schedule Execution (cron/background tasks)
 - Real SMS/Telegram notification provider
-- File Storage migration to S3/Azure Blob for asset photos
-- Canvas position import from photo upload (AI-assisted placement)
-- Multi-platform stitching view
+- File Storage migration to S3/Azure Blob
+- Canvas position import from photo upload (AI-assisted)
+- Split oversized React components (AdminPage 1900+ lines)
+- Refactor POST /api/inspections to be transactional
 
 ## Test Credentials
 See `/app/memory/test_credentials.md`
 
 ## Key API Endpoints
-- `POST /api/auth/login` — employee_id + password
-- `GET /api/station-canvas?location_id=` — blueprint data
-- `PATCH /api/assets/bulk/canvas` — bulk position update
-- `DELETE /api/sub-zones/{id}?force=true` — force delete + unassign
-- `GET /api/canvas-landmarks?sub_zone_id=` — P.No markers
-- `GET /api/users/station-staff` — personnel map
+- `POST /api/auth/login`
+- `GET /api/station-canvas?location_id=`
+- `PATCH /api/assets/bulk/canvas`
+- `POST /api/asset-types/{id}/upload-icon` — custom icon upload (admin-only)
+- `DELETE /api/asset-types/{id}/icon` — remove custom icon (admin-only)
+- `POST /api/data-heal/preview/{user_id}`
+- `POST /api/data-heal/execute/{user_id}`
 
 ## Test Reports
-- `/app/test_reports/iteration_34.json` — Phase 5.2 (Platform Vision 2.0) — 9/9 backend, 100% frontend smoke
-- `/app/test_reports/iteration_33.json` — Phase 5.1 (30/30 backend, 100% frontend)
+- `/app/test_reports/iteration_37.json` — Phase 5.9 (Custom Icon + Dept Theming) — 8/8 backend
+- `/app/test_reports/iteration_36.json` — Phase 5.5 (Mobile Canvas) — 7/7 backend
+- `/app/test_reports/iteration_35.json` — Phase 5.3 (Canvas-First) — 13/13 backend
+- `/app/test_reports/iteration_34.json` — Phase 5.2 (Platform Vision 2.0) — 9/9 backend

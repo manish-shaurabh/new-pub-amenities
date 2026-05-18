@@ -1808,7 +1808,7 @@ export default function AdminPage() {
                     const form = new FormData();
                     form.append('file', file);
                     try {
-                      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/asset-types/${atId}/upload-icon`, {
+                      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/asset-types/${atId}/upload-icon?current_user_id=${user?._id || ''}`, {
                         method: 'POST', body: form,
                       });
                       if (!res.ok) {
@@ -1826,7 +1826,7 @@ export default function AdminPage() {
                     const atId = editingItem?.id;
                     if (!atId) return;
                     try {
-                      await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/asset-types/${atId}/icon`, { method: 'DELETE' });
+                      await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/asset-types/${atId}/icon?current_user_id=${user?._id || ''}`, { method: 'DELETE' });
                       setAssetTypeForm(prev => ({ ...prev, custom_icon_url: '' }));
                       toast.success('Custom icon removed');
                     } catch (e) {

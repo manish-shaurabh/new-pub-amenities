@@ -124,10 +124,24 @@ ICON_UPLOAD_DIR = "/app/backend/uploads/icons"
 os.makedirs(ICON_UPLOAD_DIR, exist_ok=True)
 ALLOWED_ICON_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
 MAX_ICON_SIZE = 512 * 1024  # 512 KB
+ADMIN_ROLES = {"superadmin", "admin", "divisional_admin"}
+
+
+async def _require_admin(user_id: str):
+    """Lightweight admin guard for icon management."""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id required")
+    try:
+        u = await users_collection.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    if not u or u.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin role required")
 
 
 @router.post("/api/asset-types/{asset_type_id}/upload-icon")
-async def upload_asset_type_icon(asset_type_id: str, file: UploadFile = File(...)):
+async def upload_asset_type_icon(asset_type_id: str, file: UploadFile = File(...), current_user_id: str = Query(default="")):
+    await _require_admin(current_user_id)
     doc = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Asset type not found")
@@ -162,7 +176,8 @@ async def upload_asset_type_icon(asset_type_id: str, file: UploadFile = File(...
 
 
 @router.delete("/api/asset-types/{asset_type_id}/icon")
-async def delete_asset_type_icon(asset_type_id: str):
+async def delete_asset_type_icon(asset_type_id: str, current_user_id: str = Query(default="")):
+    await _require_admin(current_user_id)
     doc = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Asset type not found")
