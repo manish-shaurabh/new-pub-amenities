@@ -235,6 +235,14 @@ export default function OrangeListPage() {
               {item.status === 'pending_approval' && (
                 <Badge className="bg-yellow-500 text-white border-0 text-[10px]">YELLOW LIST</Badge>
               )}
+              {/* Deficiency-kind chip — only shown for non-default kinds. */}
+              {(item.kind || 'defective') === 'missing' && (
+                <Badge className="bg-purple-600 text-white border-0 text-[10px]"
+                       data-testid={`ol-kind-missing-${item._id}`}>MISSING</Badge>
+              )}
+              {item.kind === 'needs_repair' && (
+                <Badge className="bg-slate-500 text-white border-0 text-[10px]">REPAIR</Badge>
+              )}
               {etaCache[item.asset_id]?.eta_hrs != null && (
                 <Badge variant="outline" className="text-[10px] border-teal-300 text-teal-700"
                        data-testid={`ol-eta-${item._id}`}

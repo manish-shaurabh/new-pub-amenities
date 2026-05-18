@@ -698,12 +698,26 @@ async def update_asset(asset_id: str, asset: AssetCreate):
 async def patch_asset_status(asset_id: str, payload: dict):
     """Update an asset's lifecycle status (e.g. mark/unmark as missing).
 
-    Body: { status: "working" | "missing" }
+    Body: { status: "working" | "missing", actor_id?: str, remarks?: str }
 
     Use specialised endpoints for `not_ok` / `needs_repair` (mark-defective)
     and for inspection approvals. This endpoint is for simple toggles only.
+
+    Side effects (so dashboard/health counts stay in sync with Orange List):
+      • status='missing'  → create an open OL row with kind='missing' (if no
+                            active row exists for this asset).
+      • status='working'  → if there is an active OL row with kind='missing',
+                            move it to pending_approval (yellow flow) so an
+                            approving supervisor can confirm the recovery.
+                            This mirrors the Mark-Working flow used by
+                            defective items.
     """
+    from database import orange_list_collection, now_ist
+    from models import OrangeListStatus, OrangeListKind
+
     new_status = (payload or {}).get("status")
+    actor_id = (payload or {}).get("actor_id")
+    remarks = ((payload or {}).get("remarks") or "").strip()
     if new_status not in ("working", "missing"):
         raise HTTPException(
             status_code=400,
@@ -712,10 +726,62 @@ async def patch_asset_status(asset_id: str, payload: dict):
     existing = await assets_collection.find_one({"_id": ObjectId(asset_id)})
     if not existing:
         raise HTTPException(status_code=404, detail="Asset not found")
+
+    update_doc: dict = {"status": new_status}
+    if new_status == "missing":
+        update_doc["defective_since"] = existing.get("defective_since") or now_ist()
     await assets_collection.update_one(
         {"_id": ObjectId(asset_id)},
-        {"$set": {"status": new_status}},
+        {"$set": update_doc},
     )
+
+    # ── OL side-effects (kind='missing') ────────────────────────────────
+    if new_status == "missing":
+        # Create OL row only if none is currently open
+        already = await orange_list_collection.find_one({
+            "asset_id": asset_id,
+            "status": {"$ne": OrangeListStatus.RESOLVED.value},
+        })
+        if not already:
+            ds = update_doc["defective_since"]
+            await orange_list_collection.insert_one({
+                "asset_id": asset_id,
+                "inspection_id": None,
+                "reported_by": actor_id,
+                "status": OrangeListStatus.DEFECTIVE.value,
+                "kind": OrangeListKind.MISSING.value,
+                "defective_since": ds,
+                "remarks": remarks or "Asset marked missing",
+                "marked_working_by": None,
+                "marked_working_at": None,
+                "approved_by": None,
+                "approved_at": None,
+                "created_at": now_ist(),
+            })
+    else:
+        # new_status == "working" — move any active 'missing' OL to yellow
+        missing_open = await orange_list_collection.find_one({
+            "asset_id": asset_id,
+            "kind": OrangeListKind.MISSING.value,
+            "status": OrangeListStatus.DEFECTIVE.value,
+        })
+        if missing_open:
+            await orange_list_collection.update_one(
+                {"_id": missing_open["_id"]},
+                {"$set": {
+                    "status": OrangeListStatus.PENDING_APPROVAL.value,
+                    "marked_working_by": actor_id,
+                    "marked_working_at": now_ist(),
+                    "working_remarks": remarks or "Asset recovered",
+                }},
+            )
+            # Asset goes to pending_approval until ASUP confirms (mirrors
+            # the normal defective→working flow).
+            await assets_collection.update_one(
+                {"_id": ObjectId(asset_id)},
+                {"$set": {"status": "pending_approval"}},
+            )
+
     doc = await assets_collection.find_one({"_id": ObjectId(asset_id)})
     return serialize_doc(doc)
 

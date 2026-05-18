@@ -19,6 +19,20 @@ Build a production-ready Railway Asset Inspection Management System. Scope inclu
 
 ## What's Been Implemented (with dates)
 
+### Phase 5.7: "Missing" as First-Class Deficiency (May 2026)
+- **Problem**: Dashboard / Health Indicator counted assets with `status='missing'` but Orange/Red List didn't show them (no OL row was ever created when marking missing). Users saw mismatched counts.
+- **Backend** (5 files):
+  - `models.py` — added `InspectionItemStatus.MISSING`, `AssetStatus.MISSING`, and new `OrangeListKind` enum (`defective` / `needs_repair` / `missing`).
+  - `routers/assets.py` `PATCH /assets/{id}/status` — when marking `'missing'`, creates an OL row with `kind='missing'`, `status='defective'`, auto-remarks "Asset marked missing"; when marking back to `'working'`, moves the OL row to `pending_approval` (yellow) and asset to `pending_approval` — mirrors the standard Mark-Working → Approve flow. New optional body fields: `actor_id`, `remarks`.
+  - `routers/inspections.py` `_apply_inspection_item_effects` — added `MISSING` branch creating OL with `kind='missing'` and asset.status='missing'. OK branch now also detects asset.status='missing' (not just 'defective') to flow rectification.
+  - `routers/orange_list.py` — list response now includes `kind` field (defaults to `'defective'` for legacy rows). Existing 24h orange→red aging threshold unchanged (matches user's spec).
+  - `routers/data_heal.py` — forward heal now also back-fills OL rows for `status='missing'` assets (with `kind='missing'`); backward heal flips assets back to `'missing'` when an open OL has `kind='missing'`.
+- **Frontend** (3 files):
+  - `pages/InspectionPage.js` — fourth purple **MISSING** button alongside OK/Not OK/Needs Repair (auto-renders via `STATUS_CONFIG` map). `defective_since` prompt is hidden for missing (server defaults to now). Submit handler maps `it.status='missing'` → asset.status='missing' in the PDF lookup. Footer banner now reads `X OK · Y Not OK · Z Needs Repair · W Missing`. `data-testid`: `status-missing-{asset_id}`.
+  - `components/OrangeListPanel.js` — renders purple `MISSING` chip badge when `item.kind === 'missing'`; gray `REPAIR` chip when `kind === 'needs_repair'`. Icon container turns purple. `data-testid`: `ol-kind-missing-{item._id}`.
+  - `pages/OrangeListPage.js` — same chip badges on the standalone OL page.
+- **Tested**: `/app/backend/tests/test_missing_flow.py` — 5/5 pytest pass (patch creates OL, patch-to-working moves OL to yellow, inspection with status=missing creates OL with kind='missing' and asset.status='missing', OL listing includes kind field, data-heal back-fills missing assets). Pre-existing regression suites (`test_mobile_inspection_iter36`, `test_data_heal`) still 11/11 pass. Frontend smoke screenshot verified the new MISSING button renders on inspection page.
+
 ### Phase 5.6: Production Data Reconciliation (May 2026)
 - **New `data_heal` router** (`/app/backend/routers/data_heal.py`) — admin-triggered idempotent heal for two known production drifts:
   1. **Orange List ⇄ Asset Status (two-way reconcile)**:

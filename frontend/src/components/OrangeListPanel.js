@@ -160,6 +160,8 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
   const ItemRow = ({ item }) => {
     const isDefective = item.status === 'defective';
     const isPending = item.status === 'pending_approval';
+    const isMissing = (item.kind || 'defective') === 'missing';
+    const isNeedsRepair = item.kind === 'needs_repair';
     const isOpen = !!expanded[item._id];
     return (
       <div className="border-b last:border-0">
@@ -169,6 +171,7 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
             // Issue 7 fix: isPending checked BEFORE list_type so yellow items show
             // yellow icon regardless of their original orange/red classification.
             isPending                ? 'bg-yellow-50 text-yellow-600' :
+            isMissing                ? 'bg-purple-50 text-purple-600' :
             item.list_type === 'red' ? 'bg-red-50 text-red-600' :
             'bg-orange-50 text-orange-600'
           }`}>
@@ -196,6 +199,15 @@ export default function OrangeListPanel({ userId, mode = 'sup' }) {
               )}
               {isPending && (
                 <Badge className="bg-yellow-500 text-white border-0 text-[9px] px-1 py-0">YELLOW</Badge>
+              )}
+              {/* Deficiency-kind chip (purple = missing; gray = needs-repair).
+                  Defective is the default — no chip needed for it. */}
+              {isMissing && (
+                <Badge className="bg-purple-600 text-white border-0 text-[9px] px-1 py-0"
+                       data-testid={`ol-kind-missing-${item._id}`}>MISSING</Badge>
+              )}
+              {isNeedsRepair && (
+                <Badge className="bg-slate-500 text-white border-0 text-[9px] px-1 py-0">REPAIR</Badge>
               )}
               {etaCache[item.asset_id]?.eta_hrs != null && (
                 <Badge variant="outline" className="text-[9px] px-1 py-0 border-teal-300 text-teal-700"

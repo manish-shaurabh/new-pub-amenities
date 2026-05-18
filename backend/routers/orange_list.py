@@ -217,6 +217,9 @@ async def list_orange_items(
         doc["list_type"] = item_list_type
         doc["hours_defective"] = round(hours_defective, 1)
         doc["defective_since"] = defective_since.isoformat() if defective_since else None
+        # Default `kind` for legacy rows that pre-date the missing/needs_repair
+        # taxonomy — they're all classic defective.
+        doc["kind"] = doc.get("kind") or "defective"
         
         # Get reporter name from batch-fetched map
         reporter = reporters_map.get(doc.get("reported_by", ""))

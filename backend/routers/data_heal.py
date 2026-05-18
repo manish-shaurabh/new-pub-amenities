@@ -56,10 +56,16 @@ async def _require_superadmin(user_id: str) -> dict:
 # ─── Reconciliation builders (pure: no writes when dry_run=True) ──────────
 async def _scan_ol_status_mismatch() -> Dict[str, Any]:
     """Return forward (asset → missing OL) and backward (OL → asset mismatch)
-    discrepancies. Caller decides whether to write."""
-    # FORWARD: assets marked defective/pending without an open OL
+    discrepancies. Caller decides whether to write.
+
+    'missing' is treated as a deficiency just like 'defective'/'pending_approval'
+    — every asset in any of these statuses MUST have an active OL row, otherwise
+    dashboard counts and Orange List rows disagree.
+    """
+    BAD_STATUSES = ["defective", "pending_approval", "missing"]
+    # FORWARD: assets marked defective/pending/missing without an open OL
     bad_assets = await assets_collection.find(
-        {"status": {"$in": ["defective", "pending_approval"]}}).to_list(50000)
+        {"status": {"$in": BAD_STATUSES}}).to_list(50000)
     bad_asset_ids = [str(a["_id"]) for a in bad_assets]
     open_ols = await orange_list_collection.find(
         {"asset_id": {"$in": bad_asset_ids}, "status": {"$ne": "resolved"}},
@@ -165,18 +171,32 @@ async def _reconcile(dry_run: bool, actor_id: str) -> Dict[str, Any]:
         for a in forward:
             aid = str(a["_id"])
             ds = a.get("defective_since") or now_ist()
-            ol_status = ("pending_approval"
-                         if a.get("status") == "pending_approval"
-                         else "defective")
+            a_status = a.get("status")
+            # Map asset.status → OL (status, kind). 'missing' uses kind='missing'
+            # so the UI can render a purple chip and reports break it out.
+            if a_status == "missing":
+                ol_status, ol_kind = "defective", "missing"
+                fill_remarks = ("Back-filled by data reconciliation "
+                                "(asset was marked missing without an active "
+                                "orange-list row).")
+            elif a_status == "pending_approval":
+                ol_status, ol_kind = "pending_approval", "defective"
+                fill_remarks = ("Back-filled by data reconciliation "
+                                "(asset was pending approval without an active "
+                                "orange-list row).")
+            else:
+                ol_status, ol_kind = "defective", "defective"
+                fill_remarks = ("Back-filled by data reconciliation "
+                                "(asset was marked defective without an active "
+                                "orange-list row).")
             await orange_list_collection.insert_one({
                 "asset_id": aid,
                 "inspection_id": None,
                 "reported_by": None,
                 "status": ol_status,
+                "kind": ol_kind,
                 "defective_since": ds,
-                "remarks": "Back-filled by data reconciliation "
-                           "(asset was marked defective without an active "
-                           "orange-list row).",
+                "remarks": fill_remarks,
                 "marked_working_by": None,
                 "marked_working_at": None,
                 "approved_by": None,
@@ -190,9 +210,14 @@ async def _reconcile(dry_run: bool, actor_id: str) -> Dict[str, Any]:
         for pair in backward:
             ol = pair["ol"]
             asset = pair["asset"]
-            new_status = ("pending_approval"
-                          if ol.get("status") == "pending_approval"
-                          else "defective")
+            ol_kind = ol.get("kind") or "defective"
+            # If OL is kind='missing', flip asset to status='missing'.
+            if ol_kind == "missing":
+                new_status = "missing"
+            elif ol.get("status") == "pending_approval":
+                new_status = "pending_approval"
+            else:
+                new_status = "defective"
             ds = ol.get("defective_since") or asset.get("defective_since") or now_ist()
             await assets_collection.update_one(
                 {"_id": asset["_id"]},

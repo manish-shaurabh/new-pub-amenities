@@ -22,7 +22,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../components/ui/s
 import { toast } from 'sonner';
 import {
   ClipboardCheck, Camera, Users, CalendarIcon, AlertTriangle,
-  ChevronDown, Trash2, MapPin, CheckCircle2, XCircle, Wrench,
+  ChevronDown, Trash2, MapPin, CheckCircle2, XCircle, Wrench, HelpCircle,
   CheckSquare, Square, ChevronRight, ListChecks, Map as MapIcon, List
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -38,12 +38,16 @@ const STATUS_CONFIG = {
   ok: { label: 'OK', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
   not_ok: { label: 'Not OK', icon: XCircle, color: 'text-destructive', bg: 'bg-red-50 border-red-200' },
   needs_repair: { label: 'Needs Repair', icon: Wrench, color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200' },
+  // Purple = physically absent. Same lifecycle as defective but a distinct chip
+  // so dashboards / OL can break the count down (kind='missing').
+  missing: { label: 'Missing', icon: HelpCircle, color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
 };
 
 const ASSET_STATUS_COLOR = {
   working: 'bg-emerald-100 text-emerald-800 border-emerald-200',
   defective: 'bg-red-100 text-red-800 border-red-200',
   pending_approval: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  missing: 'bg-purple-100 text-purple-800 border-purple-200',
 };
 
 // ────────────────────────────────────────────────────────────────
@@ -868,6 +872,8 @@ export default function InspectionPage() {
             lookup[it.asset_id].ol_defective_since = it.defective_since;
             lookup[it.asset_id].defective_since = it.defective_since;
           }
+        } else if (it.status === 'missing') {
+          lookup[it.asset_id].status = 'missing';
         } else if (it.status === 'ok' && lookup[it.asset_id].status === 'defective') {
           lookup[it.asset_id].status = 'pending_approval';
         }
@@ -952,9 +958,9 @@ export default function InspectionPage() {
     return out.filter(loc => loc.assets.length > 0);
   }, [locationsWithAssets, typeFilter, subZoneFilter]);
 
-  // Defect count for banner
+  // Defect count for banner (includes 'missing' since it is also a deficiency)
   const defectCount = useMemo(() =>
-    inspectionItems.filter(i => i.status === 'not_ok' || i.status === 'needs_repair').length,
+    inspectionItems.filter(i => i.status === 'not_ok' || i.status === 'needs_repair' || i.status === 'missing').length,
     [inspectionItems]
   );
 
@@ -1456,7 +1462,8 @@ export default function InspectionPage() {
                 <p className="text-xs text-muted-foreground">
                   {inspectionItems.filter(i => i.status === 'ok').length} OK &middot;&nbsp;
                   {inspectionItems.filter(i => i.status === 'not_ok').length} Not OK &middot;&nbsp;
-                  {inspectionItems.filter(i => i.status === 'needs_repair').length} Needs Repair
+                  {inspectionItems.filter(i => i.status === 'needs_repair').length} Needs Repair &middot;&nbsp;
+                  {inspectionItems.filter(i => i.status === 'missing').length} Missing
                 </p>
               </div>
               <Button

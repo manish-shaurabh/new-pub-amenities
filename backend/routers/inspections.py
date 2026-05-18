@@ -229,6 +229,41 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
     inspector_id = inspection_doc["inspector_id"]
     item_status = item.get("status")
 
+    # ── Missing path — flag asset absent + open OL row with kind='missing' ──
+    # (Handled FIRST so it short-circuits the defective branch below.)
+    if item_status == InspectionItemStatus.MISSING.value:
+        from models import OrangeListKind  # local import — avoids cycle at module load
+        now_n = now_ist()
+        existing_open = await orange_list_collection.find_one({
+            "asset_id": asset_id,
+            "status": {"$ne": OrangeListStatus.RESOLVED.value},
+        })
+        if not existing_open:
+            inspector_name = inspection_doc.get("inspector_name", "Inspector")
+            remarks_text = (item.get("remarks") or "").strip() \
+                or f"Asset reported missing during inspection by {inspector_name}"
+            await orange_list_collection.insert_one({
+                "asset_id": asset_id,
+                "inspection_id": inspection_id,
+                "reported_by": inspector_id,
+                "status": OrangeListStatus.DEFECTIVE.value,
+                "kind": OrangeListKind.MISSING.value,
+                "defective_since": now_n,
+                "remarks": remarks_text,
+                "marked_working_by": None,
+                "marked_working_at": None,
+                "approved_by": None,
+                "approved_at": None,
+                "created_at": now_n,
+            })
+        # Mirror asset state. We use status='missing' (existing canvas-supported
+        # state) so the UI can distinguish "broken in place" from "absent".
+        await assets_collection.update_one(
+            {"_id": ObjectId(asset_id)},
+            {"$set": {"status": "missing", "defective_since": now_n}},
+        )
+        return
+
     if item_status in (InspectionItemStatus.NOT_OK.value, InspectionItemStatus.NEEDS_REPAIR.value):
         # ── Defective path ──────────────────────────────────────────────────────
         defective_since = item.get("defective_since")
@@ -454,9 +489,10 @@ async def _apply_inspection_item_effects(inspection_doc: dict, item: dict, revie
                 })
 
     elif item_status == InspectionItemStatus.OK.value:
-        # ── OK path — check if asset was previously defective ──────────────────
+        # ── OK path — check if asset was previously defective OR missing ──────
         asset_doc = await assets_collection.find_one({"_id": ObjectId(asset_id)})
-        if asset_doc and asset_doc.get("status") == AssetStatus.DEFECTIVE.value:
+        prev_status = asset_doc.get("status") if asset_doc else None
+        if asset_doc and prev_status in (AssetStatus.DEFECTIVE.value, "missing"):
             # Supervisor rectified a defective asset → move orange list entry to Yellow List
             rectified_on = item.get("rectified_on")
             if rectified_on:

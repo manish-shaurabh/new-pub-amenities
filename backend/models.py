@@ -23,6 +23,7 @@ class AssetStatus(str, Enum):
     WORKING = "working"
     DEFECTIVE = "defective"
     PENDING_APPROVAL = "pending_approval"
+    MISSING = "missing"  # Physically absent; tracked via OL row with kind='missing'.
 
 
 class InspectionType(str, Enum):
@@ -38,6 +39,7 @@ class InspectionItemStatus(str, Enum):
       - 'ok'
       - 'not_ok'
       - 'needs_repair'
+      - 'missing'         (asset physically absent — flows into OL with kind='missing')
 
     The Python enum NAMES are uppercase (idiomatic) but never serialized.
     Frontend should always send lowercase strings.
@@ -45,6 +47,20 @@ class InspectionItemStatus(str, Enum):
     OK = "ok"
     NOT_OK = "not_ok"
     NEEDS_REPAIR = "needs_repair"
+    MISSING = "missing"
+
+
+class OrangeListKind(str, Enum):
+    """Deficiency category on an Orange-List row.
+
+    All three kinds share the same OL state machine (defective → pending_approval
+    → resolved) and the same 24h orange→red aging threshold. `kind` is purely a
+    classification used by the UI to render badges and by reports to break the
+    count down. Existing rows without this field are treated as 'defective'.
+    """
+    DEFECTIVE = "defective"
+    NEEDS_REPAIR = "needs_repair"
+    MISSING = "missing"
 
 
 class ScheduleFrequency(str, Enum):
