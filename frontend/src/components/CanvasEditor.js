@@ -193,18 +193,26 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
       }));
       await assetsAPI.bulkUpdateCanvasPositions(posPayload);
 
-      // 2. Sync landmarks: delete removed, create new
+      // 2. Sync landmarks: delete removed, create new (track failures explicitly)
       const originalIds = new Set((landmarks || []).map(l => l.id));
       const currentIds = new Set(localLandmarks.filter(l => !l._new).map(l => l.id));
 
+      const failures = [];
       // Delete removed landmarks
       for (const id of originalIds) {
         if (!currentIds.has(id)) {
-          try { await canvasLandmarksAPI.delete(id); } catch (_) {}
+          try {
+            await canvasLandmarksAPI.delete(id);
+          } catch (err) {
+            console.error('Landmark delete failed', id, err);
+            failures.push({ op: 'delete', label: id, err });
+          }
         }
       }
       // Create new landmarks
-      for (const lm of localLandmarks.filter(l => l._new)) {
+      const toCreate = localLandmarks.filter(l => l._new);
+      let created = 0;
+      for (const lm of toCreate) {
         try {
           await canvasLandmarksAPI.create({
             sub_zone_id: subZone.id,
@@ -215,13 +223,29 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
             y: lm.y,
             landmark_type: lm.landmark_type || 'pole',
           });
-        } catch (_) {}
+          created += 1;
+        } catch (err) {
+          console.error('Landmark create failed', lm, err);
+          const detail = err?.response?.data?.detail || err?.message || 'unknown error';
+          failures.push({ op: 'create', label: lm.label, err: detail });
+        }
       }
 
-      toast.success('Canvas layout saved');
+      if (failures.length > 0) {
+        const firstErr = failures[0];
+        toast.error(
+          `Saved positions, but ${failures.length} landmark${failures.length !== 1 ? 's' : ''} failed: ${firstErr.label} — ${firstErr.err}`,
+          { duration: 7000 },
+        );
+      } else if (toCreate.length > 0) {
+        toast.success(`Canvas layout saved · ${created} landmark${created !== 1 ? 's' : ''} added`);
+      } else {
+        toast.success('Canvas layout saved');
+      }
       if (onSave) onSave();
     } catch (e) {
-      toast.error('Failed to save layout');
+      console.error('Canvas save failed', e);
+      toast.error(e?.response?.data?.detail || e?.message || 'Failed to save layout');
     } finally {
       setSaving(false);
     }

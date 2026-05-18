@@ -474,8 +474,8 @@ function LocationBlock({ location, assets, inspectionItems, onToggle, onBulkTogg
 
   return (
     <div ref={locationRef} data-location-id={location._id} className="scroll-mt-24">
-      {/* Location header */}
-      <div className="sticky top-[120px] sm:top-[112px] z-10 flex items-center justify-between bg-background/95 backdrop-blur border-b py-2 px-1 mb-2">
+      {/* Location header — sticky pin only on desktop; on mobile it scrolls with content */}
+      <div className="sm:sticky sm:top-[112px] z-10 flex items-center justify-between bg-white border-b shadow-sm py-2 px-2 mb-2 rounded-t-md">
         <div className="flex items-center gap-2">
           <MapPin className="h-3.5 w-3.5 text-primary/60" />
           <span className="font-semibold text-sm">{location.name}</span>
