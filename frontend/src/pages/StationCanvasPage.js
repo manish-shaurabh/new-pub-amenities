@@ -33,6 +33,7 @@ import PlatformBlueprint from '../components/PlatformBlueprint';
 import AssetTypePalette from '../components/AssetTypePalette';
 import AssetDropPopover from '../components/AssetDropPopover';
 import CanvasEditor from '../components/CanvasEditor';
+import MobileCanvasHeader from '../components/MobileCanvasHeader';
 import {
   stationCanvasAPI, stationsAPI, locationsAPI,
   departmentsAPI, assetTypesAPI, assetsAPI,
@@ -47,6 +48,8 @@ function SubZoneForm({ locationId, stationId, existingSubZone, onSave, onClose }
   const [code, setCode] = useState(existingSubZone?.code || '');
   const [hasDivider, setHasDivider] = useState(existingSubZone?.has_divider || false);
   const [dividerDir, setDividerDir] = useState(existingSubZone?.divider_orientation || 'vertical');
+  const [startPillar, setStartPillar] = useState(existingSubZone?.start_pillar || '');
+  const [endPillar, setEndPillar] = useState(existingSubZone?.end_pillar || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -57,6 +60,8 @@ function SubZoneForm({ locationId, stationId, existingSubZone, onSave, onClose }
         name: name.trim(), code: code.trim(),
         station_id: stationId, location_id: locationId,
         has_divider: hasDivider, divider_orientation: dividerDir,
+        start_pillar: startPillar.trim() || null,
+        end_pillar: endPillar.trim() || null,
         order: existingSubZone?.order,  // omit on create → backend assigns next slot
       };
       if (existingSubZone?.id) {
@@ -81,6 +86,28 @@ function SubZoneForm({ locationId, stationId, existingSubZone, onSave, onClose }
       <div>
         <Label className="text-xs">Code (optional)</Label>
         <Input value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. SZ-A" className="mt-1 h-8 text-sm" />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label className="text-xs">Start Pillar (left edge)</Label>
+          <Input
+            value={startPillar}
+            onChange={e => setStartPillar(e.target.value)}
+            placeholder="e.g. P12"
+            className="mt-1 h-8 text-sm"
+            data-testid="subzone-start-pillar"
+          />
+        </div>
+        <div>
+          <Label className="text-xs">End Pillar (right edge)</Label>
+          <Input
+            value={endPillar}
+            onChange={e => setEndPillar(e.target.value)}
+            placeholder="e.g. P18"
+            className="mt-1 h-8 text-sm"
+            data-testid="subzone-end-pillar"
+          />
+        </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Checkbox id="divider-check" checked={hasDivider} onCheckedChange={setHasDivider} />
@@ -427,118 +454,32 @@ export default function StationCanvasPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f8fafc' }}>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={{
-        background: '#fff', borderBottom: '1px solid #e2e8f0',
-        padding: '10px 16px', display: 'flex', alignItems: 'center',
-        flexWrap: 'wrap', gap: 8,
-        position: 'sticky', top: 0, zIndex: 40,
-      }}>
-        {/* Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <MapPin size={17} style={{ color: '#0891b2' }} />
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Platform Vision</span>
-          {editMode && <Badge style={{ fontSize: 9, background: '#fef3c7', color: '#a16207', border: '1px solid #fde68a' }}>EDIT MODE</Badge>}
-        </div>
-
-        {/* Station */}
-        <Select value={selectedStation} onValueChange={v => { setSelectedStation(v); setSelectedLocation(''); setCanvasData(null); }}>
-          <SelectTrigger className="w-44 h-8 text-sm" data-testid="canvas-station-select">
-            <SelectValue placeholder="Select station" />
-          </SelectTrigger>
-          <SelectContent>
-            {stations.map(s => (
-              <SelectItem key={s.id || s._id} value={s.id || s._id}>{s.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Location tabs */}
-        {locations.length > 0 && (
-          <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', maxWidth: 600 }}>
-            {locations.map(loc => {
-              const lid = loc.id || loc._id;
-              const active = selectedLocation === lid;
-              return (
-                <button key={lid} onClick={() => setSelectedLocation(lid)}
-                  data-testid={`canvas-loc-tab-${lid}`}
-                  style={{
-                    padding: '3px 10px', borderRadius: 16, fontSize: 11, fontWeight: active ? 600 : 400,
-                    border: `1.5px solid ${active ? '#0891b2' : '#e2e8f0'}`,
-                    background: active ? '#e0f2fe' : '#fff', color: active ? '#0891b2' : '#64748b',
-                    cursor: 'pointer', transition: 'all 0.12s',
-                  }}
-                >
-                  {loc.name}
-                </button>
-              );
-            })}
-            {editMode && isAdmin && (
-              <button onClick={() => setShowLocationForm(true)}
-                style={{
-                  padding: '3px 10px', borderRadius: 16, fontSize: 11,
-                  border: '1.5px dashed #0891b2', background: 'transparent', color: '#0891b2',
-                  cursor: 'pointer',
-                }}
-              >
-                + Location
-              </button>
-            )}
-          </div>
-        )}
-
-        <div style={{ flex: 1 }} />
-
-        {/* Filters */}
-        {!editMode && (
-          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-            <Filter size={12} style={{ color: '#94a3b8' }} />
-            <Select value={filterDept || '__all__'} onValueChange={v => setFilterDept(v === '__all__' ? '' : v)}>
-              <SelectTrigger className="w-32 h-7 text-xs"><SelectValue placeholder="All Depts" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All Departments</SelectItem>
-                {departments.map(d => <SelectItem key={d.id || d._id} value={d.id || d._id}>{d.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filterType || '__all__'} onValueChange={v => setFilterType(v === '__all__' ? '' : v)}>
-              <SelectTrigger className="w-32 h-7 text-xs"><SelectValue placeholder="All Types" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All Types</SelectItem>
-                {assetTypes.map(t => <SelectItem key={t.id || t._id} value={t.id || t._id}>{t.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {hasFilters && <button onClick={() => { setFilterDept(''); setFilterType(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}><X size={13} /></button>}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {!editMode && activeLocationData && (
-            <button onClick={handleDownloadPDF} title="Download PDF"
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff', color: '#334155', fontSize: 11, cursor: 'pointer' }}>
-              <Download size={13} /> PDF
-            </button>
-          )}
-          {isAdmin && selectedStation && (
-            editMode ? (
-              <button
-                onClick={() => { setEditMode(false); setSelectedPaletteType(null); setPendingPlacement(null); loadCanvas(); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: 'none', background: '#0f172a', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                <CheckCircle2 size={13} /> Done Editing
-              </button>
-            ) : (
-              <button onClick={() => setEditMode(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: '1px solid #0891b2', background: '#e0f2fe', color: '#0891b2', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                <Pencil size={13} /> Edit Canvas
-              </button>
-            )
-          )}
-          <button onClick={loadCanvas} disabled={loading} title="Refresh"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
-            <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-          </button>
-        </div>
-      </div>
+      {/* ── Compact, collapsible header ─────────────────────────────────────── */}
+      <MobileCanvasHeader
+        stations={stations}
+        selectedStation={selectedStation}
+        onStationChange={(v) => { setSelectedStation(v); setSelectedLocation(''); setCanvasData(null); }}
+        locations={locations}
+        selectedLocation={selectedLocation}
+        onLocationChange={setSelectedLocation}
+        onAddLocation={isAdmin ? () => setShowLocationForm(true) : undefined}
+        departments={departments}
+        assetTypes={assetTypes}
+        filterDept={filterDept}
+        filterType={filterType}
+        onFilterDeptChange={setFilterDept}
+        onFilterTypeChange={setFilterType}
+        onRefresh={loadCanvas}
+        onDownloadPDF={activeLocationData ? handleDownloadPDF : undefined}
+        canEdit={isAdmin && !!selectedStation}
+        editMode={editMode}
+        onToggleEditMode={() => {
+          if (editMode) { setEditMode(false); setSelectedPaletteType(null); setPendingPlacement(null); loadCanvas(); }
+          else { setEditMode(true); }
+        }}
+        loading={loading}
+        title="Platform Vision"
+      />
 
       {/* ── Body ────────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

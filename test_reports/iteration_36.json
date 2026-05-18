@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 36 — Mobile Inspection Redesign (A2 sub-zone pillars + B in-canvas filters + C map-default + Shed Health questions + Compact collapsible header). Backend pytest 7/7 PASS (sub-zone start/end_pillar create/get/update/clear, station-canvas surfaces pillars, /api/inspections accepts and persists sub_zone_health array, backward-compatible when omitted). Frontend smoke verified MobileCanvasHeader renders on /station-canvas with mobile-canvas-header / mch-filter-trigger (Department + Asset Type) / mch-more-trigger testids; filter popover labels and the More menu open correctly. mch-location-trigger / mch-pdf-btn / mch-edit-toggle / view-mode-map / view-mode-list / map-dept-filter / map-type-filter / subzone-health-card-* / shed-*-{ok,notok,photo-btn}-* are conditionally rendered after station + location selection, which couldn't be fully driven end-to-end via the headless session in one go, but code-review of InspectionPage.js (viewMode default='map' at line 584, testids at 1189/1200/1224/1231) and MobileCanvasHeader.js (location-trigger at line 100 gated on locations.length>0, pdf/edit at 250/259) confirms they are correctly wired.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_mobile_inspection_iter36.py",
+    "/app/test_reports/pytest/mobile_inspection_iter36.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Consider showing mch-location-trigger as a disabled pill (\"Select location\") instead of hiding when locations are empty, so users discover the new flow on first load."
+  ],
+  "critical_code_review_comments": [
+    "SubZoneCreate.start_pillar/end_pillar are stripped and coerced to None when empty — clean. Router persists on both POST and PUT correctly.",
+    "InspectionCreate.sub_zone_health defaults to [] in the Pydantic model and is persisted as-is in inspections doc (routers/inspections.py line 152). Backward compatibility preserved — confirmed by test.",
+    "station-canvas response now surfaces start_pillar/end_pillar at sub-zone level (line 205-206) — no _id leakage, all serialized.",
+    "MobileCanvasHeader gates location-trigger/pdf/edit on data presence (locations.length > 0 and station selected) — sensible UX but means automated tests must first select a station to assert the full testid surface.",
+    "InspectionPage defaults viewMode='map' (line 584). The map+filter UI is rendered only after activeLocId is set (line 1183 wrap); when no location is yet chosen the page shows the legacy New-Inspection form. This is intentional but a casual visit to /inspection won't show the map; consider auto-selecting the only location when there is exactly one."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_mobile_inspection_iter36.py (new — 7 tests, all passing)"
+  ],
+  "success_rate": { "backend": "100% (7/7)", "frontend": "Code structure verified; render of mobile-canvas-header + filter popover (Department + Asset Type) + More menu opener verified live. Full end-to-end map view + SubZoneHealthCard + photo-mandatory-on-not_ok flow not exercised through to submit due to multi-step station/location selection in mobile viewport — code review confirms wiring is correct." },
+  "test_credentials": "SA001 / admin123 ; SSE001 / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created one TEST_SZ_PILLARS sub-zone under DHANBAD / PLATFORM 1 during pytest; teardown_class deletes it via force=true. Two TEST_iter36 inspections created (one with sub_zone_health, one without) — these are not deleted (no DELETE endpoint), but their remarks are TEST_-prefixed for identification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_mobile_inspection_iter36.py. Run with REACT_APP_BACKEND_URL exported (login uses SA001/admin123 → POST /api/auth/login returns {token, user{_id}}). Note: list responses use `_id`, not `id`, for stations / users / assets; some sub-zone responses use `id` after serialize_doc. The tests handle both via `(x.get('id') or x.get('_id'))` fallback. For frontend, mobile viewport (390x844) is required to see the new MobileCanvasHeader bar — on desktop the same compact header is used. To exercise view-mode toggles, the page must reach activeLocId state: select station then click a location pill. mch-location-trigger only renders after stations populate and `locations.length>0`. SubZoneHealthCards render below each sub-zone canvas only in map view AND once station-canvas data loads for that location — be patient (≥2s). PDF and Edit Canvas options in More menu render only after a station is selected."
+}

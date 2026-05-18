@@ -43,6 +43,8 @@ async def create_sub_zone(sz: SubZoneCreate):
         "order": next_order,
         "has_divider": bool(sz.has_divider),
         "divider_orientation": sz.divider_orientation or "vertical",
+        "start_pillar": (sz.start_pillar or "").strip() or None,
+        "end_pillar": (sz.end_pillar or "").strip() or None,
         "created_at": now_ist(),
     }
     result = await sub_zones_collection.insert_one(doc)
@@ -90,6 +92,8 @@ async def update_sub_zone(sub_zone_id: str, sz: SubZoneCreate):
         "description": sz.description,
         "has_divider": bool(sz.has_divider),
         "divider_orientation": sz.divider_orientation or "vertical",
+        "start_pillar": (sz.start_pillar or "").strip() or None,
+        "end_pillar": (sz.end_pillar or "").strip() or None,
     }
     # Only touch `order` if the client explicitly sent an integer ≥ 0; otherwise
     # preserve the existing value so accidental omissions don't reset the order

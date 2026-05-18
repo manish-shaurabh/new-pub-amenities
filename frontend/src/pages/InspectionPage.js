@@ -29,6 +29,7 @@ import { format } from 'date-fns';
 import AssetHistoryDrawer from '../components/AssetHistoryDrawer';
 import { useLightbox } from '../components/PhotoLightbox';
 import PlatformBlueprint from '../components/PlatformBlueprint';
+import SubZoneHealthCard, { SHED_HEALTH_QUESTIONS, validateSubZoneHealth } from '../components/SubZoneHealthCard';
 
 // ────────────────────────────────────────────────────────────────
 // Status helpers
@@ -580,9 +581,15 @@ export default function InspectionPage() {
   const [activeLocId, setActiveLocId] = useState(null);
   const [typeFilter, setTypeFilter] = useState(null); // null = all types
   const [subZoneFilter, setSubZoneFilter] = useState(null); // null = all sub-zones (including unassigned)
-  const [viewMode, setViewMode] = useState('list');   // 'list' | 'map'
+  const [viewMode, setViewMode] = useState('map');    // 'list' | 'map' — defaults to map for canvas-first UX
   const [canvasData, setCanvasData] = useState(null); // location canvas data for map view
   const [blueprintAsset, setBlueprintAsset] = useState(null); // asset tapped in map view
+  // Per-sub-zone "Shed Health" responses, keyed by sub_zone_id.
+  // Shape: { [sub_zone_id]: { sub_zone_id, responses: {key: ok|not_ok}, photos: {key: [url]}, remarks } }
+  const [subZoneHealth, setSubZoneHealth] = useState({});
+  // Map-view-only quick filters (dept + asset type)
+  const [mapDeptFilter, setMapDeptFilter] = useState('');
+  const [mapTypeFilter, setMapTypeFilter] = useState('');
   const { open: openLightbox, lightbox } = useLightbox();
 
   // Refs for location scroll-spy
@@ -651,6 +658,14 @@ export default function InspectionPage() {
       setCanvasData(locs.find(l => l.id === locationId) || locs[0] || null);
     } catch (_) {}
   }, []);
+
+  // Auto-select first available location so the map renders immediately
+  useEffect(() => {
+    if (!activeLocId && locations.length > 0 && assets.length > 0) {
+      const firstWithAssets = locations.find(l => assets.some(a => a.location_id === l._id)) || locations[0];
+      if (firstWithAssets) setActiveLocId(firstWithAssets._id);
+    }
+  }, [locations, assets, activeLocId]);
 
   useEffect(() => {
     if (viewMode === 'map' && activeLocId) {
@@ -768,6 +783,15 @@ export default function InspectionPage() {
         return;
       }
     }
+    // Validate sub-zone health: any "not_ok" answer must have at least 1 photo.
+    for (const [szId, entry] of Object.entries(subZoneHealth)) {
+      const bad = validateSubZoneHealth(entry);
+      if (bad) {
+        const q = SHED_HEALTH_QUESTIONS.find(x => x.key === bad);
+        toast.error(`Photo required for "${q?.label || bad}" in shed health card`);
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       const inspectionAtLiteral = toIstLiteral(inspectionDate, inspectionTime);
@@ -813,6 +837,9 @@ export default function InspectionPage() {
         }),
         participants: inspectionType === 'sig' ? participants : [],
         overall_remarks: overallRemarks,
+        sub_zone_health: Object.values(subZoneHealth).filter(e =>
+          e && (Object.keys(e.responses || {}).length > 0 || (e.remarks || '').trim())
+        ),
       };
       const submitRes = await inspectionsAPI.create(payload);
       const created = submitRes.data;
@@ -846,6 +873,7 @@ export default function InspectionPage() {
       setInspectionItems([]);
       setParticipants([]);
       setOverallRemarks('');
+      setSubZoneHealth({});
       setInspectionDate(new Date());
       setInspectionTime(format(new Date(), 'HH:mm'));
       setSearchParams({});
@@ -920,6 +948,28 @@ export default function InspectionPage() {
     inspectionItems.filter(i => i.status === 'not_ok' || i.status === 'needs_repair').length,
     [inspectionItems]
   );
+
+  // Derive distinct departments and asset types from loaded assets for the
+  // map-view in-canvas filter chips (avoids extra API calls).
+  const mapDeptOptions = useMemo(() => {
+    const m = new Map();
+    assets.forEach(a => {
+      if (a.department_id && !m.has(a.department_id)) {
+        m.set(a.department_id, a.department_name || a.department_id);
+      }
+    });
+    return Array.from(m.entries()).map(([id, name]) => ({ id, name }));
+  }, [assets]);
+
+  const mapTypeOptions = useMemo(() => {
+    const m = new Map();
+    assets.forEach(a => {
+      if (a.asset_type_id && !m.has(a.asset_type_id)) {
+        m.set(a.asset_type_id, a.asset_type_name || a.asset_type_id);
+      }
+    });
+    return Array.from(m.entries()).map(([id, name]) => ({ id, name }));
+  }, [assets]);
 
   const scrollToLocation = (locId) => {
     setActiveLocId(locId);
@@ -1129,24 +1179,59 @@ export default function InspectionPage() {
           {/* Right main area */}
           <div className="flex-1 min-w-0 space-y-6 pb-24" data-testid="inspection-main-area">
 
-            {/* View mode toggle — List vs Map */}
+            {/* View mode toggle — List vs Map, plus map-only quick filters */}
             {activeLocId && (
-              <div className="flex items-center gap-2 justify-end">
+              <div className="flex items-center gap-2 flex-wrap justify-end" data-testid="inspection-view-controls">
+                {viewMode === 'map' && (mapDeptOptions.length > 1 || mapTypeOptions.length > 1) && (
+                  <div className="flex items-center gap-1.5 mr-auto">
+                    {mapDeptOptions.length > 1 && (
+                      <Select value={mapDeptFilter || '__all__'} onValueChange={v => setMapDeptFilter(v === '__all__' ? '' : v)}>
+                        <SelectTrigger className="h-7 text-[11px] w-[120px]" data-testid="map-dept-filter">
+                          <SelectValue placeholder="All Depts" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All Departments</SelectItem>
+                          {mapDeptOptions.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {mapTypeOptions.length > 1 && (
+                      <Select value={mapTypeFilter || '__all__'} onValueChange={v => setMapTypeFilter(v === '__all__' ? '' : v)}>
+                        <SelectTrigger className="h-7 text-[11px] w-[120px]" data-testid="map-type-filter">
+                          <SelectValue placeholder="All Types" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All Types</SelectItem>
+                          {mapTypeOptions.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {(mapDeptFilter || mapTypeFilter) && (
+                      <button
+                        onClick={() => { setMapDeptFilter(''); setMapTypeFilter(''); }}
+                        className="text-[11px] text-red-600 hover:underline"
+                        data-testid="map-filter-clear"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                )}
                 <span className="text-xs text-muted-foreground">View:</span>
                 <div className="flex rounded-lg border overflow-hidden">
                   <button
-                    onClick={() => setViewMode('list')}
-                    data-testid="view-mode-list"
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}
-                  >
-                    <List size={12} /> List
-                  </button>
-                  <button
-                    onClick={() => { setViewMode('map'); loadCanvasData(activeLocId); }}
+                    onClick={() => setViewMode('map')}
                     data-testid="view-mode-map"
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-l transition-colors ${viewMode === 'map' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${viewMode === 'map' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}
                   >
                     <MapIcon size={12} /> Map
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    data-testid="view-mode-list"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-l transition-colors ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}
+                  >
+                    <List size={12} /> List
                   </button>
                 </div>
               </div>
@@ -1160,6 +1245,10 @@ export default function InspectionPage() {
                     locationData={canvasData}
                     mode="inspection"
                     inspectionItems={inspectionItems}
+                    filters={(mapDeptFilter || mapTypeFilter) ? {
+                      dept_id: mapDeptFilter || undefined,
+                      asset_type_id: mapTypeFilter || undefined,
+                    } : undefined}
                     onAssetClick={(asset) => {
                       // Add to inspection list if not already there
                       const rawAsset = assets.find(a => a._id === asset.id);
@@ -1169,6 +1258,14 @@ export default function InspectionPage() {
                       }
                       setBlueprintAsset(rawAsset || asset);
                     }}
+                    renderHealthSlot={(sz) => (
+                      <SubZoneHealthCard
+                        subZoneId={sz.id}
+                        subZoneName={sz.name}
+                        value={subZoneHealth[sz.id]}
+                        onChange={(entry) => setSubZoneHealth(prev => ({ ...prev, [sz.id]: entry }))}
+                      />
+                    )}
                   />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground text-sm">

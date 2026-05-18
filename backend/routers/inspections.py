@@ -149,6 +149,7 @@ async def create_inspection(inspection: InspectionCreate):
         "participants": participants_data,
         "overall_remarks": inspection.overall_remarks,
         "inspection_at": inspection.inspection_at or now_ist().isoformat(),
+        "sub_zone_health": inspection.sub_zone_health or [],
         "created_at": now_ist()
     }
     result = await inspections_collection.insert_one(doc)

@@ -224,6 +224,9 @@ class SubZoneCreate(BaseModel):
     # Canvas Blueprint settings
     has_divider: Optional[bool] = False          # Show center dividing line on canvas
     divider_orientation: Optional[str] = "vertical"  # "vertical" | "horizontal"
+    # Physical pillar markers (anchor labels rendered at canvas edges)
+    start_pillar: Optional[str] = None  # e.g. "P12"  (left/high-end edge)
+    end_pillar: Optional[str] = None    # e.g. "P18"  (right/low-end edge)
 
 
 # Canvas Landmark (P.No markers, pole references, etc. on the platform blueprint)
@@ -318,6 +321,11 @@ class InspectionCreate(BaseModel):
     participants: List[str] = []  # For SIG - list of employee IDs
     overall_remarks: Optional[str] = None
     inspection_at: Optional[str] = None  # NEW: Manual inspection date/time (ISO)
+    # Per-sub-zone "shed health" responses captured during the inspection.
+    # Each entry: {sub_zone_id, location_id, responses: {key: ok|not_ok},
+    #              photos: {key: [url, ...]}, remarks: str}
+    # Recognised question keys: shed_roof_condition, cleanliness, lighting, water_seepage
+    sub_zone_health: List[Dict[str, Any]] = []
 
 
 class InspectionResponse(BaseModel):

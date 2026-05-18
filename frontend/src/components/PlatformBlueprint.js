@@ -6,7 +6,7 @@
  *   'inspection'  — session state overlay, tap-to-inspect
  *   'edit'        — click assets for action menu, drop zones active
  */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   CheckCircle2, XCircle, Wrench, Info, Pencil,
   ArrowUp, ArrowDown, Plus, Trash2, Move, X,
@@ -226,12 +226,34 @@ export function SubZoneCanvas({
   isFirst, isLast,    // for reorder controls
   onMoveUp, onMoveDown, onDeleteSubZone,
   onAddSubZone,       // shows "Add Sub-Zone" button below this card (when isLast)
+  healthSlot,         // optional ReactNode rendered below the canvas (e.g. Shed Health card)
 }) {
   const canvasRef = useRef(null);
   const [actionMenuAsset, setActionMenuAsset] = useState(null);
 
+  // Track canvas pixel width to scale icon size responsively. Mobile canvases
+  // (~ 360px wide) get smaller icons so 10+ assets don't overlap.
+  const [canvasWidth, setCanvasWidth] = useState(900);
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width;
+      if (w) setCanvasWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const positioned = (subZone.assets || []).filter(a => a.canvas_x != null && a.canvas_y != null);
   const unpositioned = (subZone.assets || []).filter(a => a.canvas_x == null || a.canvas_y == null);
+
+  // Responsive icon size: 28–46px based on container width AND density.
+  // Higher asset counts also shrink the nodes so they don't overlap.
+  const density = positioned.length;
+  const baseSize = canvasWidth < 380 ? 30 : canvasWidth < 560 ? 36 : canvasWidth < 780 ? 40 : 46;
+  const densityPenalty = density > 20 ? 8 : density > 12 ? 4 : 0;
+  const nodeSize = Math.max(24, baseSize - densityPenalty);
 
   const isDimmed = (asset) => {
     if (!filters) return false;
@@ -373,9 +395,13 @@ export function SubZoneCanvas({
               <div style={{ position: 'absolute', top: 16, bottom: 16, left: '50%', borderLeft: '2px dashed rgba(100,116,139,0.4)' }} />
             )
           )}
-          {/* Corner labels */}
-          <div style={{ position: 'absolute', top: 5, left: 7, fontSize: 9, color: '#94a3b8', fontFamily: 'monospace', letterSpacing: '0.06em', pointerEvents: 'none' }}>High End ←</div>
-          <div style={{ position: 'absolute', top: 5, right: 7, fontSize: 9, color: '#94a3b8', fontFamily: 'monospace', letterSpacing: '0.06em', pointerEvents: 'none' }}>→ Low End</div>
+          {/* Corner labels — use sub-zone pillar markers when defined */}
+          <div style={{ position: 'absolute', top: 5, left: 7, fontSize: 9, color: subZone.start_pillar ? '#0891b2' : '#94a3b8', fontFamily: 'monospace', fontWeight: subZone.start_pillar ? 700 : 400, letterSpacing: '0.06em', pointerEvents: 'none' }}>
+            {subZone.start_pillar ? `📍 ${subZone.start_pillar} ←` : 'High End ←'}
+          </div>
+          <div style={{ position: 'absolute', top: 5, right: 7, fontSize: 9, color: subZone.end_pillar ? '#0891b2' : '#94a3b8', fontFamily: 'monospace', fontWeight: subZone.end_pillar ? 700 : 400, letterSpacing: '0.06em', pointerEvents: 'none' }}>
+            {subZone.end_pillar ? `→ ${subZone.end_pillar} 📍` : '→ Low End'}
+          </div>
 
           {/* Edit mode hint */}
           {editMode && positioned.length === 0 && (
@@ -392,6 +418,7 @@ export function SubZoneCanvas({
               key={asset.id}
               asset={asset}
               mode={mode}
+              size={nodeSize}
               inspectionItems={inspectionItems}
               onAssetClick={onAssetClick}
               dimmed={isDimmed(asset)}
@@ -450,6 +477,13 @@ export function SubZoneCanvas({
           </div>
         </div>
       )}
+
+      {/* Optional inline slot rendered below the canvas (e.g. Shed Health card) */}
+      {healthSlot && (
+        <div style={{ padding: '8px 10px', borderTop: '1px solid #f1f5f9', background: '#fff' }}>
+          {healthSlot}
+        </div>
+      )}
     </div>
   );
 }
@@ -462,6 +496,7 @@ export default function PlatformBlueprint({
   onAssetAction, onCanvasAreaClick,
   onDragOver, onDrop,
   onMoveSubZone, onDeleteSubZone, onAddSubZone,
+  renderHealthSlot,  // (subZone) => ReactNode rendered below each sub-zone canvas
 }) {
   if (!locationData) return null;
   const { sub_zones = [], unzoned_assets = [] } = locationData;
@@ -488,6 +523,7 @@ export default function PlatformBlueprint({
           onMoveDown={() => onMoveSubZone?.(sz, 'down', idx)}
           onDeleteSubZone={onDeleteSubZone}
           onAddSubZone={onAddSubZone}
+          healthSlot={renderHealthSlot ? renderHealthSlot(sz) : null}
         />
       ))}
 

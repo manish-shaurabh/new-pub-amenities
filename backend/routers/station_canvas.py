@@ -202,6 +202,8 @@ async def get_station_canvas(
                 "description": sz.get("description", ""),
                 "has_divider": sz.get("has_divider", False),
                 "divider_orientation": sz.get("divider_orientation", "vertical"),
+                "start_pillar": sz.get("start_pillar"),
+                "end_pillar": sz.get("end_pillar"),
                 "assets": sz_asset_map.get(sz_id, []),
                 "landmarks": lm_map.get(sz_id, []),
             })
