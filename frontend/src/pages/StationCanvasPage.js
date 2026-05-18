@@ -57,7 +57,7 @@ function SubZoneForm({ locationId, stationId, existingSubZone, onSave, onClose }
         name: name.trim(), code: code.trim(),
         station_id: stationId, location_id: locationId,
         has_divider: hasDivider, divider_orientation: dividerDir,
-        order: existingSubZone?.order ?? 99,
+        order: existingSubZone?.order,  // omit on create → backend assigns next slot
       };
       if (existingSubZone?.id) {
         await subZonesAPI.update(existingSubZone.id, payload);
@@ -366,14 +366,17 @@ export default function StationCanvasPage() {
     const subZones = activeLocationData?.sub_zones || [];
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= subZones.length) return;
-    const other = subZones[swapIdx];
+    // Build the new full order (rotate the target by one slot) and let the
+    // server assign deterministic 0..N-1 values so duplicate `order` ties can
+    // never deadlock the up/down controls again.
+    const orderedIds = subZones.map(s => s.id);
+    [orderedIds[idx], orderedIds[swapIdx]] = [orderedIds[swapIdx], orderedIds[idx]];
     try {
-      await Promise.all([
-        subZonesAPI.update(sz.id, { name: sz.name, code: sz.code || '', station_id: selectedStation, location_id: activeLocationData.id, order: other.order ?? swapIdx, has_divider: sz.has_divider, divider_orientation: sz.divider_orientation }),
-        subZonesAPI.update(other.id, { name: other.name, code: other.code || '', station_id: selectedStation, location_id: activeLocationData.id, order: sz.order ?? idx, has_divider: other.has_divider, divider_orientation: other.divider_orientation }),
-      ]);
+      await subZonesAPI.reorder(activeLocationData.id, orderedIds);
       loadCanvas();
-    } catch { toast.error('Failed to reorder'); }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Failed to reorder');
+    }
   };
 
   const handleDeleteSubZone = async (szId) => {

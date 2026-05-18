@@ -95,6 +95,40 @@ async def _ensure_indexes():
     except Exception as e:
         print(f"[startup] asset_types dept-required migration failed: {e}")
 
+    # Migrate: re-number sub-zone `order` to contiguous 0..N-1 per location
+    try:
+        await _migrate_sub_zone_orders()
+    except Exception as e:
+        print(f"[startup] sub_zones order renumber migration failed: {e}")
+
+
+async def _migrate_sub_zone_orders():
+    """Ensure every (location_id) bucket of sub-zones has unique, contiguous orders.
+
+    Legacy data has many sub-zones with `order = 0` (or 99 from the create form),
+    making the swap-based reorder logic a no-op. We normalize per-location to
+    `0, 1, 2, ...` based on the current sort key (order asc, name asc) so any
+    pre-existing visual order is preserved as a starting point.
+    """
+    from database import sub_zones_collection
+    pipeline = [
+        {"$sort": {"location_id": 1, "order": 1, "name": 1}},
+        {"$group": {"_id": "$location_id", "ids": {"$push": "$_id"}}},
+    ]
+    bumped = 0
+    async for grp in sub_zones_collection.aggregate(pipeline):
+        ids = grp.get("ids") or []
+        if len(ids) <= 1:
+            continue
+        for new_order, sz_id in enumerate(ids):
+            res = await sub_zones_collection.update_one(
+                {"_id": sz_id, "$or": [{"order": {"$ne": new_order}}, {"order": {"$exists": False}}]},
+                {"$set": {"order": new_order}},
+            )
+            bumped += res.modified_count
+    if bumped:
+        print(f"[migration] Renumbered {bumped} sub-zone order(s) to contiguous values")
+
 
 async def _migrate_asset_types_require_dept():
     """One-shot cleanup: asset_types must have a non-empty department_id.

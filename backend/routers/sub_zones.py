@@ -31,13 +31,16 @@ async def create_sub_zone(sz: SubZoneCreate):
         raise HTTPException(status_code=404, detail="Station not found")
     if str(loc.get("station_id") or "") != sz.station_id:
         raise HTTPException(status_code=400, detail="Location does not belong to the given station")
+    # Auto-assign `order` = count of existing sub-zones at this location so the
+    # new one lands at the end with a unique, contiguous value (no more ties).
+    next_order = await sub_zones_collection.count_documents({"location_id": sz.location_id})
     doc = {
         "name": sz.name.strip(),
         "code": (sz.code or "").strip() or None,
         "station_id": sz.station_id,
         "location_id": sz.location_id,
         "description": sz.description,
-        "order": int(sz.order or 0),
+        "order": next_order,
         "has_divider": bool(sz.has_divider),
         "divider_orientation": sz.divider_orientation or "vertical",
         "created_at": now_ist(),
@@ -76,23 +79,82 @@ async def list_sub_zones(location_id: Optional[str] = None, station_id: Optional
 
 @router.put("/api/sub-zones/{sub_zone_id}")
 async def update_sub_zone(sub_zone_id: str, sz: SubZoneCreate):
+    existing = await sub_zones_collection.find_one({"_id": ObjectId(sub_zone_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Sub-zone not found")
+    update_fields = {
+        "name": sz.name.strip(),
+        "code": (sz.code or "").strip() or None,
+        "station_id": sz.station_id,
+        "location_id": sz.location_id,
+        "description": sz.description,
+        "has_divider": bool(sz.has_divider),
+        "divider_orientation": sz.divider_orientation or "vertical",
+    }
+    # Only touch `order` if the client explicitly sent an integer ≥ 0; otherwise
+    # preserve the existing value so accidental omissions don't reset the order
+    # (and break the visual sequence).
+    if sz.order is not None:
+        update_fields["order"] = int(sz.order)
     result = await sub_zones_collection.update_one(
         {"_id": ObjectId(sub_zone_id)},
-        {"$set": {
-            "name": sz.name.strip(),
-            "code": (sz.code or "").strip() or None,
-            "station_id": sz.station_id,
-            "location_id": sz.location_id,
-            "description": sz.description,
-            "order": int(sz.order or 0),
-            "has_divider": bool(sz.has_divider),
-            "divider_orientation": sz.divider_orientation or "vertical",
-        }},
+        {"$set": update_fields},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Sub-zone not found")
     doc = await sub_zones_collection.find_one({"_id": ObjectId(sub_zone_id)})
     return serialize_doc(doc)
+
+
+@router.patch("/api/sub-zones/reorder")
+async def reorder_sub_zones(payload: dict):
+    """Bulk-renumber a list of sub-zones to contiguous 0..N-1 in the given order.
+
+    Body: { location_id: str, ordered_ids: [sub_zone_id, ...] }
+
+    All sub_zones must belong to the same location_id. Any sub-zones in that
+    location not in `ordered_ids` are appended at the end in their current
+    sort order, so partial reorder payloads are safe.
+
+    Returns: { updated, ordered_ids: [final order] }
+    """
+    location_id = (payload.get("location_id") or "").strip()
+    ordered_ids = payload.get("ordered_ids") or []
+    if not location_id:
+        raise HTTPException(status_code=400, detail="location_id is required")
+    if not isinstance(ordered_ids, list) or not ordered_ids:
+        raise HTTPException(status_code=400, detail="ordered_ids (non-empty list) is required")
+
+    try:
+        oids = [ObjectId(i) for i in ordered_ids]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid sub_zone_id format")
+
+    # Verify all belong to the same location
+    docs = await sub_zones_collection.find(
+        {"_id": {"$in": oids}, "location_id": location_id},
+    ).to_list(len(oids))
+    if len(docs) != len(set(ordered_ids)):
+        raise HTTPException(
+            status_code=400,
+            detail="One or more sub-zones do not belong to the given location",
+        )
+
+    # Pull any "other" sub-zones in the same location not included in the payload
+    others = await sub_zones_collection.find(
+        {"location_id": location_id, "_id": {"$nin": oids}},
+    ).sort([("order", 1), ("name", 1)]).to_list(2000)
+
+    final_order = list(dict.fromkeys(ordered_ids)) + [str(o["_id"]) for o in others]
+
+    updated = 0
+    for idx, sz_id in enumerate(final_order):
+        res = await sub_zones_collection.update_one(
+            {"_id": ObjectId(sz_id)},
+            {"$set": {"order": idx}},
+        )
+        updated += res.modified_count
+    return {"updated": updated, "ordered_ids": final_order}
 
 
 @router.delete("/api/sub-zones/{sub_zone_id}")

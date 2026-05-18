@@ -80,6 +80,8 @@ export const subZonesAPI = {
   create: (data) => api.post('/sub-zones', data),
   update: (id, data) => api.put(`/sub-zones/${id}`, data),
   delete: (id, force = false) => api.delete(`/sub-zones/${id}`, { params: { force } }),
+  reorder: (locationId, orderedIds) =>
+    api.patch('/sub-zones/reorder', { location_id: locationId, ordered_ids: orderedIds }),
 };
 
 // Canvas Landmarks (P.No reference markers on Platform Blueprint)

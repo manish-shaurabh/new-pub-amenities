@@ -220,7 +220,7 @@ class SubZoneCreate(BaseModel):
     station_id: str
     location_id: str
     description: Optional[str] = None
-    order: Optional[int] = 0
+    order: Optional[int] = None
     # Canvas Blueprint settings
     has_divider: Optional[bool] = False          # Show center dividing line on canvas
     divider_orientation: Optional[str] = "vertical"  # "vertical" | "horizontal"
