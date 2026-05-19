@@ -1516,14 +1516,15 @@ export default function InspectionPage() {
               <div className="space-y-3 pt-2">
                 <RadioGroup
                   value={item.status || ''}
-                  onValueChange={(v) => updateItem(item.asset_id, { status: v })}
+                  onValueChange={(v) => updateItem(item.asset_id, 'status', v)}
                 >
                   {[
                     { value: 'ok', label: 'Working OK', color: 'text-emerald-600' },
                     { value: 'not_ok', label: 'Defective / Not OK', color: 'text-red-600' },
                     { value: 'needs_repair', label: 'Needs Repair', color: 'text-orange-600' },
+                    { value: 'missing', label: 'Missing', color: 'text-purple-600' },
                   ].map(opt => (
-                    <div key={opt.value} className="flex items-center gap-2 p-2 rounded-lg border hover:bg-muted/50 cursor-pointer">
+                    <div key={opt.value} className="flex items-center gap-2 p-2 rounded-lg border hover:bg-muted/50 cursor-pointer" data-testid={`bp-status-${opt.value}`}>
                       <RadioGroupItem value={opt.value} id={`bp-${opt.value}`} />
                       <Label htmlFor={`bp-${opt.value}`} className={`cursor-pointer font-medium ${opt.color}`}>{opt.label}</Label>
                     </div>
@@ -1531,12 +1532,13 @@ export default function InspectionPage() {
                 </RadioGroup>
                 <Textarea
                   value={item.remarks || ''}
-                  onChange={(e) => updateItem(item.asset_id, { remarks: e.target.value })}
+                  onChange={(e) => updateItem(item.asset_id, 'remarks', e.target.value)}
                   placeholder="Remarks (optional)…"
                   rows={2}
                   className="text-sm"
+                  data-testid="bp-remarks"
                 />
-                <Button className="w-full" onClick={() => setBlueprintAsset(null)}>Done</Button>
+                <Button className="w-full" onClick={() => setBlueprintAsset(null)} data-testid="bp-done-btn">Done</Button>
               </div>
             );
           })()}
