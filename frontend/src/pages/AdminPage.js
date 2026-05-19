@@ -1800,7 +1800,7 @@ export default function AdminPage() {
                   assetTypeId={editingItem?.id}
                   onUploadIcon={async (file) => {
                     // For new asset types, we need to create first then upload
-                    const atId = editingItem?.id;
+                    const atId = editingItem?.id || editingItem?._id;
                     if (!atId) {
                       toast.error('Save the asset type first, then upload a custom icon in edit mode.');
                       return;
@@ -1823,7 +1823,7 @@ export default function AdminPage() {
                     }
                   }}
                   onDeleteIcon={async () => {
-                    const atId = editingItem?.id;
+                    const atId = editingItem?.id || editingItem?._id;
                     if (!atId) return;
                     try {
                       await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/asset-types/${atId}/icon?current_user_id=${user?._id || ''}`, { method: 'DELETE' });
