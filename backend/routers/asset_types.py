@@ -154,6 +154,22 @@ async def upload_asset_type_icon(asset_type_id: str, file: UploadFile = File(...
     if len(content) > MAX_ICON_SIZE:
         raise HTTPException(status_code=400, detail="Icon file must be under 512 KB")
 
+    # Pre-process SVGs: replace 'currentColor' with a concrete dark color
+    # so the icon renders correctly inside <img> tags (which can't inherit CSS color)
+    if ext == ".svg":
+        try:
+            text = content.decode("utf-8")
+            text = text.replace('stroke="currentColor"', 'stroke="#1e293b"')
+            text = text.replace("stroke='currentColor'", "stroke='#1e293b'")
+            text = text.replace('fill="currentColor"', 'fill="#1e293b"')
+            text = text.replace("fill='currentColor'", "fill='#1e293b'")
+            # Bump stroke-width for small icon rendering (thin strokes disappear at 24px)
+            text = text.replace('stroke-width="1"', 'stroke-width="1.5"')
+            text = text.replace('stroke-width="2"', 'stroke-width="2.5"')
+            content = text.encode("utf-8")
+        except Exception:
+            pass  # If decode fails, store the original binary
+
     unique_name = f"{uuid.uuid4()}{ext}"
     file_path = os.path.join(ICON_UPLOAD_DIR, unique_name)
     with open(file_path, "wb") as f:

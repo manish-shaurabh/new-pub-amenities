@@ -177,10 +177,10 @@ function AssetNode({
                 src={customIcon}
                 alt=""
                 style={{
-                  width: Math.round(nodeSize * 0.52),
-                  height: Math.round(nodeSize * 0.52),
+                  width: Math.round(nodeSize * 0.65),
+                  height: Math.round(nodeSize * 0.65),
                   objectFit: 'contain',
-                  filter: isHealthy ? 'none' : 'grayscale(0.3)',
+                  filter: isHealthy ? 'none' : 'grayscale(0.3) brightness(0.8)',
                 }}
                 onError={(e) => { e.target.style.display = 'none'; }}
               />

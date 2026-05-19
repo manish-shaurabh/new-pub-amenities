@@ -102,6 +102,45 @@ async def _ensure_indexes():
     except Exception as e:
         print(f"[startup] sub_zones order renumber migration failed: {e}")
 
+    # Migrate: fix SVG icons that use 'currentColor' (doesn't work in <img> tags)
+    try:
+        await _migrate_svg_icons_current_color()
+    except Exception as e:
+        print(f"[startup] SVG icon currentColor migration failed: {e}")
+
+
+async def _migrate_svg_icons_current_color():
+    """Fix uploaded SVG icons that use 'currentColor' — doesn't render in <img> tags.
+    Replaces with concrete dark color #1e293b and bumps thin stroke widths."""
+    import os as _os
+    icon_dir = "/app/backend/uploads/icons"
+    if not _os.path.isdir(icon_dir):
+        return
+    fixed = 0
+    for fname in _os.listdir(icon_dir):
+        if not fname.endswith(".svg"):
+            continue
+        fpath = _os.path.join(icon_dir, fname)
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                text = f.read()
+            if "currentColor" not in text:
+                continue
+            text = text.replace('stroke="currentColor"', 'stroke="#1e293b"')
+            text = text.replace("stroke='currentColor'", "stroke='#1e293b'")
+            text = text.replace('fill="currentColor"', 'fill="#1e293b"')
+            text = text.replace("fill='currentColor'", "fill='#1e293b'")
+            text = text.replace('stroke-width="1"', 'stroke-width="1.5"')
+            text = text.replace('stroke-width="2"', 'stroke-width="2.5"')
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(text)
+            fixed += 1
+        except Exception:
+            continue
+    if fixed:
+        print(f"[migration] Fixed {fixed} SVG icon(s) with currentColor → #1e293b")
+
+
 
 async def _migrate_sub_zone_orders():
     """Ensure every (location_id) bucket of sub-zones has unique, contiguous orders.
