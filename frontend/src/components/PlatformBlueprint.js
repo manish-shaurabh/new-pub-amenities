@@ -16,7 +16,7 @@ import { getDeptTheme, shapeRadius, shapeTransform, shapeInnerTransform } from '
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
 export function healthStyle(asset) {
-  if (asset.status === 'missing') return { border: '#94a3b8', bg: '#fff', text: '#94a3b8', isMissing: true };
+  if (asset.status === 'missing') return { border: '#94a3b8', bg: 'rgba(148,163,184,0.08)', text: '#94a3b8', isMissing: true };
   if (asset.status === 'working') return { border: '#22c55e', bg: 'rgba(34,197,94,0.10)', text: '#15803d' };
   if (asset.status === 'pending_approval') return { border: '#eab308', bg: 'rgba(234,179,8,0.10)', text: '#a16207' };
   if (asset.list_type === 'red') return { border: '#ef4444', bg: 'rgba(239,68,68,0.10)', text: '#dc2626' };
@@ -154,7 +154,7 @@ function AssetNode({
           borderRadius,
           transform: outerTransform,
           border: `2.5px solid ${nodeBorder}`,
-          background: style.isMissing ? '#fff' : nodeBg,
+          background: style.isMissing ? 'rgba(148,163,184,0.12)' : nodeBg,
           color: iconColor,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
@@ -168,9 +168,39 @@ function AssetNode({
         }}
         title={editMode ? 'Click to manage asset' : undefined}
       >
-        <div style={{ transform: innerTransform, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ transform: innerTransform, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
           {style.isMissing ? (
-            <X size={Math.round(nodeSize * 0.4)} color="#94a3b8" />
+            <>
+              {/* Show asset type icon grayed out with white X overlay */}
+              {customIcon ? (
+                <img
+                  src={customIcon}
+                  alt=""
+                  style={{
+                    width: Math.round(nodeSize * 0.55),
+                    height: Math.round(nodeSize * 0.55),
+                    objectFit: 'contain',
+                    opacity: 0.3,
+                    filter: 'grayscale(1)',
+                  }}
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              ) : (
+                <Icon size={Math.round(nodeSize * 0.32)} style={{ opacity: 0.3, color: '#94a3b8' }} />
+              )}
+              {/* White cross overlay */}
+              <X
+                size={Math.round(nodeSize * 0.38)}
+                color="#fff"
+                strokeWidth={3}
+                style={{
+                  position: 'absolute',
+                  top: '50%', left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.4))',
+                }}
+              />
+            </>
           ) : customIcon ? (
             <>
               <img

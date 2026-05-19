@@ -10,13 +10,73 @@
  *   - Hover a placed asset → X button appears to remove its position
  */
 import { useState, useRef, useCallback } from 'react';
-import { Plus, X, Save, RotateCcw } from 'lucide-react';
+import { Plus, X, Save, RotateCcw, Pencil, GripVertical } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { toast } from 'sonner';
 import { assetsAPI, canvasLandmarksAPI } from '../lib/api';
 import { resolveIcon } from '../lib/assetIcons';
+
+
+// ── Landmark editor row — inline rename + delete ──────────────────────────────
+function LandmarkEditorRow({ lm, onRename, onRemove }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(lm.label);
+
+  if (editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 3 }}>
+        <input
+          autoFocus
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && val.trim()) { onRename(lm.id, val.trim()); setEditing(false); }
+            if (e.key === 'Escape') { setVal(lm.label); setEditing(false); }
+          }}
+          onBlur={() => { if (val.trim()) { onRename(lm.id, val.trim()); } setEditing(false); }}
+          style={{ fontSize: 9, border: '1px solid #0891b2', borderRadius: 4, padding: '1px 4px', width: '100%', outline: 'none', background: '#f0f9ff' }}
+          data-testid={`landmark-edit-input-${lm.id}`}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 3, group: true }}
+      data-testid={`landmark-row-${lm.id}`}
+    >
+      <GripVertical size={8} style={{ color: '#d1d5db', flexShrink: 0 }} />
+      <span style={{
+        fontSize: 9, background: lm._new ? '#e0f2fe' : '#fef3c7',
+        color: lm._new ? '#0369a1' : '#92400e',
+        border: `1px solid ${lm._new ? '#7dd3fc' : '#f59e0b'}`,
+        padding: '1px 5px', borderRadius: 6, flex: 1, cursor: 'text',
+      }}
+        onClick={() => { setVal(lm.label); setEditing(true); }}
+        title="Click to rename"
+      >
+        {lm.label}
+      </span>
+      <button
+        onClick={() => { setVal(lm.label); setEditing(true); }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, lineHeight: 1 }}
+        title="Edit label"
+      >
+        <Pencil size={8} />
+      </button>
+      <button
+        onClick={() => onRemove(lm.id)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171', padding: 0, lineHeight: 1 }}
+        title="Remove landmark"
+        data-testid={`landmark-delete-${lm.id}`}
+      >
+        <X size={9} />
+      </button>
+    </div>
+  );
+}
 
 // ── Small draggable asset icon on the canvas ──────────────────────────────────
 function PlacedAsset({ asset, x, y, selected, onPointerDown, onRemove }) {
@@ -187,6 +247,10 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
 
   const removeLandmark = (lmId) => {
     setLocalLandmarks(prev => prev.filter(l => l.id !== lmId));
+  };
+
+  const renameLandmark = (lmId, newLabel) => {
+    setLocalLandmarks(prev => prev.map(l => l.id === lmId ? { ...l, label: newLabel } : l));
   };
 
   const handleSave = async () => {
@@ -397,27 +461,29 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
 
         {/* Right sidebar */}
         <div style={{ width: 180, display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto' }}>
-          {/* Landmark adder */}
+          {/* Landmark editor panel */}
           <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 8 }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-              Landmarks
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Landmarks ({localLandmarks.length})</span>
             </div>
-            {localLandmarks.map(lm => (
-              <div key={lm.id} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                <span style={{ fontSize: 9, background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b', padding: '1px 5px', borderRadius: 6 }}>
-                  {lm.label}
-                </span>
-                <button onClick={() => removeLandmark(lm.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
-                  <X size={9} />
-                </button>
+            {localLandmarks.length === 0 && (
+              <div style={{ fontSize: 10, color: '#94a3b8', textAlign: 'center', padding: '6px 0' }}>
+                No landmarks yet
               </div>
-            ))}
-            <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+            )}
+            <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+              {localLandmarks.map(lm => (
+                <LandmarkEditorRow key={lm.id} lm={lm} onRename={renameLandmark} onRemove={removeLandmark} />
+              ))}
+            </div>
+            {/* Add single landmark */}
+            <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
               <Input
                 value={lmLabel}
                 onChange={e => setLmLabel(e.target.value)}
                 placeholder="P.No 27"
                 className="h-6 text-xs flex-1"
+                data-testid="landmark-label-input"
                 onKeyDown={e => { if (e.key === 'Enter' && lmLabel.trim()) { setLmPlaceMode(true); } }}
               />
               <Button
@@ -427,10 +493,65 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
                 disabled={!lmLabel.trim()}
                 onClick={() => { if (lmLabel.trim()) setLmPlaceMode(true); }}
                 title="Place on canvas"
+                data-testid="landmark-add-btn"
               >
                 <Plus size={11} />
               </Button>
             </div>
+            {/* Batch add landmarks */}
+            <button
+              type="button"
+              onClick={() => {
+                const input = prompt('Batch add landmarks.\nFormat: "P.No 1-10" or comma-separated "P.No 1, P.No 2, HWH END"');
+                if (!input) return;
+                const trimmed = input.trim();
+                // Try range pattern: "P.No 1-10" or "Pillar 5-20"
+                const rangeMatch = trimmed.match(/^(.+?)(\d+)\s*-\s*(\d+)$/);
+                if (rangeMatch) {
+                  const prefix = rangeMatch[1];
+                  const start = parseInt(rangeMatch[2], 10);
+                  const end = parseInt(rangeMatch[3], 10);
+                  if (!isNaN(start) && !isNaN(end) && end >= start && (end - start) < 100) {
+                    const newLandmarks = [];
+                    for (let i = start; i <= end; i++) {
+                      newLandmarks.push({
+                        id: `new-batch-${Date.now()}-${i}`,
+                        label: `${prefix}${i}`,
+                        x: 5 + ((i - start) / Math.max(1, end - start)) * 90,
+                        y: 90,
+                        landmark_type: 'pole',
+                        _new: true,
+                      });
+                    }
+                    setLocalLandmarks(prev => [...prev, ...newLandmarks]);
+                    toast.success(`Added ${newLandmarks.length} landmarks. Drag them to correct positions.`);
+                    return;
+                  }
+                }
+                // Fallback: comma-separated
+                const labels = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+                if (labels.length > 0) {
+                  const newLandmarks = labels.map((label, i) => ({
+                    id: `new-batch-${Date.now()}-${i}`,
+                    label,
+                    x: 5 + (i / Math.max(1, labels.length - 1)) * 90,
+                    y: 90,
+                    landmark_type: 'pole',
+                    _new: true,
+                  }));
+                  setLocalLandmarks(prev => [...prev, ...newLandmarks]);
+                  toast.success(`Added ${newLandmarks.length} landmarks. Drag them to correct positions.`);
+                }
+              }}
+              style={{
+                width: '100%', marginTop: 4, padding: '3px 0',
+                fontSize: 9, color: '#0891b2', background: 'none',
+                border: '1px dashed #bae6fd', borderRadius: 6, cursor: 'pointer',
+              }}
+              data-testid="landmark-batch-add"
+            >
+              + Batch Add (e.g. P.No 1-10)
+            </button>
           </div>
 
           {/* Unpositioned assets */}
