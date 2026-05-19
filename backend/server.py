@@ -110,35 +110,64 @@ async def _ensure_indexes():
 
 
 async def _migrate_svg_icons_current_color():
-    """Fix uploaded SVG icons that use 'currentColor' — doesn't render in <img> tags.
-    Replaces with concrete dark color #1e293b and bumps thin stroke widths."""
-    import os as _os
-    icon_dir = "/app/backend/uploads/icons"
-    if not _os.path.isdir(icon_dir):
-        return
-    fixed = 0
-    for fname in _os.listdir(icon_dir):
-        if not fname.endswith(".svg"):
+    """Migrate custom_icon_url from file paths to data URIs.
+    File paths (/api/uploads/icons/...) are ephemeral and lost on redeploy.
+    Data URIs (data:image/...) are stored in MongoDB and persist forever."""
+    from database import asset_types_collection
+    import base64 as b64
+
+    # Find asset types with file-path-based icons (need migration)
+    cursor = asset_types_collection.find({
+        "custom_icon_url": {"$exists": True, "$ne": None, "$not": {"$regex": "^data:"}},
+    })
+    migrated = 0
+    async for doc in cursor:
+        old_url = doc.get("custom_icon_url", "")
+        if not old_url or old_url.startswith("data:"):
             continue
-        fpath = _os.path.join(icon_dir, fname)
-        try:
-            with open(fpath, "r", encoding="utf-8") as f:
-                text = f.read()
-            if "currentColor" not in text:
+
+        # Try to read from local filesystem
+        if old_url.startswith("/api/uploads/icons/"):
+            fname = old_url.split("/")[-1]
+            fpath = f"/app/backend/uploads/icons/{fname}"
+            try:
+                with open(fpath, "rb") as f:
+                    content = f.read()
+            except FileNotFoundError:
+                # File lost — clear the broken reference
+                await asset_types_collection.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"custom_icon_url": None}},
+                )
+                migrated += 1
                 continue
-            text = text.replace('stroke="currentColor"', 'stroke="#1e293b"')
-            text = text.replace("stroke='currentColor'", "stroke='#1e293b'")
-            text = text.replace('fill="currentColor"', 'fill="#1e293b"')
-            text = text.replace("fill='currentColor'", "fill='#1e293b'")
-            text = text.replace('stroke-width="1"', 'stroke-width="1.5"')
-            text = text.replace('stroke-width="2"', 'stroke-width="2.5"')
-            with open(fpath, "w", encoding="utf-8") as f:
-                f.write(text)
-            fixed += 1
-        except Exception:
-            continue
-    if fixed:
-        print(f"[migration] Fixed {fixed} SVG icon(s) with currentColor → #1e293b")
+
+            ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else "png"
+            if ext == "svg":
+                try:
+                    text = content.decode("utf-8")
+                    text = text.replace('stroke="currentColor"', 'stroke="#1e293b"')
+                    text = text.replace("stroke='currentColor'", "stroke='#1e293b'")
+                    text = text.replace('fill="currentColor"', 'fill="#1e293b"')
+                    text = text.replace("fill='currentColor'", "fill='#1e293b'")
+                    text = text.replace('stroke-width="1"', 'stroke-width="1.5"')
+                    text = text.replace('stroke-width="2"', 'stroke-width="2.5"')
+                    data_uri = "data:image/svg+xml;base64," + b64.b64encode(text.encode("utf-8")).decode("ascii")
+                except Exception:
+                    data_uri = "data:image/svg+xml;base64," + b64.b64encode(content).decode("ascii")
+            else:
+                mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+                mime = mime_map.get(ext, "image/png")
+                data_uri = f"data:{mime};base64," + b64.b64encode(content).decode("ascii")
+
+            await asset_types_collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"custom_icon_url": data_uri}},
+            )
+            migrated += 1
+
+    if migrated:
+        print(f"[migration] Migrated {migrated} custom icon(s) from file paths to data URIs")
 
 
 

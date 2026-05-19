@@ -129,7 +129,7 @@ export default function IconPicker({
               <div className="flex-1">
                 <div className="text-xs font-semibold text-emerald-800">Custom icon active</div>
                 <div className="text-[10px] text-emerald-600 mt-0.5 truncate max-w-[200px]">
-                  {customIconUrl.split('/').pop()}
+                  {customIconUrl.startsWith('data:') ? 'Embedded icon (SVG/PNG)' : customIconUrl.split('/').pop()}
                 </div>
               </div>
               {onDeleteIcon && (

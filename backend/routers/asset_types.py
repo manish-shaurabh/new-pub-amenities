@@ -120,11 +120,18 @@ async def delete_asset_type(asset_type_id: str):
     return {"message": "Asset type deleted"}
 
 
-ICON_UPLOAD_DIR = "/app/backend/uploads/icons"
-os.makedirs(ICON_UPLOAD_DIR, exist_ok=True)
 ALLOWED_ICON_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
 MAX_ICON_SIZE = 512 * 1024  # 512 KB
 ADMIN_ROLES = {"superadmin", "admin", "divisional_admin"}
+
+# MIME types for data URI generation
+EXT_TO_MIME = {
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
 
 
 async def _require_admin(user_id: str):
@@ -137,6 +144,27 @@ async def _require_admin(user_id: str):
         raise HTTPException(status_code=400, detail="Invalid user_id")
     if not u or u.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin role required")
+
+
+def _process_svg(raw_bytes: bytes) -> str:
+    """Pre-process SVG: replace currentColor with concrete dark color,
+    bump thin strokes, and return as a data URI string."""
+    try:
+        text = raw_bytes.decode("utf-8")
+    except Exception:
+        import base64
+        return "data:image/svg+xml;base64," + base64.b64encode(raw_bytes).decode("ascii")
+
+    text = text.replace('stroke="currentColor"', 'stroke="#1e293b"')
+    text = text.replace("stroke='currentColor'", "stroke='#1e293b'")
+    text = text.replace('fill="currentColor"', 'fill="#1e293b"')
+    text = text.replace("fill='currentColor'", "fill='#1e293b'")
+    text = text.replace('stroke-width="1"', 'stroke-width="1.5"')
+    text = text.replace('stroke-width="2"', 'stroke-width="2.5"')
+
+    import base64
+    encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
 
 
 @router.post("/api/asset-types/{asset_type_id}/upload-icon")
@@ -154,41 +182,20 @@ async def upload_asset_type_icon(asset_type_id: str, file: UploadFile = File(...
     if len(content) > MAX_ICON_SIZE:
         raise HTTPException(status_code=400, detail="Icon file must be under 512 KB")
 
-    # Pre-process SVGs: replace 'currentColor' with a concrete dark color
-    # so the icon renders correctly inside <img> tags (which can't inherit CSS color)
+    # Convert to data URI — stored directly in MongoDB, survives redeployments
+    import base64
     if ext == ".svg":
-        try:
-            text = content.decode("utf-8")
-            text = text.replace('stroke="currentColor"', 'stroke="#1e293b"')
-            text = text.replace("stroke='currentColor'", "stroke='#1e293b'")
-            text = text.replace('fill="currentColor"', 'fill="#1e293b"')
-            text = text.replace("fill='currentColor'", "fill='#1e293b'")
-            # Bump stroke-width for small icon rendering (thin strokes disappear at 24px)
-            text = text.replace('stroke-width="1"', 'stroke-width="1.5"')
-            text = text.replace('stroke-width="2"', 'stroke-width="2.5"')
-            content = text.encode("utf-8")
-        except Exception:
-            pass  # If decode fails, store the original binary
-
-    unique_name = f"{uuid.uuid4()}{ext}"
-    file_path = os.path.join(ICON_UPLOAD_DIR, unique_name)
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    icon_url = f"/api/uploads/icons/{unique_name}"
-
-    # Remove old custom icon file if exists
-    old_url = doc.get("custom_icon_url")
-    if old_url and old_url.startswith("/api/uploads/icons/"):
-        old_path = os.path.join(ICON_UPLOAD_DIR, old_url.split("/")[-1])
-        if os.path.exists(old_path):
-            os.remove(old_path)
+        data_uri = _process_svg(content)
+    else:
+        mime = EXT_TO_MIME.get(ext, "image/png")
+        encoded = base64.b64encode(content).decode("ascii")
+        data_uri = f"data:{mime};base64,{encoded}"
 
     await asset_types_collection.update_one(
         {"_id": ObjectId(asset_type_id)},
-        {"$set": {"custom_icon_url": icon_url}}
+        {"$set": {"custom_icon_url": data_uri}}
     )
-    return {"custom_icon_url": icon_url}
+    return {"custom_icon_url": data_uri}
 
 
 @router.delete("/api/asset-types/{asset_type_id}/icon")
@@ -197,11 +204,6 @@ async def delete_asset_type_icon(asset_type_id: str, current_user_id: str = Quer
     doc = await asset_types_collection.find_one({"_id": ObjectId(asset_type_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Asset type not found")
-    old_url = doc.get("custom_icon_url")
-    if old_url and old_url.startswith("/api/uploads/icons/"):
-        old_path = os.path.join(ICON_UPLOAD_DIR, old_url.split("/")[-1])
-        if os.path.exists(old_path):
-            os.remove(old_path)
     await asset_types_collection.update_one(
         {"_id": ObjectId(asset_type_id)},
         {"$set": {"custom_icon_url": None}}
