@@ -13,6 +13,16 @@ from models import CanvasLandmarkCreate
 router = APIRouter()
 
 
+def _normalize_id(doc):
+    """Expose MongoDB _id as `id` and drop `_id` from the response."""
+    if doc is None:
+        return None
+    if "_id" in doc and "id" not in doc:
+        doc["id"] = doc["_id"]
+    doc.pop("_id", None)
+    return doc
+
+
 @router.get("/api/canvas-landmarks")
 async def list_landmarks(
     sub_zone_id: Optional[str] = None,
@@ -27,7 +37,7 @@ async def list_landmarks(
     elif station_id:
         query["station_id"] = station_id
     docs = await canvas_landmarks_collection.find(query).sort("label", 1).to_list(500)
-    return [serialize_doc(d) for d in docs]
+    return [_normalize_id(serialize_doc(d)) for d in docs]
 
 
 @router.post("/api/canvas-landmarks")
@@ -44,7 +54,7 @@ async def create_landmark(lm: CanvasLandmarkCreate):
     }
     result = await canvas_landmarks_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
-    return serialize_doc(doc)
+    return _normalize_id(serialize_doc(doc))
 
 
 @router.put("/api/canvas-landmarks/{landmark_id}")
@@ -61,7 +71,7 @@ async def update_landmark(landmark_id: str, lm: CanvasLandmarkCreate):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Landmark not found")
     doc = await canvas_landmarks_collection.find_one({"_id": ObjectId(landmark_id)})
-    return serialize_doc(doc)
+    return _normalize_id(serialize_doc(doc))
 
 
 @router.delete("/api/canvas-landmarks/{landmark_id}")

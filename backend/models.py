@@ -249,8 +249,8 @@ class SubZoneCreate(BaseModel):
 # Canvas Landmark (P.No markers, pole references, etc. on the platform blueprint)
 class CanvasLandmarkCreate(BaseModel):
     sub_zone_id: str
-    location_id: str
-    station_id: str
+    location_id: Optional[str] = ""
+    station_id: Optional[str] = ""
     label: str             # e.g. "P.No 27", "P.No 28"
     x: float               # 0-100 percentage of canvas width
     y: float               # 0-100 percentage of canvas height

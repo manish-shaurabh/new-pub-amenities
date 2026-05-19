@@ -284,9 +284,12 @@ export function SubZoneCanvas({
   onAddSubZone,       // shows "Add Sub-Zone" button below this card (when isLast)
   healthSlot,         // optional ReactNode rendered below the canvas (e.g. Shed Health card)
   deptMap,            // { dept_id: dept_name } for department theming
+  onRenameSubZone,    // (subZoneId, newName) called to rename a sub-zone
 }) {
   const canvasRef = useRef(null);
   const [actionMenuAsset, setActionMenuAsset] = useState(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
 
   // Track canvas pixel width to scale icon size responsively. Mobile canvases
   // (~ 360px wide) get smaller icons so 10+ assets don't overlap.
@@ -409,7 +412,43 @@ export function SubZoneCanvas({
               ><ArrowDown size={12} /></button>
             </div>
           )}
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{subZone.name}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
+            {editMode && onRenameSubZone && !editingName ? (
+              <button
+                onClick={() => { setNameInput(subZone.name); setEditingName(true); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155', padding: 0, borderBottom: '1px dashed #94a3b8' }}
+                title="Click to rename"
+              >
+                {subZone.name}
+              </button>
+            ) : editMode && editingName ? (
+              <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+                <input
+                  autoFocus
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && nameInput.trim()) {
+                      onRenameSubZone(subZone.id, nameInput.trim());
+                      setEditingName(false);
+                    } else if (e.key === 'Escape') {
+                      setEditingName(false);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (nameInput.trim() && nameInput.trim() !== subZone.name) {
+                      onRenameSubZone(subZone.id, nameInput.trim());
+                    }
+                    setEditingName(false);
+                  }}
+                  style={{ fontSize: 13, fontWeight: 600, color: '#334155', border: '1px solid #0891b2', borderRadius: 4, padding: '0 4px', width: Math.max(80, nameInput.length * 8 + 16), outline: 'none' }}
+                  data-testid={`rename-subzone-input-${subZone.id}`}
+                />
+              </span>
+            ) : (
+              subZone.name
+            )}
+          </span>
           {subZone.code && (
             <span style={{
               fontSize: 10, background: '#e2e8f0', color: '#64748b',
@@ -630,6 +669,7 @@ export default function PlatformBlueprint({
   onMoveSubZone, onDeleteSubZone, onAddSubZone,
   renderHealthSlot,  // (subZone) => ReactNode rendered below each sub-zone canvas
   deptMap,           // { dept_id: dept_name } for department theming
+  onRenameSubZone,   // (subZoneId, newName) rename sub-zone
 }) {
   if (!locationData) return null;
   const { sub_zones = [], unzoned_assets = [] } = locationData;
@@ -658,6 +698,7 @@ export default function PlatformBlueprint({
           onAddSubZone={onAddSubZone}
           healthSlot={renderHealthSlot ? renderHealthSlot(sz) : null}
           deptMap={deptMap}
+          onRenameSubZone={onRenameSubZone}
         />
       ))}
 

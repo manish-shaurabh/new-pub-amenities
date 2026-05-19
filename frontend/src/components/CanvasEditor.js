@@ -117,6 +117,7 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
 
   // Currently dragging { assetId }
   const [dragging, setDragging] = useState(null);
+  const [draggingLandmark, setDraggingLandmark] = useState(null);
   // Asset selected for click-to-place
   const [selectedForPlace, setSelectedForPlace] = useState(null);
   // Landmark placement mode
@@ -137,13 +138,19 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
   };
 
   const handleCanvasPointerMove = useCallback((e) => {
+    if (draggingLandmark) {
+      const pos = getCanvasPercent(e.clientX, e.clientY);
+      if (!pos) return;
+      setLocalLandmarks(prev => prev.map(l => l.id === draggingLandmark ? { ...l, x: pos.x, y: pos.y } : l));
+      return;
+    }
     if (!dragging) return;
     const pos = getCanvasPercent(e.clientX, e.clientY);
     if (!pos) return;
     setPositions(prev => ({ ...prev, [dragging.assetId]: pos }));
-  }, [dragging]); // eslint-disable-line
+  }, [dragging, draggingLandmark]); // eslint-disable-line
 
-  const handleCanvasPointerUp = useCallback(() => setDragging(null), []);
+  const handleCanvasPointerUp = useCallback(() => { setDragging(null); setDraggingLandmark(null); }, []);
 
   const handleCanvasClick = (e) => {
     if (dragging) return;
@@ -193,22 +200,50 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
       }));
       await assetsAPI.bulkUpdateCanvasPositions(posPayload);
 
-      // 2. Sync landmarks: delete removed, create new (track failures explicitly)
-      const originalIds = new Set((landmarks || []).map(l => l.id));
+      // 2. Sync landmarks: delete removed, create new, UPDATE moved (track failures)
+      const originalMap = new Map((landmarks || []).map(l => [l.id, l]));
       const currentIds = new Set(localLandmarks.filter(l => !l._new).map(l => l.id));
 
       const failures = [];
       // Delete removed landmarks
-      for (const id of originalIds) {
+      for (const [id] of originalMap) {
         if (!currentIds.has(id)) {
           try {
             await canvasLandmarksAPI.delete(id);
           } catch (err) {
             console.error('Landmark delete failed', id, err);
-            failures.push({ op: 'delete', label: id, err });
+            failures.push({ op: 'delete', label: id, err: String(err?.response?.data?.detail || err?.message || err) });
           }
         }
       }
+
+      // Update moved/edited existing landmarks
+      let updated = 0;
+      for (const lm of localLandmarks) {
+        if (lm._new) continue;
+        const orig = originalMap.get(lm.id);
+        if (!orig) continue;
+        // Check if position or label changed
+        if (orig.x !== lm.x || orig.y !== lm.y || orig.label !== lm.label) {
+          try {
+            await canvasLandmarksAPI.update(lm.id, {
+              sub_zone_id: subZone.id,
+              location_id: subZone.location_id || '',
+              station_id: subZone.station_id || '',
+              label: lm.label,
+              x: lm.x,
+              y: lm.y,
+              landmark_type: lm.landmark_type || 'pole',
+            });
+            updated += 1;
+          } catch (err) {
+            console.error('Landmark update failed', lm, err);
+            const detail = err?.response?.data?.detail || err?.message || 'unknown error';
+            failures.push({ op: 'update', label: lm.label, err: detail });
+          }
+        }
+      }
+
       // Create new landmarks
       const toCreate = localLandmarks.filter(l => l._new);
       let created = 0;
@@ -216,9 +251,9 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
         try {
           await canvasLandmarksAPI.create({
             sub_zone_id: subZone.id,
-            location_id: subZone.location_id,
-            station_id: subZone.station_id,
-            label: lm.label,
+            location_id: subZone.location_id || '',
+            station_id: subZone.station_id || '',
+            label: lm.label || 'Marker',
             x: lm.x,
             y: lm.y,
             landmark_type: lm.landmark_type || 'pole',
@@ -227,7 +262,7 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
         } catch (err) {
           console.error('Landmark create failed', lm, err);
           const detail = err?.response?.data?.detail || err?.message || 'unknown error';
-          failures.push({ op: 'create', label: lm.label, err: detail });
+          failures.push({ op: 'create', label: lm.label || '(unnamed)', err: detail });
         }
       }
 
@@ -237,10 +272,11 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
           `Saved positions, but ${failures.length} landmark${failures.length !== 1 ? 's' : ''} failed: ${firstErr.label} — ${firstErr.err}`,
           { duration: 7000 },
         );
-      } else if (toCreate.length > 0) {
-        toast.success(`Canvas layout saved · ${created} landmark${created !== 1 ? 's' : ''} added`);
       } else {
-        toast.success('Canvas layout saved');
+        const parts = [];
+        if (created > 0) parts.push(`${created} added`);
+        if (updated > 0) parts.push(`${updated} moved`);
+        toast.success(`Canvas layout saved${parts.length ? ' · ' + parts.join(', ') : ''}`);
       }
       if (onSave) onSave();
     } catch (e) {
@@ -331,11 +367,12 @@ export default function CanvasEditor({ subZone, assets, landmarks, onSave, onClo
                 );
               })}
 
-              {/* Landmarks */}
+              {/* Landmarks — draggable */}
               {localLandmarks.map(lm => (
                 <div
                   key={lm.id}
-                  style={{ position: 'absolute', left: `${lm.x}%`, top: `${lm.y}%`, transform: 'translate(-50%, -100%)', zIndex: 15 }}
+                  style={{ position: 'absolute', left: `${lm.x}%`, top: `${lm.y}%`, transform: 'translate(-50%, -100%)', zIndex: 15, cursor: 'grab' }}
+                  onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setDraggingLandmark(lm.id); }}
                 >
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 3,

@@ -290,38 +290,77 @@ export default function StationCanvasPage() {
     if (!activeLocationData) return;
     const el = document.getElementById('platform-blueprint-root');
     if (!el) return;
-    toast.info('Generating PDF…');
+    toast.info('Generating PDF — capturing full layout…');
     try {
       const html2canvas = (await import('html2canvas')).default;
       const jsPDF = (await import('jspdf')).default;
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#fff' });
-      const pdf = new jsPDF('l', 'mm', 'a4');
-      const pdfW = pdf.internal.pageSize.getWidth();
-      const pdfH = pdf.internal.pageSize.getHeight();
-      const imgH = (canvas.height * pdfW) / canvas.width;
+
+      // Capture the ENTIRE blueprint root (all sub-zones + landmarks)
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#fff',
+        scrollY: -window.scrollY,   // fix scroll offset
+        windowHeight: el.scrollHeight + 100,
+      });
+
       const stName = selectedStationDoc?.name || 'Station';
       const locName = activeLocationData?.name || '';
+      const headerH = 18; // mm reserved for header text
+
+      // Calculate aspect ratio
+      const imgAspect = canvas.width / canvas.height;
+
+      // Use landscape A4
+      const pdf = new jsPDF('l', 'mm', 'a4');
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const usableH = pageH - headerH - 4; // leave margin at bottom
+
+      // Add header
       pdf.setFontSize(13);
       pdf.setFont('helvetica', 'bold');
       pdf.text(`${stName} — ${locName}`, 10, 10);
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
       pdf.text(`Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`, 10, 16);
-      const imgData = canvas.toDataURL('image/png');
-      const yOffset = 20;
-      if (imgH + yOffset > pdfH) {
-        let posY = yOffset;
-        let remaining = imgH;
-        let sliceFrom = 0;
-        while (remaining > 0) {
-          const sliceH = Math.min(pdfH - yOffset, remaining);
-          pdf.addImage(imgData, 'PNG', 0, posY, pdfW, imgH, '', 'FAST', 0);
-          remaining -= sliceH;
-          if (remaining > 0) { pdf.addPage(); posY = yOffset; sliceFrom += sliceH; }
-        }
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
+
+      // Calculate image dimensions to fit page width
+      const fitW = pageW - 8; // 4mm margin each side
+      const fitH = fitW / imgAspect;
+
+      if (fitH <= usableH) {
+        // Fits in one page
+        pdf.addImage(imgData, 'JPEG', 4, headerH, fitW, fitH);
       } else {
-        pdf.addImage(imgData, 'PNG', 0, yOffset, pdfW, imgH);
+        // Multi-page: slice the canvas image across pages
+        const pxPerPage = (usableH / fitH) * canvas.height;
+        let srcY = 0;
+        let pageNum = 0;
+        while (srcY < canvas.height) {
+          if (pageNum > 0) {
+            pdf.addPage();
+            pdf.setFontSize(8);
+            pdf.setFont('helvetica', 'normal');
+            pdf.text(`${stName} — ${locName} (page ${pageNum + 1})`, 10, 8);
+          }
+          const sliceH = Math.min(pxPerPage, canvas.height - srcY);
+          // Create a canvas slice
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = sliceH;
+          const ctx = sliceCanvas.getContext('2d');
+          ctx.drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+          const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.85);
+          const sliceImgH = (sliceH / canvas.width) * fitW;
+          pdf.addImage(sliceData, 'JPEG', 4, pageNum === 0 ? headerH : 12, fitW, sliceImgH);
+          srcY += sliceH;
+          pageNum++;
+        }
       }
+
       const safeFileName = `${stName}-${locName}-blueprint.pdf`.replace(/[^a-z0-9._-]/gi, '_');
       pdf.save(safeFileName);
       toast.success('PDF downloaded');
@@ -444,6 +483,24 @@ export default function StationCanvasPage() {
     } catch { toast.error('Failed to force-delete sub-zone'); }
   };
 
+  const handleRenameSubZone = async (szId, newName) => {
+    try {
+      // Fetch current sub-zone data to preserve other fields
+      const szData = activeLocationData?.sub_zones?.find(s => s.id === szId);
+      await subZonesAPI.update(szId, {
+        name: newName,
+        code: szData?.code || '',
+        station_id: selectedStation,
+        location_id: activeLocationData?.id || '',
+      });
+      toast.success(`Renamed to "${newName}"`);
+      loadCanvas();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Failed to rename');
+    }
+  };
+
+
   // ── Canvas editor (repositioning) ───────────────────────────────────────────
   const openCanvasEditor = async (sz) => {
     try {
@@ -562,6 +619,7 @@ export default function StationCanvasPage() {
                   onAddSubZone={editMode ? (locationId) => setSubZoneFormFor({ locationId, stationId: selectedStation }) : undefined}
                   onEditCanvas={editMode ? openCanvasEditor : undefined}
                   deptMap={deptMap}
+                  onRenameSubZone={editMode ? handleRenameSubZone : undefined}
                 />
 
                 {/* Pending placement drop popover */}
@@ -605,14 +663,16 @@ export default function StationCanvasPage() {
           )}
         </div>
 
-        {/* Asset palette (edit mode only) */}
+        {/* Asset palette (edit mode only) — sticky so it stays visible */}
         {editMode && (
-          <AssetTypePalette
-            assetTypes={assetTypes}
-            departments={departments}
-            selectedType={selectedPaletteType}
-            onSelectType={setSelectedPaletteType}
-          />
+          <div style={{ position: 'sticky', top: 0, alignSelf: 'flex-start', maxHeight: '100vh', overflowY: 'auto' }}>
+            <AssetTypePalette
+              assetTypes={assetTypes}
+              departments={departments}
+              selectedType={selectedPaletteType}
+              onSelectType={setSelectedPaletteType}
+            />
+          </div>
         )}
       </div>
 

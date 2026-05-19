@@ -1,0 +1,45 @@
+{
+  "summary": "Iter 38 — Canvas Landmark Save bug-fix verification (both BE + FE). All 5 pytest cases PASS in /app/backend/tests/test_landmark_iter38.py. POST /api/canvas-landmarks now correctly accepts empty-string and missing location_id/station_id (no 500). PUT /api/canvas-landmarks/{id} correctly updates x/y/label and persists across GET list. DELETE 200 then 404 verified. Found and fixed a critical schema bug: the router was returning raw '_id' (no 'id' field), which would break CanvasEditor's UPDATE/DELETE-of-moved-landmark logic (originalMap keyed on undefined). Patched routers/canvas_landmarks.py to expose 'id' and drop '_id'. Frontend smoke: Platform Vision loads, #platform-blueprint-root exists (PDF target), mch-more-trigger → mch-edit-toggle puts page in edit mode, AssetTypePalette renders, sub-zone name button[title='Click to rename'] opens rename input with data-testid='rename-subzone-input-{id}' and Escape cancels, pencil opens Reposition CanvasEditor with 'Save Layout' button and shows existing landmarks as draggable chips. Could not interactively verify the 'PDF includes all sub-zones' output (html2canvas runs in browser; jsPDF download was not exercised) nor the sticky-palette behavior under scroll (acceptance is visual). See Action items below.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET/POST/PUT /api/canvas-landmarks", "issue": "Was leaking raw MongoDB '_id' instead of normalized 'id'. FIXED in this iteration via _normalize_id() helper in routers/canvas_landmarks.py."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Sticky asset palette during sub-zone scroll", "issue": "StationCanvasPage line 668 wraps AssetTypePalette in position:sticky/top:0, BUT the scroll happens inside a sibling div (line 557 'overflowY:auto'), not in the palette's parent. Sticky needs a SCROLLING ancestor; here the palette's parent (line 555) is overflow:hidden non-scrolling. Net effect: sticky may behave like 'relative' and stay in place only because parent height is fixed flex:1. Visual verification needed — when many sub-zones are present and the inner canvas div scrolls, the palette will NOT translate because it's outside that scroll container, so it'll naturally appear 'stuck'. This is acceptable but the 'maxHeight: 100vh, overflowY: auto' on the palette wrapper means tall palettes can scroll independently. Confirm acceptable UX on small viewports.", "affected_selectors": ["AssetTypePalette wrapper"]}
+    ],
+    "design_issues": [
+      {"screen": "CanvasEditor dialog", "issues": ["DialogContent missing aria-describedby (console warning, not a blocker)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_landmark_iter38.py",
+    "/app/test_reports/pytest/iter38_landmark.xml"
+  ],
+  "action_items": [
+    "MANUAL: Verify PDF download via 'Download PDF' action (toast 'Generating PDF — capturing full layout…') in browser — confirm output includes ALL sub-zone canvases (not just first). The code captures #platform-blueprint-root with windowHeight=el.scrollHeight+100 and does multi-page slicing; logic looks correct but needs visual confirmation with 3+ sub-zones.",
+    "MANUAL: Test sticky palette by scrolling the main canvas area on a long location with 4+ sub-zones — confirm palette visually stays put. If users still report scroll-away, refactor to render the palette as siblings INSIDE the scroll container with position:sticky.",
+    "OPTIONAL: Same _id→id normalization should be audited across all routers that use serialize_doc directly (database.py serialize_doc keeps _id verbatim — other endpoints likely have the same defect, but not within iter-38 scope)."
+  ],
+  "critical_code_review_comments": [
+    "routers/canvas_landmarks.py — Now exposes 'id' and removes '_id' (FIXED). Without this, FE CanvasEditor.handleSave originalMap.set(l.id, l) keyed on undefined, breaking the UPDATE/DELETE paths for moved/removed landmarks — the user's #1 fix would have silently failed for moved markers.",
+    "models.CanvasLandmarkCreate — location_id/station_id default to empty string but they are required by code paths via list_landmarks(query). Consider Optional[str] = None and skip empty filters cleanly. Currently FE always sends them, so harmless.",
+    "CanvasEditor.handleSave landmark UPDATE — Detects move via orig.x !== lm.x OR orig.y !== lm.y OR orig.label !== lm.label. Looks correct.",
+    "StationCanvasPage.handleDownloadPDF — html2canvas options include scrollY: -window.scrollY and windowHeight: el.scrollHeight + 100, which is the correct pattern for capturing scrolled-offscreen content. Multi-page slicing math (pxPerPage = (usableH/fitH)*canvas.height) is correct. Untested in-browser due to PDF save not testable in headless flow.",
+    "Sub-zone rename: onBlur saves while Enter also saves — both paths can fire (input.blur after Enter). State setEditingName(false) idempotent so okay. Empty name silently cancels (good).",
+    "Canvas landmark router has NO auth guard — any authenticated (or perhaps un-authenticated, depending on global middleware) user can POST/PUT/DELETE landmarks. Same gap as other admin endpoints flagged in iter 37. RECOMMEND admin role enforcement."
+  ],
+  "updated_files": [
+    "/app/backend/routers/canvas_landmarks.py (added _normalize_id, drops raw _id from API)",
+    "/app/backend/tests/test_landmark_iter38.py (new, 5 passing tests)"
+  ],
+  "success_rate": {"backend": "100% (5/5 pytest)", "frontend": "Smoke-verified: edit mode, sticky palette mount, sub-zone rename input, canvas editor open with landmarks. PDF + scroll-sticky require manual visual QA."},
+  "test_credentials": "SA001 / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Test created 2 TEST_-prefixed landmarks; cleaned up after run (deleted via DELETE endpoint). Screenshot showed leftover TEST_P.No 99 from earlier UI session — those were also removed during cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Regression suite at /app/backend/tests/test_landmark_iter38.py — five tests covering empty-string acceptance, omitted-fields acceptance, PUT-then-GET persistence, 404, DELETE-then-404. The router fix in /app/backend/routers/canvas_landmarks.py adds _normalize_id() — if database.py serialize_doc is ever refactored to handle _id globally, the helper here can be removed. Frontend testids: mch-more-trigger, mch-edit-toggle, rename-subzone-input-{id}. Sub-zone rename trigger is a button[title='Click to rename']. CanvasEditor opens via title='Reposition assets (editor)' pencil. Open items for main agent: (a) Verify PDF visually captures all sub-zones, (b) Verify sticky palette behavior on long pages, (c) Consider auth guard on canvas-landmarks endpoints."
+}
